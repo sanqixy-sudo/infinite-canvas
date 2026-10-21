@@ -531,14 +531,14 @@ export default function AdminSettingsPage() {
                                                     title: (
                                                         <span className="grid leading-tight">
                                                             <span>计费单价</span>
-                                                            <span className="text-xs font-normal text-[var(--ant-color-text-secondary)]">视频模型按秒，工作流按次</span>
+                                                            <span className="text-xs font-normal text-[var(--ant-color-text-secondary)]">未配置不可调用；填 0 表示免费。视频按秒，工作流按次</span>
                                                         </span>
                                                     ),
                                                     dataIndex: "credits",
                                                     width: 220,
                                                     render: (_, item) => (
                                                         <Space.Compact className="!w-full">
-                                                            <InputNumber min={0} step={0.01} precision={2} className="!w-full" value={item.credits} onChange={(value) => setModelCost(form, setModelCosts, item.model, Number(value) || 0)} />
+                                                            <InputNumber min={0} step={0.01} precision={2} className="!w-full" placeholder="未配置" value={item.credits} onChange={(value) => setModelCost(form, setModelCosts, item.model, value)} />
                                                             <span className="flex h-8 items-center rounded-r-md border border-l-0 border-stone-200 bg-stone-50 px-3 text-sm text-stone-500 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-300">
                                                                 点
                                                             </span>
@@ -1220,13 +1220,13 @@ function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChan
 }
 
 function modelCostCredits(items: AdminSettings["public"]["modelChannel"]["modelCosts"], model: string) {
-    return items.find((item) => item.model === model)?.credits || 0;
+    return items.find((item) => item.model === model)?.credits;
 }
 
-function setModelCost(form: any, setModelCosts: (items: AdminModelCost[]) => void, model: string, credits: number) {
+function setModelCost(form: any, setModelCosts: (items: AdminModelCost[]) => void, model: string, credits: number | null) {
     const current = (form.getFieldValue(["public", "modelChannel", "modelCosts"]) || []) as AdminSettings["public"]["modelChannel"]["modelCosts"];
     const next = current.filter((item) => item.model !== model);
-    next.push({ model, credits: Math.max(0, credits) });
+    if (credits !== null) next.push({ model, credits: Math.max(0, credits) });
     form.setFieldValue(["public", "modelChannel", "modelCosts"], next);
     setModelCosts(next);
 }

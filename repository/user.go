@@ -6,6 +6,7 @@ import (
 
 	"github.com/tigerowo/infinite-canvas/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ListUsers 分页查询用户。
@@ -77,6 +78,38 @@ func SaveUser(user model.User) (model.User, error) {
 		return user, err
 	}
 	return user, db.Save(&user).Error
+}
+
+// AdjustUserCredits 在同一事务中更新余额并记录管理员调整流水。
+func AdjustUserCredits(id string, credits float64, timestamp string, log model.CreditLog) (model.User, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.User{}, false, err
+	}
+	var user model.User
+	found := false
+	err = db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&user)
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if result.Error != nil {
+			return result.Error
+		}
+		found = true
+		if user.Credits == credits {
+			return nil
+		}
+		log.Amount = credits - user.Credits
+		log.Balance = credits
+		if err := tx.Model(&user).Updates(map[string]any{"credits": credits, "updated_at": timestamp}).Error; err != nil {
+			return err
+		}
+		user.Credits = credits
+		user.UpdatedAt = timestamp
+		return tx.Create(&log).Error
+	})
+	return user, found, err
 }
 
 func ConsumeUserCredits(id string, credits float64, now string, log model.CreditLog, task any) (model.User, bool, error) {

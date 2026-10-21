@@ -36,9 +36,13 @@ func DraftCreativeWorkflow(ctx context.Context, request WorkflowAgentDraftReques
 		return WorkflowAgentDraftResponse{}, err
 	}
 
-	credits, _ := ModelCost(modelName)
+	credits := 0.0
 	chargedCredits := request.ChannelMode != "local"
 	if chargedCredits {
+		credits, err = ModelCost(modelName)
+		if err != nil {
+			return WorkflowAgentDraftResponse{}, err
+		}
 		if err := ConsumeUserCredits(user.ID, modelName, credits, "/workflows/agent-draft"); err != nil {
 			return WorkflowAgentDraftResponse{}, err
 		}

@@ -308,31 +308,26 @@ func SaveUser(user model.User, password string) (model.User, error) {
 }
 
 func AdjustUserCredits(id string, credits float64) (model.User, error) {
+	if math.IsNaN(credits) || math.IsInf(credits, 0) || credits < 0 {
+		return model.User{}, safeMessageError{message: "算力点余额不能为负数"}
+	}
 	credits = normalizeCredits(credits)
-	user, ok, err := repository.GetUserByID(id)
-	if err != nil || !ok {
-		if err != nil {
-			return user, err
-		}
+	timestamp := now()
+	user, ok, err := repository.AdjustUserCredits(id, credits, timestamp, model.CreditLog{
+		ID:        newID("credit"),
+		UserID:    id,
+		Type:      model.CreditLogTypeAdminAdjust,
+		Remark:    "后台手动调整",
+		CreatedAt: timestamp,
+	})
+	if err != nil {
+		return user, err
+	}
+	if !ok {
 		return user, safeMessageError{message: "用户不存在"}
 	}
-	oldCredits := user.Credits
-	user.Credits = credits
-	user.UpdatedAt = now()
-	user, err = repository.SaveUser(user)
-	if err == nil && oldCredits != credits {
-		_, err = repository.SaveCreditLog(model.CreditLog{
-			ID:        newID("credit"),
-			UserID:    user.ID,
-			Type:      model.CreditLogTypeAdminAdjust,
-			Amount:    credits - oldCredits,
-			Balance:   credits,
-			Remark:    "后台手动调整",
-			CreatedAt: now(),
-		})
-	}
 	user.Password = ""
-	return user, err
+	return user, nil
 }
 
 func ConsumeUserCredits(userID string, modelName string, credits float64, path string, task ...any) error {

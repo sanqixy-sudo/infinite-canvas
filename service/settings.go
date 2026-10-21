@@ -244,7 +244,7 @@ func ModelCost(modelName string) (float64, error) {
 			return item.Credits, nil
 		}
 	}
-	return 0, nil
+	return 0, safeMessageError{message: "模型未配置算力点价格"}
 }
 
 func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting {
