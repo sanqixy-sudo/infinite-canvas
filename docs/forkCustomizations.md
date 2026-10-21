@@ -132,12 +132,12 @@
 
 ### 功能名称：创作工作台视觉体系
 
-- 状态与目的：本轮实现，待用户验收；让首页、项目管理和画布形成统一的创作界面。
+- 状态与目的：已完成构建及隔离浏览器检查，待用户验收；让首页、项目管理和画布形成统一的创作界面。
 - 对应文件：`web/src/app/globals.css`、`web/src/lib/app-theme.ts`、`web/src/lib/canvas-theme.ts`、`app-providers.tsx`、主题 store 与根 layout、工作台首页、`workspace-shell.tsx`、项目列表/详情、画布卡片/预览和账户操作组件；`web/package.json`、`bun.lock` 显式复用已锁定的 CSS-in-JS 依赖。
 - 原版与二开差异：暖白与墨绿炭灰主题使用青绿强调色；新访客默认浅色，已保存偏好不覆盖。统一 16:10 预览、导航、版心与空态，首页根据真实访问记录恢复创作。
 - 关键依赖：语义 CSS 变量、Ant Design ConfigProvider 与 StyleProvider 的样式层级、`canvasThemes`、原主题持久化键和现有项目/访问 store。SSR 必须先声明 `theme, base, antd, components, utilities` 顺序，避免 Ant Design 链接重置覆盖工作台的按钮和导航。
 - 数据库与 API：无变化；未修改模型协议和价格/扣返规则。
-- Git 提交：本轮功能提交后补充，草稿 PR #1。
+- Git 提交：`ba6db967ae6a4a05a62a6657f25e7e103b6c0f31`，草稿 PR #1，尚未合入 `my-version`。
 - 必须保护的行为：图片/视频/音乐独立入口继续隐藏；新建项目进入画布，项目内多画布和导入导出保留；浅深色主题与画布配色一致；尊重已保存偏好；触屏可选择画布，键盘焦点可见。
 - 更新后验证：桌面、390px 手机、浅深色主题、新建与切换画布；具体结果写入 `docs/progress/pending-test.md`。
 - 回滚要求：可回退视觉代码，保留原项目、媒体和主题存储键，不清理用户数据。
