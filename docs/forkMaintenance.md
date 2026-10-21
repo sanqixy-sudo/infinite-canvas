@@ -52,6 +52,14 @@ GitHub Fork 关联必须保留。GitHub 写入前核对账号为 `sanqixy-sudo`�
 
 账务流水作为只读审计记录，只能由调点、模型消费和失败返还事务生成。上游重新加入独立流水编辑或删除入口时必须拦截；用户本人流水接口不得接受客户端指定其他账号。
 
+### 当前测试部署与回滚依据
+
+- 测试站点代码提交：`8d90e45e06d2ab0886aafbab452131e9f5a9aa0e`，镜像 `xiaomeng-video-workbench:8d90e45`；功能分支仍通过草稿 PR #1 等待合入 `my-version`。
+- 部署目录 `/opt/xiaomeng-video-workbench-deploy`，应用仅绑定 `127.0.0.1:3001`，原 `data` 挂载保留。只重建该应用容器，未改动 OpenResty。
+- 升级前在线数据库备份：`backups/infinite-canvas-pre-8d90e45.db`；Compose 备份：`compose.yml.pre-8d90e45`。数据库备份及升级后完整性均为 `ok`，原用户、画布、流水和文件索引数量一致。
+- 如需回滚，先盘点升级后的新数据及本地媒体，优先保留数据库并回退兼容镜像；原镜像为 `xiaomeng-video-workbench:b5519c0`，不支持本轮新增本地存储链路，不能直接回退后删除本地文件。恢复数据库须用户明确批准，并处理升级后的新增数据。
+- 已通过 Go 全量测试、Next.js/Docker 构建、6 项 Bun 测试、本地存储及账户隔离 HTTP 检查、访客多画布与手机导航检查；真实 R2、供应商调用及账单核对仍待验证。完整检查边界见 `docs/progress/pending-test.md`。
+
 | 轮次 | 已吸收官方 SHA → 新官方 SHA | A/B/C/D 结论与未吸收内容 | 同步分支 / PR | 数据检查、验证与决定 |
 | --- | --- | --- | --- | --- |
 | 初始基线 | `ccda172efba25cbee990a785bba715b90cc42b95` | 尚无二开功能；尚未执行上游更新 | — | `main` 与初始 `my-version` 同源；未运行构建或测试 |
