@@ -35,7 +35,10 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, videoFram
     const mode = node.metadata?.generationMode || "image";
     const config = buildNodeConfig(globalConfig, node, mode);
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
-    const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: config.model, count: mode === "image" ? count : 1, seconds: mode === "video" ? config.videoSeconds : undefined });
+    const workflowRef = node.metadata?.workflowRef;
+    const billingMode = workflowRef ? workflowRef.scope === "system" ? "remote" : "local" : config.channelMode;
+    const billingModel = workflowRef ? `workflow:${workflowRef.scope}:${workflowRef.channelId}:${workflowRef.kind}:${workflowRef.workflowId}` : config.model;
+    const credits = requestCreditCost({ channelMode: billingMode, modelCosts, model: billingModel, count: !workflowRef && mode === "image" ? count : 1, seconds: !workflowRef && mode === "video" ? config.videoSeconds : undefined });
     const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };
     const hasAnyInput = Boolean(inputSummary.textCount || inputSummary.imageCount || inputSummary.videoCount || inputSummary.audioCount);
     const hasComposerContent = Boolean((node.metadata?.composerContent ?? node.metadata?.prompt ?? "").trim());
@@ -121,13 +124,14 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, videoFram
             <Button
                 type="primary"
                 className="mt-auto !h-9 !w-full !cursor-pointer !rounded-lg"
-                disabled={isRunning || !canGenerate}
+                disabled={isRunning || !canGenerate || credits === null}
+                title={credits === null ? "平台模型尚未配置价格或参数无效，请联系管理员" : "预计扣点，实际以任务流水为准；自动视频时长按 15 秒预估"}
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={() => onGenerate(node.id)}
             >
                 <span className="inline-flex items-center gap-1.5">
                     <span className="inline-flex items-center gap-1">
-                        {node.metadata?.workflowRef ? "工作流" : <><CreditSymbol />{credits.toLocaleString()}</>}
+                        {billingMode === "local" ? "自有渠道" : credits === null ? "未定价" : <><CreditSymbol />{credits.toLocaleString()}</>}
                     </span>
                     {isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />}
                     <span>开始生成</span>

@@ -3,30 +3,35 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Input } from "antd";
-import { ArrowLeft, Check, Download, Layers3, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Button, Dropdown, Input } from "antd";
+import { ArrowLeft, Check, Download, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 
 import { CanvasDeleteProjectsDialog } from "../../components/canvas-delete-projects-dialog";
 import { CanvasProjectCard } from "../../components/canvas-project-card";
-import { WorkspaceShell } from "../../components/workspace-shell";
 import { useCanvasStore, workspaceCanvases } from "../../stores/use-canvas-store";
 import { useCanvasUiStore } from "../../stores/use-canvas-ui-store";
-import { exportCanvasProjects } from "../../utils/canvas-export";
+import { useCanvasExport } from "../../hooks/use-canvas-export";
 
 export default function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const router = useRouter();
+    const exportProjects = useCanvasExport();
     const hydrated = useCanvasStore((state) => state.hydrated);
     const projects = useCanvasStore((state) => state.projects);
     const createCanvas = useCanvasStore((state) => state.createProject);
     const renameWorkspace = useCanvasStore((state) => state.renameWorkspace);
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
+    const clearSelection = useCanvasUiStore((state) => state.removeSelectedProjectIds);
     const root = projects.find((item) => item.id === id && !item.workspaceId);
     const canvases = workspaceCanvases(projects, id).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
     const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds).filter((itemId) => canvases.some((canvas) => canvas.id === itemId));
     const title = root?.workspaceTitle || root?.title || "项目";
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState("");
+    const [query, setQuery] = useState("");
+    const [sort, setSort] = useState("updated");
+    const visible = canvases.filter((canvas) => canvas.title.toLowerCase().includes(query.trim().toLowerCase())).sort((a, b) => sort === "name" ? a.title.localeCompare(b.title, "zh-CN") : sort === "created" ? Date.parse(b.createdAt) - Date.parse(a.createdAt) : Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    const canDeleteSelection = !selectedIds.includes(id) || canvases.length === 1;
 
     useEffect(() => { if (hydrated && !root) router.replace("/canvas"); }, [hydrated, root, router]);
 
@@ -38,23 +43,29 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     };
     const saveTitle = () => { renameWorkspace(id, draft); setEditing(false); };
 
-    return <WorkspaceShell>
-        <main className="mx-auto max-w-[1460px] px-5 py-8 md:px-10 md:py-12">
-            <Link href="/canvas" className="mb-10 inline-flex items-center gap-2 text-xs font-medium text-muted-foreground transition hover:text-foreground"><ArrowLeft className="size-4" />返回项目</Link>
+    return <>
+        <main className="h-full overflow-y-auto">
+        <div className="mx-auto max-w-[1480px] px-5 py-7 md:px-8 md:py-9">
+            <Link href="/canvas" className="mb-5 inline-flex items-center gap-2 text-xs font-medium text-muted-foreground transition hover:text-foreground"><ArrowLeft className="size-4" />我的项目</Link>
             {!hydrated || !root ? <div className="py-24 text-sm text-muted-foreground">正在读取项目...</div> : <>
-                <div className="flex flex-wrap items-start justify-between gap-6 border-b border-border pb-8">
-                    <div className="min-w-0 flex-1"><p className="mb-3 text-[11px] font-semibold tracking-[0.22em] text-muted-foreground">PROJECT / {id.slice(0, 6).toUpperCase()}</p>
-                        {editing ? <div className="flex max-w-xl items-center gap-2"><Input autoFocus size="large" maxLength={80} value={draft} onChange={(event) => setDraft(event.target.value)} onPressEnter={saveTitle} /><Button icon={<Check className="size-4" />} onClick={saveTitle} aria-label="保存项目名" /><Button icon={<X className="size-4" />} onClick={() => setEditing(false)} aria-label="取消" /></div> : <div className="flex items-center gap-3"><h1 className="min-w-0 truncate text-4xl font-semibold tracking-[-0.05em] md:text-5xl">{title}</h1><Button type="text" icon={<Pencil className="size-4" />} onClick={() => { setDraft(title); setEditing(true); }} aria-label="重命名项目" /></div>}
-                        <p className="mt-4 text-sm text-muted-foreground">{canvases.length} 张画布 · 创建于 {new Date(root.createdAt).toLocaleDateString("zh-CN")} · 每张画布独立保存</p>
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-6">
+                    <div className="min-w-0 flex-1">
+                        {editing ? <div className="flex max-w-xl items-center gap-2"><Input autoFocus maxLength={80} value={draft} onChange={(event) => setDraft(event.target.value)} onPressEnter={saveTitle} onKeyDown={(event) => { if (event.key === "Escape") setEditing(false); }} /><Button icon={<Check className="size-4" />} onClick={saveTitle} aria-label="保存项目名" /><Button icon={<X className="size-4" />} onClick={() => setEditing(false)} aria-label="取消" /></div> : <h1 className="truncate text-2xl font-semibold tracking-tight">{title}</h1>}
+                        <p className="mt-2 text-sm text-muted-foreground">{canvases.length} 张画布 · 最近修改 {new Date(canvases[0]?.updatedAt || root.updatedAt).toLocaleDateString("zh-CN")}</p>
                     </div>
-                    <div className="flex flex-wrap gap-2"><Button icon={<Download className="size-4" />} onClick={() => void exportCanvasProjects(canvases, title)}>导出项目</Button><Button danger icon={<Trash2 className="size-4" />} onClick={() => setDeleteIds([id])}>删除项目</Button><Button type="primary" icon={<Plus className="size-4" />} onClick={createAndEnter}>新建画布</Button></div>
+                    <div className="flex items-center gap-2"><Button type="primary" icon={<Plus className="size-4" />} onClick={createAndEnter}>新建画布</Button><Dropdown trigger={["click"]} menu={{ items: [
+                        { key: "rename", label: "重命名项目", icon: <Pencil className="size-4" />, onClick: () => { setDraft(title); setEditing(true); } },
+                        { key: "export", label: "导出整个项目", icon: <Download className="size-4" />, onClick: () => void exportProjects(canvases, title) },
+                        { type: "divider" },
+                        { key: "delete", label: "删除项目及全部画布", danger: true, icon: <Trash2 className="size-4" />, onClick: () => setDeleteIds([id]) },
+                    ] }}><Button icon={<MoreHorizontal className="size-4" />} aria-label="项目更多操作" /></Dropdown></div>
                 </div>
-                <section className="grid gap-4 border-b border-border py-7 sm:grid-cols-3"><div><p className="text-[11px] tracking-widest text-muted-foreground">画布 / CANVASES</p><strong className="mt-2 block text-3xl font-semibold">{canvases.length}</strong></div><div><p className="text-[11px] tracking-widest text-muted-foreground">内容节点 / NODES</p><strong className="mt-2 block text-3xl font-semibold">{canvases.reduce((total, item) => total + item.nodes.length, 0)}</strong></div><div><p className="text-[11px] tracking-widest text-muted-foreground">最近更新 / UPDATED</p><strong className="mt-2 block text-lg font-semibold">{new Date(canvases[0]?.updatedAt || root.updatedAt).toLocaleDateString("zh-CN")}</strong></div></section>
-                <div className="mb-5 mt-9 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[11px] font-semibold tracking-[0.2em] text-muted-foreground">YOUR CANVASES</p><h2 className="mt-2 text-2xl font-semibold tracking-tight">项目画布</h2></div>{selectedIds.length ? <div className="flex items-center gap-2"><span className="mr-2 text-xs text-muted-foreground">已选 {selectedIds.length} 张</span><Button size="small" onClick={() => void exportCanvasProjects(canvases.filter((canvas) => selectedIds.includes(canvas.id)), `${title}-选中画布`)}>导出选中</Button><Button size="small" danger onClick={() => setDeleteIds(selectedIds)}>删除选中</Button></div> : <span className="text-xs text-muted-foreground">打开画布继续创作</span>}</div>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{canvases.map((canvas) => <CanvasProjectCard key={canvas.id} project={canvas} />)}<button type="button" onClick={createAndEnter} className="flex min-h-48 flex-col items-center justify-center rounded-[22px] border border-dashed border-border bg-card/70 text-muted-foreground transition hover:border-foreground hover:text-foreground"><span className="mb-3 flex size-11 items-center justify-center rounded-xl bg-muted"><Plus className="size-5" /></span><span className="text-sm font-medium">添加一张画布</span></button></div>
-                <p className="mt-8 flex items-center gap-2 text-xs text-muted-foreground"><Layers3 className="size-4" />该项目内的画布共享项目归属，各自保留节点、连线与创作历史。</p>
+                <div className="mb-5 mt-6 flex flex-wrap items-center justify-between gap-3"><h2 className="text-sm font-medium">全部画布 <span className="ml-1 text-muted-foreground">{canvases.length}</span></h2><div className="flex flex-wrap items-center gap-3"><label className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-muted-foreground focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"><Search className="size-4" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索画布" aria-label="搜索画布" className="w-32 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground sm:w-40" /></label><select aria-label="画布排序" value={sort} onChange={(event) => setSort(event.target.value)} className="h-9 rounded-lg border border-border bg-background px-2 text-xs text-muted-foreground"><option value="updated">最近修改</option><option value="created">最近创建</option><option value="name">画布名称</option></select></div></div>
+                {selectedIds.length ? <div className="mb-5 flex flex-wrap items-center gap-2 rounded-lg bg-muted px-3 py-2"><span className="mr-auto text-xs text-muted-foreground">已选 {selectedIds.length} 张{canDeleteSelection ? "" : " · 首张画布随项目保留"}</span><Button size="small" onClick={() => void exportProjects(canvases.filter((canvas) => selectedIds.includes(canvas.id)), `${title}-选中画布`)}>导出选中</Button><Button size="small" danger disabled={!canDeleteSelection} onClick={() => setDeleteIds(selectedIds)}>删除选中</Button><Button type="text" size="small" onClick={() => clearSelection(selectedIds)}>取消选择</Button></div> : null}
+                {visible.length ? <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{visible.map((canvas) => <CanvasProjectCard key={canvas.id} project={canvas} />)}{!query && <button type="button" onClick={createAndEnter} className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border text-muted-foreground transition hover:border-foreground/50 hover:bg-muted/40 hover:text-foreground"><Plus className="mb-3 size-6" /><span className="text-sm font-medium">新建画布</span></button>}</div> : <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border text-center"><p className="text-sm text-muted-foreground">没有找到匹配的画布</p><Button type="text" className="mt-3" onClick={() => setQuery("")}>清除搜索</Button></div>}
             </>}
+        </div>
         </main>
         <CanvasDeleteProjectsDialog />
-    </WorkspaceShell>;
+    </>;
 }

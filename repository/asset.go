@@ -8,6 +8,15 @@ import (
 )
 
 // ListAssets 按查询条件返回素材分页列表。
+func GetAsset(id string) (model.Asset, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.Asset{}, false, err
+	}
+	return findAsset(db, id)
+}
+
+// ListAssets 按查询条件返回素材分页列表。
 func ListAssets(q model.Query) ([]model.Asset, int64, error) {
 	db, err := DB()
 	if err != nil {

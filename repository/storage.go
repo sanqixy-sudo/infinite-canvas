@@ -24,6 +24,26 @@ func GetStorageObject(id string) (model.StorageObject, error) {
 	return object, err
 }
 
+func CountStorageObjectsForProvider(providerID string) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	err = db.Model(&model.StorageObject{}).Where("provider_id = ?", providerID).Count(&count).Error
+	return count, err
+}
+
+func StorageBytesForProvider(providerID string) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	var bytes int64
+	err = db.Model(&model.StorageObject{}).Where("provider_id = ?", providerID).Select("COALESCE(SUM(bytes), 0)").Scan(&bytes).Error
+	return bytes, err
+}
+
 // DeleteStorageObjectRecord 删除存储对象记录（软删除）。
 func DeleteStorageObjectRecord(id string) error {
 	db, err := DB()

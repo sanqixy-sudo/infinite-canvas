@@ -6,6 +6,7 @@ import { nanoid } from "nanoid";
 import { readImageMeta } from "@/lib/image-utils";
 import { deleteAnonymousStorageFile, uploadAnonymousStorageFile } from "@/services/anonymous-storage";
 import { apiGet } from "@/services/api/request";
+import { getStorageContentUrl, isStorageContentUrl } from "@/services/api/storage";
 import { useUserStore } from "@/stores/use-user-store";
 
 export type UploadedImage = {
@@ -111,7 +112,7 @@ function reportStorageSyncFailure(error: unknown) {
 
 export function canUseGlobalStorage(config: StorageConfig) {
     const user = useUserStore.getState().user;
-    return config.mode === "server_sqlite_s3" && Boolean(user && user.role !== "guest" && (user.role === "admin" || config.allowUserGlobalProvider));
+    return ["local", "r2", "server_sqlite_s3"].includes(config.mode) && Boolean(user && user.role !== "guest" && (user.role === "admin" || config.allowUserGlobalProvider));
 }
 
 function isLocalNetworkHost(hostname: string) {
@@ -247,11 +248,11 @@ export async function resolveImageUrl(storageKey?: string, fallback = "") {
     }
     if (storageKey.startsWith("server:")) {
         const id = storageKey.slice("server:".length);
-        if (fallback && !fallback.startsWith("blob:") && !fallback.includes("direct=1")) return fallback;
+        if (fallback && !fallback.startsWith("blob:") && !fallback.includes("direct=1") && !isStorageContentUrl(fallback)) return fallback;
         const localUrl = await resolveLocalImageUrl(storageKey).catch(() => "");
         if (localUrl) return localUrl;
         const cachedUrl = serverUrls.get(id);
-        if (cachedUrl) return cachedUrl;
+        if (cachedUrl && !isStorageContentUrl(cachedUrl)) return cachedUrl;
         const { getStorageObjectInfo } = await import("@/services/api/storage");
         const info = await getStorageObjectInfo(id).catch(() => null);
         if (!info) return fallback;
@@ -265,7 +266,7 @@ export async function resolveImageUrl(storageKey?: string, fallback = "") {
                 if (!useUserStore.getState().token || !direct.isWebDAVDirectUnavailable(error)) throw error;
             }
         }
-        const url = info.publicUrl || `/api/files/${encodeURIComponent(id)}/content`;
+        const url = info.publicUrl || await getStorageContentUrl(id, info);
         serverUrls.set(id, url);
         return url;
     }
@@ -374,7 +375,7 @@ export async function imageToDataUrl(image: { url?: string; dataUrl?: string; st
         image.url && !image.url.startsWith("blob:") ? image.url : "",
         localUrl,
         resolvedUrl,
-        serverObjectId && !directGuestObject ? `/api/files/${encodeURIComponent(serverObjectId)}/content` : "",
+        serverObjectId && !directGuestObject ? await getStorageContentUrl(serverObjectId).catch(() => "") : "",
     ].filter((url, index, list): url is string => Boolean(url) && list.indexOf(url) === index);
     if (!urls.length) return "";
     let lastError = "";

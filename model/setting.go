@@ -11,6 +11,7 @@ const (
 
 	StorageProviderTypeS3     = "s3"
 	StorageProviderTypeWebDAV = "webdav"
+	StorageProviderTypeLocal  = "local"
 )
 
 // ModelChannel 模型渠道配置。
@@ -77,12 +78,12 @@ type WorkflowEntry struct {
 }
 
 type WorkflowSummary struct {
-	Provider   string  `json:"provider"`
-	Kind       string  `json:"kind"`
-	WorkflowID string  `json:"workflowId"`
-	Title      string  `json:"title"`
-	Capability string  `json:"capability"`
-	Enabled    bool    `json:"enabled"`
+	Provider   string `json:"provider"`
+	Kind       string `json:"kind"`
+	WorkflowID string `json:"workflowId"`
+	Title      string `json:"title"`
+	Capability string `json:"capability"`
+	Enabled    bool   `json:"enabled"`
 }
 
 // ModelCost 模型算力点配置。

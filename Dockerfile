@@ -3,7 +3,7 @@ FROM golang:1.25-alpine AS bridge-build
 
 WORKDIR /app/canvas-agent/native/comfy-bridge
 COPY canvas-agent/native/comfy-bridge ./
-RUN mkdir -p /bridge && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /bridge/InfiniteCanvas-ComfyBridge.exe . \
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build mkdir -p /bridge && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /bridge/InfiniteCanvas-ComfyBridge.exe . \
     && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /bridge/InfiniteCanvas-ComfyBridge-linux-amd64 . \
     && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /bridge/InfiniteCanvas-ComfyBridge-linux-arm64 .
 
@@ -34,7 +34,7 @@ COPY repository ./repository
 COPY router ./router
 COPY service ./service
 COPY main.go ./
-RUN go build -o /server .
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build go build -o /server .
 
 # 运行镜像：Next.js 对外监听 3000，Go 只在容器内部监听 8080。
 FROM node:22-bookworm-slim

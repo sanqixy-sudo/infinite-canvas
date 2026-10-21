@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from "@/services/api/request";
+import { apiGet, apiPost, compactApiParams } from "@/services/api/request";
 
 export const AUTH_TOKEN_KEY = "infinite-canvas-auth-token-v1";
 
@@ -35,4 +35,21 @@ export async function register(payload: AuthPayload) {
 
 export async function fetchCurrentUser(token?: string) {
     return apiGet<AuthUser>("/api/auth/me", undefined, token);
+}
+
+export type CreditLogType = "admin_adjust" | "ai_consume" | "ai_refund";
+
+export type AccountCreditLog = {
+    id: string;
+    type: CreditLogType;
+    amount: number;
+    balance: number;
+    relatedId: string;
+    model: string;
+    remark: string;
+    createdAt: string;
+};
+
+export async function fetchAccountCreditLogs(token: string, query: { page?: number; pageSize?: number; type?: CreditLogType | "" } = {}) {
+    return apiGet<{ items: AccountCreditLog[]; total: number }>("/api/v1/credit-logs", compactApiParams(query), token);
 }

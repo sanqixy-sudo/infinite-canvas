@@ -16,6 +16,7 @@ import type { WorkflowRef } from "@/lib/workflow-channel";
 import { channelProtocolForConfig, defaultConfig, resolveModelForCapability, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { collectImageStorageKeys, deleteStoredImages, resolveImageUrl, uploadImage, uploadRemoteImageToServer, type UploadedImage } from "@/services/image-storage";
 import { downloadRemoteMedia, resolveMediaUrl, uploadMediaFile, uploadRemoteMediaToServer, type UploadedFile } from "@/services/file-storage";
+import { copyLibraryAsset } from "@/services/asset-library-copy";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
@@ -64,6 +65,7 @@ import { AssetPickerModal, type AssetPickerTab } from "../components/asset-picke
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
 import { CANVAS_ASSET_DRAG_TYPE, CanvasSidePanel } from "../components/canvas-side-panel";
 import { DEFAULT_CANVAS_AGENT_PANEL, DEFAULT_CANVAS_SIDE_PANEL, useCanvasStore } from "../stores/use-canvas-store";
+import { useCanvasActivityStore } from "../stores/use-canvas-activity-store";
 import { assistantReferenceContentFromNode, buildNodeMentionReferences, isCanvasReferenceNode } from "../utils/canvas-resource-references";
 import { buildCanvasAgentContext } from "../agent/canvas-agent-context";
 import type { CanvasAgentAction, CanvasAgentToolResult } from "../agent/canvas-agent-tools";
@@ -627,8 +629,9 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             setBackgroundMode(project.backgroundMode);
             setShowImageInfo(project.showImageInfo || false);
             setViewport(project.viewport);
-            setSidePanel(project.sidePanel || DEFAULT_CANVAS_SIDE_PANEL);
-            const restoredAgentPanel = project.agentPanel || DEFAULT_CANVAS_AGENT_PANEL;
+            const compact = window.matchMedia("(max-width: 767px)").matches;
+            setSidePanel(compact ? { ...(project.sidePanel || DEFAULT_CANVAS_SIDE_PANEL), open: false } : project.sidePanel || DEFAULT_CANVAS_SIDE_PANEL);
+            const restoredAgentPanel = compact ? { ...(project.agentPanel || DEFAULT_CANVAS_AGENT_PANEL), open: false } : project.agentPanel || DEFAULT_CANVAS_AGENT_PANEL;
             setAgentPanel(restoredAgentPanel);
             setAssistantMounted(restoredAgentPanel.open);
             historyRef.current = { past: [], future: [] };
@@ -644,6 +647,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             };
             setHistoryState({ canUndo: false, canRedo: false });
             setProjectLoaded(true);
+            useCanvasActivityStore.getState().recordVisit(projectId);
         };
         void restore();
     }, [hydrated, openProject, projectId, router]);
@@ -2903,7 +2907,15 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         [createAudioFileNode, createImageFileNode, createVideoFileNode, screenToCanvas, size.height, size.width],
     );
 
-    function insertAssetAt(payload: InsertAssetPayload, position?: Position, nodeId?: string) {
+    async function insertAssetAt(payload: InsertAssetPayload, position?: Position, nodeId?: string) {
+        if (payload.source === "library" && payload.assetId && (payload.kind === "text" || !payload.storageKey)) {
+            try {
+                payload = (await copyLibraryAsset(payload.assetId)).payload;
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : "公共素材保存失败");
+                return;
+            }
+        }
         const center = position || screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
         if (payload.kind === "text") {
             createNode(CanvasNodeType.Text, position, payload.content, nodeId);
@@ -5062,6 +5074,13 @@ function CanvasTopBar({
 }) {
     const colorTheme = useThemeStore((state) => state.theme);
     const theme = canvasThemes[colorTheme];
+    const router = useRouter();
+    const { id } = useParams<{ id: string }>();
+    const projects = useCanvasStore((state) => state.projects);
+    const canvas = projects.find((item) => item.id === id);
+    const workspaceId = canvas?.workspaceId || id;
+    const workspace = projects.find((item) => item.id === workspaceId);
+    const siblings = projects.filter((item) => item.id === workspaceId || item.workspaceId === workspaceId);
     const titleRef = useRef<HTMLDivElement>(null);
     const accountRef = useRef<HTMLDivElement>(null);
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -5088,7 +5107,7 @@ function CanvasTopBar({
     return (
         <>
             <div className="pointer-events-none absolute left-0 right-0 top-0 z-50 flex h-16 items-center justify-between px-4">
-                <div className="pointer-events-auto flex min-w-0 items-center gap-3">
+                <div className="pointer-events-auto flex min-w-0 items-center gap-1 sm:gap-2">
                     <button type="button" onClick={onToggleSidePanel} className="grid size-7 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }} aria-label={sidePanelOpen ? "收起左侧面板" : "展开左侧面板"}>
                         {sidePanelOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
                     </button>
@@ -5114,7 +5133,9 @@ function CanvasTopBar({
                         </button>
                     </Dropdown>
 
-                    <div ref={titleRef} className="flex min-w-0 items-center gap-2">
+                    <button type="button" onClick={onProjects} className="hidden max-w-32 truncate text-xs opacity-60 transition hover:opacity-100 md:block" style={{ color: theme.node.text }} title="返回所属项目">{workspace?.workspaceTitle || workspace?.title || "项目"}</button>
+                    <span className="hidden text-xs opacity-35 md:block" style={{ color: theme.node.text }}>/</span>
+                    <div ref={titleRef} className="flex min-w-0 items-center gap-1">
                         {isTitleEditing ? (
                             <input
                                 autoFocus
@@ -5125,19 +5146,25 @@ function CanvasTopBar({
                                     if (event.key === "Enter") onFinishTitleEditing();
                                     if (event.key === "Escape") onCancelTitleEditing();
                                 }}
-                                className="max-w-[280px] bg-transparent p-0 text-left text-lg font-semibold tracking-normal outline-none"
+                                className="w-24 bg-transparent p-0 text-left text-sm font-medium outline-none sm:w-48"
                                 style={{ color: theme.node.text }}
                             />
                         ) : (
                             <button
                                 type="button"
-                                className="max-w-[280px] truncate border-b border-dashed border-transparent text-left text-lg font-semibold tracking-normal transition hover:border-current"
+                                className="max-w-24 truncate border-b border-dashed border-transparent text-left text-sm font-medium transition hover:border-current sm:max-w-48"
                                 onDoubleClick={onStartTitleEditing}
                                 title="双击修改画布名称"
                             >
                                 {title}
                             </button>
                         )}
+                        <Dropdown trigger={["click"]} menu={{ selectable: true, selectedKeys: [id], items: [
+                            ...siblings.map((item) => ({ key: item.id, label: item.title, onClick: () => router.push(`/canvas/${item.id}`) })),
+                            { type: "divider" },
+                            { key: "create-canvas", label: "新建画布", icon: <Plus className="size-4" />, onClick: onCreateProject },
+                            { key: "workspace", label: "查看项目全部画布", onClick: onProjects },
+                        ] }}><button type="button" className="grid size-6 shrink-0 place-items-center opacity-60 transition hover:opacity-100" style={{ color: theme.node.text }} aria-label="切换项目画布"><ChevronRight className="size-3.5 rotate-90" /></button></Dropdown>
                     </div>
                 </div>
 
@@ -5158,12 +5185,13 @@ function CanvasTopBar({
                             <span className="h-6 w-px" style={{ background: theme.toolbar.border }} />
                             <Button
                                 type="text"
-                                className="!h-10 !rounded-xl !px-3 !font-medium"
-                                style={{ background: theme.toolbar.panel, color: theme.node.text, boxShadow: "0 10px 30px rgba(28,25,23,.10)" }}
+                                className="!h-8 !px-2 !font-medium"
+                                style={{ color: theme.node.text }}
                                 icon={<Bot className="size-4" />}
                                 onClick={onExpandAssistant}
+                                aria-label="展开创作助手"
                             >
-                                Agent
+                                <span className="hidden sm:inline">助手</span>
                             </Button>
                         </>
                     ) : null}

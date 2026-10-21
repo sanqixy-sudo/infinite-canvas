@@ -12,6 +12,10 @@ func ListPrompts(q model.Query) (model.PromptList, error) {
 	if err != nil {
 		return model.PromptList{}, err
 	}
+	for i := range items {
+		items[i].CoverURL = refreshPublishedStorageURL(items[i].CoverURL)
+		items[i].Preview = refreshPublishedStorageURL(items[i].Preview)
+	}
 	tags, err := repository.ListPromptTags(q)
 	if err != nil {
 		return model.PromptList{}, err

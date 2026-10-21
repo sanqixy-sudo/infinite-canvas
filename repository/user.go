@@ -202,15 +202,29 @@ func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
 }
 
 func ListCreditLogs(q model.Query) ([]model.CreditLog, int64, error) {
+	return listCreditLogs(q, "")
+}
+
+func ListUserCreditLogs(userID string, q model.Query) ([]model.CreditLog, int64, error) {
+	return listCreditLogs(q, userID)
+}
+
+func listCreditLogs(q model.Query, userID string) ([]model.CreditLog, int64, error) {
 	db, err := DB()
 	if err != nil {
 		return nil, 0, err
 	}
 	q.Normalize()
 	tx := db.Model(&model.CreditLog{}).Joins("LEFT JOIN users ON users.id = credit_logs.user_id")
+	if userID != "" {
+		tx = tx.Where("credit_logs.user_id = ?", userID)
+	}
+	if q.Type != "" {
+		tx = tx.Where("credit_logs.type = ?", q.Type)
+	}
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("user_id LIKE ? OR type LIKE ? OR remark LIKE ? OR related_id LIKE ? OR users.username LIKE ? OR users.display_name LIKE ?", like, like, like, like, like, like)
+		tx = tx.Where("(credit_logs.user_id LIKE ? OR credit_logs.type LIKE ? OR remark LIKE ? OR related_id LIKE ? OR users.username LIKE ? OR users.display_name LIKE ?)", like, like, like, like, like, like)
 	}
 	if q.Date != "" {
 		tx = tx.Where("SUBSTR(credit_logs.created_at, 1, 10) = ?", q.Date)

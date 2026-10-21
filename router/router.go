@@ -23,12 +23,16 @@ func New() *gin.Engine {
 	api.GET("/auth/me", middleware.OptionalAuth, gin.WrapF(handler.CurrentUser))
 	api.GET("/settings", gin.WrapF(handler.Settings))
 	api.GET("/storage/config", gin.WrapF(handler.StorageConfig))
-	api.GET("/files/:id", func(c *gin.Context) {
+	api.GET("/files/:id", middleware.UserAuth, func(c *gin.Context) {
 		handler.FileInfo(c.Writer, c.Request, c.Param("id"))
 	})
-	api.GET("/files/:id/content", func(c *gin.Context) {
+	api.GET("/files/:id/content", middleware.StorageReadAuth, func(c *gin.Context) {
 		handler.FileContent(c.Writer, c.Request, c.Param("id"))
 	})
+	api.HEAD("/files/:id/content", middleware.StorageReadAuth, func(c *gin.Context) {
+		handler.FileContent(c.Writer, c.Request, c.Param("id"))
+	})
+	api.DELETE("/files/session", gin.WrapF(handler.ClearStorageSession))
 	api.POST("/ai/direct-request", gin.WrapF(handler.PrepareDirectAIRequest))
 	api.POST("/ai/autodl/workflows", gin.WrapF(handler.AutoDLWorkflows))
 	anonymousFiles := api.Group("/anonymous/files", middleware.AnonymousStorage)
@@ -38,6 +42,7 @@ func New() *gin.Engine {
 		handler.DeleteFile(c.Writer, c.Request, c.Param("id"))
 	})
 	v1 := api.Group("/v1", middleware.UserAuth)
+	v1.GET("/credit-logs", gin.WrapF(handler.UserCreditLogs))
 	v1.POST("/images/generations", gin.WrapF(handler.AIImagesGenerations))
 	v1.POST("/images/edits", gin.WrapF(handler.AIImagesEdits))
 	v1.POST("/responses", gin.WrapF(handler.AIResponses))
@@ -127,6 +132,9 @@ func New() *gin.Engine {
 		handler.AgentSkillFile(c.Writer, c.Request, c.Param("id"))
 	})
 	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
+	api.GET("/assets/:id", func(c *gin.Context) {
+		handler.PublicAsset(c.Writer, c.Request, c.Param("id"))
+	})
 	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))
 
 	admin := api.Group("/admin", middleware.AdminAuth)

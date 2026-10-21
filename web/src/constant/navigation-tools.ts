@@ -18,7 +18,7 @@ export const navigationTools = [
     },
     {
         slug: "music",
-        label: "音乐创作台",
+        label: "音频创作台",
         icon: Music2,
     },
     {

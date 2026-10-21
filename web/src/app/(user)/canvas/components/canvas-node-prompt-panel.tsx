@@ -66,7 +66,8 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const billingModel = workflowRef
         ? `workflow:${workflowRef.scope}:${workflowRef.channelId}:${workflowRef.kind}:${workflowRef.workflowId}`
         : config.model;
-    const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: billingModel, count: mode === "image" ? config.count : 1, seconds: mode === "video" ? config.videoSeconds : undefined });
+    const billingMode = workflowRef ? workflowRef.scope === "system" ? "remote" : "local" : config.channelMode;
+    const credits = requestCreditCost({ channelMode: billingMode, modelCosts, model: billingModel, count: !workflowRef && mode === "image" ? config.count : 1, seconds: !workflowRef && mode === "video" ? config.videoSeconds : undefined });
 
     useEffect(() => {
         setPrompt(sourcePrompt);
@@ -81,7 +82,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
 
     const submit = () => {
         const text = prompt.trim();
-        if (!canSubmit || generating || isStopping) return;
+        if (!canSubmit || generating || isStopping || credits === null) return;
         onGenerate(node.id, mode, text);
     };
 
@@ -145,13 +146,14 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     type="primary"
                     danger={showStop}
                     className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3"
-                    disabled={(isStopping && !stopFailed) || (!canStop && (generating || !canSubmit))}
+                    disabled={(isStopping && !stopFailed) || (!canStop && (generating || !canSubmit || credits === null))}
+                    title={credits === null ? "平台模型尚未配置价格或参数无效，请联系管理员" : "预计扣点，实际以任务流水为准；自动视频时长按 15 秒预估"}
                     onClick={canStop ? () => onStop(node.id) : submit}
                     aria-label={canStop ? stopFailed ? "重试停止" : "停止" : isStopping ? "停止中" : "生成"}
                 >
                     <span className="relative inline-flex">
                         <span className={`flex items-center gap-1.5${showStop ? " invisible" : ""}`}>
-                            <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums"><CreditSymbol />{credits.toLocaleString()}</span>
+                            <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums">{billingMode === "local" ? "自有渠道" : credits === null ? "未定价" : <><CreditSymbol />{credits.toLocaleString()}</>}</span>
                             {generating ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
                         </span>
                         {showStop ? <span className="absolute inset-0 flex items-center justify-center">

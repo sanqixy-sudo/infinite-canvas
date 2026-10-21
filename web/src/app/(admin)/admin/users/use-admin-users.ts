@@ -45,8 +45,14 @@ export function useAdminUsers() {
 
     const creditMutation = useMutation({
         mutationFn: ({ id, credits }: { id: string; credits: number }) => adjustAdminUserCredits(token, id, credits),
-        onSuccess: async () => {
-            await queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+        onSuccess: async (saved) => {
+            const current = useUserStore.getState();
+            if (current.user?.id === saved.id) current.setSession(current.token, { ...current.user, credits: saved.credits });
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["admin", "users"] }),
+                queryClient.invalidateQueries({ queryKey: ["admin", "credit-logs"] }),
+                queryClient.invalidateQueries({ queryKey: ["account", "credits"] }),
+            ]);
             message.success("算力点已调整");
         },
         onError: (error) => message.error(error instanceof Error ? error.message : "调整失败"),
@@ -77,6 +83,7 @@ export function useAdminUsers() {
         pageSize,
         total: data?.total || 0,
         isLoading: query.isFetching || saveMutation.isPending || deleteMutation.isPending || creditMutation.isPending,
+        isAdjustingCredits: creditMutation.isPending,
         searchUsers: (value = keyword) => updateFilters({ keyword: value }),
         changePage: (value: number) => updateFilters({ page: value }),
         changePageSize: (value: number) => updateFilters({ pageSize: value }),

@@ -73,15 +73,19 @@ type StorageCapacityResult struct {
 const defaultStorageCapacityLimitBytes int64 = 9 * 1024 * 1024 * 1024
 
 var (
-	storageCapacityCron *cron.Cron
-	storageCapacityOnce sync.Once
-	storageCapacityMu   sync.Mutex
+	storageCapacityCron  *cron.Cron
+	storageCapacityOnce  sync.Once
+	storageCapacityMu    sync.Mutex
+	localStorageUploadMu sync.Mutex
 )
 
 // HasAdminStorageProvider 检查管理员是否配置了有效的对象存储。
 func HasAdminStorageProvider(storage model.PrivateStorageSetting) bool {
+	if storage.Mode == "local" {
+		return true
+	}
 	for _, provider := range storage.Providers {
-		if provider.Enabled && storageProviderConfigured(provider) {
+		if provider.Type == model.StorageProviderTypeS3 && provider.Enabled && storageProviderConfigured(provider) {
 			return true
 		}
 	}
@@ -132,19 +136,20 @@ func PublicStorageConfig() (model.PublicStorageConfig, error) {
 	settings = normalizeSettings(settings)
 	storage := normalizePrivateStorageSetting(settings.Private.Storage)
 
-	mode := "local_indexeddb"
-	if HasAdminStorageProvider(storage) {
-		mode = "server_sqlite_s3"
-	} else if storage.AllowUserProvider {
-		mode = "hybrid"
-	}
-
-	return model.PublicStorageConfig{PublicStorageSetting: model.PublicStorageSetting{Mode: mode, AllowUserProvider: storage.AllowUserProvider, AllowUserGlobalProvider: storage.AllowUserGlobalProvider}, AutoSyncAllAssets: storage.AutoSyncAllAssets}, nil
+	return model.PublicStorageConfig{PublicStorageSetting: publicStorageSetting(storage), AutoSyncAllAssets: storage.AutoSyncAllAssets}, nil
 }
 
 // StorageObjectInfo 获取存储对象元数据。
-func StorageObjectInfo(id string) (model.StorageObject, error) {
-	return repository.GetStorageObject(id)
+func StorageObjectInfo(ctx context.Context, id string) (StorageObjectDetails, error) {
+	object, err := repository.GetStorageObject(id)
+	if err != nil {
+		return StorageObjectDetails{}, err
+	}
+	if !storageObjectOwnedBy(ctx, object) {
+		return StorageObjectDetails{}, ErrStorageAccessDenied
+	}
+	contentURL, err := storageContentURL(object)
+	return StorageObjectDetails{StorageObject: object, ContentURL: contentURL}, err
 }
 
 // SaveCurrentUserStorageProvider 保存用户配置的存储提供商。
@@ -203,6 +208,9 @@ func UploadStorageObjectWithProvider(ctx context.Context, filename string, conte
 	usingUserProvider := providerInput != nil && storage.AllowUserProvider
 	var provider model.StorageProvider
 	if usingUserProvider {
+		if providerInput.Type != model.StorageProviderTypeS3 && providerInput.Type != model.StorageProviderTypeWebDAV {
+			return UploadedStorageObject{}, safeMessageError{message: "用户存储类型不支持"}
+		}
 		provider = normalizeUserStorageProvider(*providerInput, ctx)
 		if !provider.Enabled || !storageProviderConfigured(provider) {
 			return UploadedStorageObject{}, errors.New("用户对象存储配置不完整")
@@ -214,6 +222,17 @@ func UploadStorageObjectWithProvider(ctx context.Context, filename string, conte
 		provider, err = selectStorageProvider(storage)
 		if err != nil {
 			return UploadedStorageObject{}, errors.New("服务端对象存储未启用")
+		}
+	}
+	if provider.Type == model.StorageProviderTypeLocal {
+		localStorageUploadMu.Lock()
+		defer localStorageUploadMu.Unlock()
+		used, err := repository.StorageBytesForProvider(localStorageProviderID)
+		if err != nil {
+			return UploadedStorageObject{}, err
+		}
+		if used > storage.CapacityLimitBytes-int64(len(data)) {
+			return UploadedStorageObject{}, safeMessageError{message: "服务器本地存储容量已达上限，请联系管理员调整容量或切换 R2"}
 		}
 	}
 	objectID := uuid.NewString()
@@ -240,9 +259,13 @@ func UploadStorageObjectWithProvider(ctx context.Context, filename string, conte
 		MimeType: contentType, Bytes: int64(len(data)), SHA256: hex.EncodeToString(sum[:]), CreatedBy: userID, CreatedAt: now(),
 	}
 	if _, err := repository.SaveStorageObject(object); err != nil {
+		_ = deleteStorageObjectData(provider, objectKey)
 		return UploadedStorageObject{}, err
 	}
-	url := "/api/files/" + objectID + "/content"
+	url, err := storageContentURL(object)
+	if err != nil {
+		return UploadedStorageObject{}, err
+	}
 	if publicURL != "" {
 		url = publicURL
 	}
@@ -305,15 +328,15 @@ func DeleteStorageObject(ctx context.Context, id string, providerInput *StorageO
 		}
 		return err
 	}
-	if user, ok := UserFromContext(ctx); ok && object.CreatedBy != "" && object.CreatedBy != user.ID {
-		return errors.New("无权删除该对象")
+	if !storageObjectOwnedBy(ctx, object) {
+		return ErrStorageAccessDenied
 	}
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return err
 	}
 	storage := normalizePrivateStorageSetting(settings.Private.Storage)
-	providers := storage.Providers
+	providers := append([]model.StorageProvider{localStorageProvider()}, storage.Providers...)
 	if object.CreatedBy != "" && object.CreatedBy != "anonymous" {
 		if config, found, loadErr := repository.GetUserConfig(object.CreatedBy); loadErr == nil && found {
 			providers = append(userStorageProvidersForOwner(config.StorageProvider, object.CreatedBy), providers...)
@@ -367,6 +390,10 @@ func MeasureAdminStorageProvider(index int) (StorageCapacityResult, error) {
 	}
 	settings = normalizeSettings(settings)
 	storage := settings.Private.Storage
+	if index == -1 {
+		bytes, err := measureLocalStorage()
+		return StorageCapacityResult{Bytes: bytes, LimitBytes: storage.CapacityLimitBytes, OverLimit: bytes >= storage.CapacityLimitBytes, CheckedAt: now(), ProviderName: "服务器本地"}, err
+	}
 	if index < 0 || index >= len(storage.Providers) {
 		return StorageCapacityResult{}, errors.New("对象存储配置不存在")
 	}
@@ -464,13 +491,16 @@ func RefreshStorageCapacityScheduler() {
 }
 
 // DownloadStorageObject 下载存储对象内容。
-func DownloadStorageObject(id string, rangeHeader string) (DownloadedStorageObject, error) {
+func DownloadStorageObject(ctx context.Context, id string, rangeHeader string, accessToken string) (DownloadedStorageObject, error) {
 	object, err := repository.GetStorageObject(id)
 	if err != nil {
 		return DownloadedStorageObject{}, err
 	}
+	if !storageObjectOwnedBy(ctx, object) && !validStorageContentToken(object, accessToken) {
+		return DownloadedStorageObject{}, ErrStorageAccessDenied
+	}
 
-	providers := []model.StorageProvider{}
+	providers := []model.StorageProvider{localStorageProvider()}
 	if object.CreatedBy != "" && object.CreatedBy != "anonymous" {
 		if config, found, loadErr := repository.GetUserConfig(object.CreatedBy); loadErr == nil && found {
 			providers = append(providers, userStorageProvidersForOwner(config.StorageProvider, object.CreatedBy)...)
@@ -483,6 +513,8 @@ func DownloadStorageObject(id string, rangeHeader string) (DownloadedStorageObje
 		var stream storageObjectStream
 		var readErr error
 		switch provider.Type {
+		case model.StorageProviderTypeLocal:
+			stream, readErr = getLocalObjectStream(object.ObjectKey, rangeHeader)
 		case model.StorageProviderTypeS3:
 			stream, readErr = getS3ObjectStream(provider, object.ObjectKey, rangeHeader)
 		case model.StorageProviderTypeWebDAV:
@@ -581,9 +613,12 @@ func parseStorageByteRange(value string, size int64) (storageByteRange, bool) {
 
 // selectStorageProvider 按权重选择一个启用的存储提供商。
 func selectStorageProvider(storage model.PrivateStorageSetting) (model.StorageProvider, error) {
+	if storage.Mode == "local" {
+		return localStorageProvider(), nil
+	}
 	var candidates []model.StorageProvider
 	for _, provider := range storage.Providers {
-		if provider.Enabled && storageProviderConfigured(provider) {
+		if provider.Type == model.StorageProviderTypeS3 && provider.Enabled && storageProviderConfigured(provider) {
 			for i := 0; i < provider.Weight; i++ {
 				candidates = append(candidates, provider)
 			}
@@ -596,6 +631,9 @@ func selectStorageProvider(storage model.PrivateStorageSetting) (model.StoragePr
 }
 
 func storageProviderConfigured(provider model.StorageProvider) bool {
+	if provider.Type == model.StorageProviderTypeLocal {
+		return provider.ID == localStorageProviderID
+	}
 	if provider.Endpoint == "" {
 		return false
 	}
@@ -611,6 +649,8 @@ func storageProviderConfigured(provider model.StorageProvider) bool {
 
 func putStorageObject(provider model.StorageProvider, objectKey string, contentType string, data []byte) error {
 	switch provider.Type {
+	case model.StorageProviderTypeLocal:
+		return putLocalObject(objectKey, data)
 	case model.StorageProviderTypeS3:
 		return putS3Object(provider, objectKey, contentType, data)
 	case model.StorageProviderTypeWebDAV:
@@ -622,6 +662,8 @@ func putStorageObject(provider model.StorageProvider, objectKey string, contentT
 
 func deleteStorageObjectData(provider model.StorageProvider, objectKey string) error {
 	switch provider.Type {
+	case model.StorageProviderTypeLocal:
+		return deleteLocalObject(objectKey)
 	case model.StorageProviderTypeS3:
 		return deleteS3Object(provider, objectKey)
 	case model.StorageProviderTypeWebDAV:
@@ -886,7 +928,9 @@ func findStorageProviderForObject(object model.StorageObject, providers []model.
 		if object.ProviderID != "" && provider.ID == object.ProviderID {
 			return provider, true
 		}
-		if object.Bucket != "" && provider.Bucket == object.Bucket {
+	}
+	for _, provider := range providers {
+		if object.ProviderID == "" && object.Bucket != "" && provider.Bucket == object.Bucket {
 			if object.PublicURL == "" || provider.PublicBaseURL == "" || strings.HasPrefix(object.PublicURL, strings.TrimRight(provider.PublicBaseURL, "/")+"/") {
 				return provider, true
 			}

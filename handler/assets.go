@@ -2,11 +2,26 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/tigerowo/infinite-canvas/model"
 	"github.com/tigerowo/infinite-canvas/service"
 )
+
+func PublicAsset(w http.ResponseWriter, r *http.Request, id string) {
+	item, err := service.PublicAsset(id)
+	if errors.Is(err, service.ErrPublicAssetNotFound) {
+		FailWithStatus(w, http.StatusNotFound, "素材已下架或不存在")
+		return
+	}
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	OK(w, item)
+}
 
 func Assets(w http.ResponseWriter, r *http.Request) {
 	result, err := service.ListAssets(parseQuery(r))

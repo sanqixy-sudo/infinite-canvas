@@ -83,13 +83,13 @@ description: 当前后端主要数据表与字段说明
 
 ### storage_objects
 
-S3/R2 与 WebDAV 共用的媒体文件索引表，不保存画布、素材列表或生成记录。
+服务器本地、S3/R2 与 WebDAV 共用的媒体文件索引表，不保存画布、素材列表或生成记录。服务器本地使用固定 `provider_id=storage-local`，相对文件路径保存在 `object_key`，根目录由 `LOCAL_STORAGE_DIR` 指定，默认 `data/storage`；Docker 中由原有 `/app/data` 挂载持久化。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 文件 ID，前端存储 key 使用 `server:<id>` |
-| `provider_id` | string | 创建文件时使用的 S3/R2 或 WebDAV Provider ID |
-| `bucket` | string | S3/R2 Bucket；WebDAV 为空 |
+| `provider_id` | string | 创建文件时使用的本地、S3/R2 或 WebDAV Provider ID；切换默认模式不修改旧对象 |
+| `bucket` | string | S3/R2 Bucket；本地和 WebDAV 为空 |
 | `object_key` | string | Provider 内相对对象路径，唯一索引 |
 | `public_url` | string | S3/R2 可选公开地址；WebDAV 为空并通过 `/api/files/:id/content` 读取 |
 | `mime_type` | string | 媒体 MIME 类型 |
@@ -380,7 +380,7 @@ Bridge 持久化请求队列表。普通执行请求由服务端按设备分配�
 
 `public.value` 常放前端展示和可公开读取的配置，例如模型列表、登录开关等。  
 `private.value` 常放渠道密钥、登录密钥、后台内部开关等。
-`private.value.storage.autoSyncAllAssets` 为“全部素材云端同步”开关，默认 `false`，控制前端新增媒体和生成结果的自动转存；使用现有配置 JSON 保存，不增加数据表。
+`private.value.storage.mode` 为 `local`（默认服务器本地）或 `r2`。新默认配置开启登录用户使用平台存储及新增媒体自动转存；匿名用户仍使用浏览器本地保存。`autoSyncAllAssets` 控制自动转存，`capacityLimitBytes` 控制总容量，默认 9 GB。配置保存在现有 JSON 中，不增加数据表；切换模式只影响新上传，旧渠道存在文件引用时必须保留原配置。
 
 当前系统设置接口会按后端结构体序列化和反序列化已知字段；数据库 JSON 中额外存在的旧字段会被忽略。
 
@@ -396,7 +396,7 @@ Bridge 持久化请求队列表。普通执行请求由服务端按设备分配�
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型列表 |
-| `availableWorkflows` | string[] | 对用户开放的系统工作流标识列表；空列表表示开放全部已启用工作流，非空时只开放勾选项 |
+| `availableWorkflows` | string[] | 对用户开放的系统工作流标识列表；只开放显式勾选且所在渠道启用的工作流 |
 | `modelCosts` | object[] | 模型算力点配置 |
 | `defaultModel` | string | 默认模型 |
 | `defaultImageModel` | string | 默认图片模型 |
@@ -410,7 +410,7 @@ Bridge 持久化请求队列表。普通执行请求由服务端按设备分配�
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `model` | string | 模型名称 |
-| `credits` | number | 图片每张、视频每秒、文本和音频每次调用预扣的算力点，最多保留两位小数；视频智能时长 `-1` 按 15 秒计算，未配置默认不扣除 |
+| `credits` | number | 图片每张、视频每秒、文本和音频每次调用预扣的算力点，工作流按次；最多两位小数。视频小数秒向上取整，智能时长 `-1` 按 15 秒计算；未配置拒绝调用，显式 0 才免费 |
 
 `auth.linuxDo` 当前字段：
 
@@ -465,7 +465,7 @@ RunningHub/ComfyUI 不加入上述普通模型筛选：系统工作流公开列�
 
 ### credit_logs
 
-用户算力点变更流水表。当前记录后台手动调整、模型调用预扣和模型调用失败返还。
+用户算力点变更流水表。当前记录后台手动调整、模型调用预扣和模型调用失败返还。流水作为只读审计记录，由对应余额事务生成；后台不能独立新增、编辑或删除流水，用户仅能通过本人接口读取自己的记录。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |

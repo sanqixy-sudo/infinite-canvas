@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 
 import { deleteAnonymousStorageFile, uploadAnonymousStorageFile } from "@/services/anonymous-storage";
 import { apiGet } from "@/services/api/request";
+import { getStorageContentUrl, isStorageContentUrl } from "@/services/api/storage";
 import { autoSyncToCloud, canUseGlobalStorage, clearAutoSyncCache, getProxyUrl, loadUserStorageProvider, toProviderPayload, type StorageConfig, type UserWebDAVStorageProvider } from "@/services/image-storage";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -14,9 +15,9 @@ const store = localforage.createInstance({ name: "infinite-canvas", storeName: "
 const objectUrls = new Map<string, string>();
 let storageConfigPromise: Promise<StorageConfig> | null = null;
 
-export async function uploadMediaFile(input: string | Blob, prefix = "file", syncId?: string, tokenOverride?: string): Promise<UploadedFile> {
+export async function uploadMediaFile(input: string | Blob, prefix = "file", syncId?: string, tokenOverride?: string, localOnly = false): Promise<UploadedFile> {
     const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
-    const uploaded = await autoSyncToCloud(syncId || blob, async () => {
+    const uploaded = localOnly ? null : await autoSyncToCloud(syncId || blob, async () => {
         const metadataUrl = blob.type.startsWith("video/") ? URL.createObjectURL(blob) : undefined;
         try {
             return await uploadMediaBlobToServer(blob, input instanceof File ? input.name : prefix, metadataUrl, tokenOverride);
@@ -115,8 +116,8 @@ export function clearStorageConfigCache() {
     storageConfigPromise = null;
 }
 
-export async function uploadMediaBlob(blob: Blob, filename: string): Promise<UploadedFile> {
-    return uploadMediaBlobToServer(blob, filename);
+export async function uploadMediaBlob(blob: Blob, filename: string, tokenOverride?: string): Promise<UploadedFile> {
+    return uploadMediaBlobToServer(blob, filename, undefined, tokenOverride);
 }
 
 export async function resolveMediaUrl(storageKey?: string, fallback = "") {
@@ -137,7 +138,7 @@ export async function resolveMediaUrl(storageKey?: string, fallback = "") {
     }
     if (storageKey.startsWith("server:")) {
         const id = storageKey.slice("server:".length);
-        if (fallback && !fallback.startsWith("blob:") && !fallback.includes("direct=1") && !fallback.startsWith("/webdav-media/")) return fallback;
+        if (fallback && !fallback.startsWith("blob:") && !fallback.includes("direct=1") && !fallback.startsWith("/webdav-media/") && !isStorageContentUrl(fallback)) return fallback;
         const { getStorageObjectInfo } = await import("@/services/api/storage");
         const info = await getStorageObjectInfo(id).catch(() => null);
         if (!info) return fallback;
@@ -150,7 +151,7 @@ export async function resolveMediaUrl(storageKey?: string, fallback = "") {
                 if (!useUserStore.getState().token || !direct.isWebDAVDirectUnavailable(error)) throw error;
             }
         }
-        const url = info.publicUrl || `/api/files/${encodeURIComponent(id)}/content`;
+        const url = info.publicUrl || await getStorageContentUrl(id, info);
         return url;
     }
     return fallback;

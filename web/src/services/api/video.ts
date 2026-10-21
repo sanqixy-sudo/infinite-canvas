@@ -152,7 +152,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
 }
 
 async function createTranslatedVideoTask(config: AiConfig, match: MatchedTranslation, prompt: string, references: Required<VideoReferenceInput>, options: VideoTaskCreateOptions, onProgress?: VideoProgressHandler): Promise<CreatedVideoGenerationTask> {
-    const imageURL = async (image: ReferenceImage) => publicHttpUrl(image.url) || publicHttpUrl(image.dataUrl) || imageToDataUrl(image);
+    const imageURL = async (image: ReferenceImage) => publicHttpUrl(await resolveImageUrl(image.storageKey, image.url || image.dataUrl || "")) || imageToDataUrl(image);
     const mediaURL = async (media: ReferenceAudio) => translationMediaAddress(await resolveMediaUrl(media.storageKey, media.url));
     const input: TranslationInput = {
         kind: "video",
@@ -724,7 +724,7 @@ async function normalizeKIEKlingElementList(value: AiConfig["videoElementList"] 
 async function elementReferenceToInputUrl(reference: VideoElementReference) {
     if (reference.kind === "image") {
         const resolvedUrl = await resolveImageUrl(reference.storageKey, "");
-        for (const url of [reference.url, resolvedUrl]) {
+        for (const url of [resolvedUrl, reference.url]) {
             const publicUrl = publicHttpUrl(url);
             if (publicUrl) return publicUrl;
         }
@@ -753,7 +753,7 @@ async function imageReferenceToFile(image: ReferenceImage) {
 
 async function imageReferenceToFormValue(image: ReferenceImage) {
     const resolvedUrl = await resolveImageUrl(image.storageKey, "");
-    for (const url of [image.url, resolvedUrl, image.dataUrl]) {
+    for (const url of [resolvedUrl, image.url, image.dataUrl]) {
         const publicUrl = publicHttpUrl(url);
         if (publicUrl) return publicUrl;
     }
@@ -777,7 +777,7 @@ async function mediaReferenceToFormValue(media: ReferenceVideo | ReferenceAudio)
 
 async function imageToAgnesReference(image: ReferenceImage) {
     const resolvedUrl = await resolveImageUrl(image.storageKey, "");
-    for (const url of [image.dataUrl, image.url, resolvedUrl]) {
+    for (const url of [resolvedUrl, image.dataUrl, image.url]) {
         const publicUrl = publicHttpUrl(url);
         if (publicUrl) return publicUrl;
     }
@@ -788,7 +788,7 @@ async function agnesVideoV25ReferenceUrl(reference: ReferenceImage | ReferenceVi
     const resolvedUrl = "dataUrl" in reference
         ? await resolveImageUrl(reference.storageKey, reference.url || "")
         : await resolveMediaUrl(reference.storageKey, reference.url);
-    const url = publicHttpUrl(reference.url) || ("dataUrl" in reference ? publicHttpUrl(reference.dataUrl) : "") || publicHttpUrl(resolvedUrl);
+    const url = publicHttpUrl(resolvedUrl) || publicHttpUrl(reference.url) || ("dataUrl" in reference ? publicHttpUrl(reference.dataUrl) : "");
     if (!url) throw new VideoRequestError("Agnes Video 2.5 的参考素材必须具有公网访问地址");
     return url;
 }

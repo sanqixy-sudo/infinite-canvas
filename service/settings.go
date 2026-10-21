@@ -12,8 +12,8 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"sort"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -57,12 +57,19 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	keepPrivateAuthSecrets(&settings, saved)
 	keepPrivateStorageSecrets(&settings, saved)
 	settings.Public = normalizePublicSettingWithChannels(settings.Public, settings.Private.Channels)
+	settings.Public.Storage = publicStorageSetting(settings.Private.Storage)
 	for _, channel := range settings.Private.Channels {
 		if _, err := ParameterTranslationModels(channel.ParameterTranslation); err != nil {
 			return model.Settings{}, fmt.Errorf("渠道 %s：%w", channel.Name, err)
 		}
 	}
 	if err := validateEnabledStorageProviderTypes(settings.Private.Storage.Providers); err != nil {
+		return model.Settings{}, err
+	}
+	if err := validateStorageMode(settings.Private.Storage); err != nil {
+		return model.Settings{}, err
+	}
+	if err := protectStoredProviderLocations(saved.Private.Storage, settings.Private.Storage); err != nil {
 		return model.Settings{}, err
 	}
 	for _, provider := range settings.Private.Storage.Providers {
@@ -131,6 +138,7 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 func normalizeSettings(settings model.Settings) model.Settings {
 	settings.Private = normalizePrivateSetting(settings.Private)
 	settings.Public = normalizePublicSettingWithChannels(settings.Public, settings.Private.Channels)
+	settings.Public.Storage = publicStorageSetting(settings.Private.Storage)
 	return settings
 }
 
@@ -1032,7 +1040,14 @@ func findSavedStorageProvider(provider model.StorageProvider, saved []model.Stor
 
 func validateEnabledStorageProviderTypes(providers []model.StorageProvider) error {
 	enabledType := ""
+	ids := map[string]bool{}
 	for _, provider := range providers {
+		if provider.ID == localStorageProviderID || provider.ID != "" && ids[provider.ID] {
+			return safeMessageError{message: "存储配置 ID 重复或使用了保留名称"}
+		}
+		if provider.ID != "" {
+			ids[provider.ID] = true
+		}
 		if provider.Type != model.StorageProviderTypeS3 && provider.Type != model.StorageProviderTypeWebDAV {
 			return safeMessageError{message: "存储类型不支持"}
 		}
@@ -1051,9 +1066,16 @@ func validateEnabledStorageProviderTypes(providers []model.StorageProvider) erro
 }
 
 func normalizePrivateStorageSetting(setting model.PrivateStorageSetting) model.PrivateStorageSetting {
-	if setting.Mode == "" {
-		setting.Mode = "local_indexeddb"
+	if setting.Mode == "" || setting.Mode == "local_indexeddb" || setting.Mode == "hybrid" || setting.Mode == "server_sqlite_s3" {
+		setting.Mode = "local"
 		setting.AllowUserGlobalProvider = true
+		setting.AutoSyncAllAssets = true
+		for _, provider := range setting.Providers {
+			if provider.Enabled && provider.Type == model.StorageProviderTypeS3 {
+				setting.Mode = "r2"
+				break
+			}
+		}
 	}
 	if setting.CapacityLimitBytes <= 0 {
 		setting.CapacityLimitBytes = 9 * 1024 * 1024 * 1024
@@ -1167,7 +1189,7 @@ func publicChannelInfos(channels []model.ModelChannel, availableModels, availabl
 			if len(workflows) > 0 {
 				result = append(result, model.PublicModelChannelInfo{
 					ID: channel.ID, Protocol: channel.Protocol, Name: channel.Name,
-					Models: []string{}, Workflows: workflows,
+					Models: []string{}, Workflows: workflows, Enabled: channel.Enabled,
 				})
 			}
 			continue

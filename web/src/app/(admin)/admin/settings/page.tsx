@@ -50,9 +50,9 @@ const emptySettings: AdminSettings = {
             allowUserRemoteChannel: false,
         },
         auth: { allowRegister: true, linuxDo: { enabled: false } },
-        storage: { mode: "local_indexeddb", allowUserProvider: false },
+        storage: { mode: "local", allowUserProvider: false },
     },
-    private: { channels: [], promptSync: { enabled: true, cron: "0 0 * * *" }, aiLog: { localDirectReportEnabled: false, cleanup: { enabled: false, retentionDays: 14, cron: "0 3 * * *" } }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, storage: { mode: "local_indexeddb", allowUserProvider: false, allowUserGlobalProvider: true, autoSyncAllAssets: false, providers: [], roundRobinCursor: 0, capacityCheck: { enabled: false, cron: "0 */6 * * *" }, capacityLimitBytes: 9 * 1024 * 1024 * 1024 } },
+    private: { channels: [], promptSync: { enabled: true, cron: "0 0 * * *" }, aiLog: { localDirectReportEnabled: false, cleanup: { enabled: false, retentionDays: 14, cron: "0 3 * * *" } }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, storage: { mode: "local", allowUserProvider: false, allowUserGlobalProvider: true, autoSyncAllAssets: true, providers: [], roundRobinCursor: 0, capacityCheck: { enabled: false, cron: "0 */6 * * *" }, capacityLimitBytes: 9 * 1024 * 1024 * 1024 } },
 };
 const emptyChannel: AdminModelChannel = { id: "", protocol: "openai", name: "", baseUrl: modelChannelDefaultBaseUrls.openai, apiKey: "", models: [], weight: 1, timeout: 600, enabled: true, remark: "" };
 const emptyS3StorageProvider: AdminStorageProvider = { id: "", name: "", type: "s3", endpoint: "", region: "auto", bucket: "", accessKeyId: "", secretAccessKey: "", publicBaseUrl: "", pathPrefix: "canvas", username: "", password: "", weight: 1, enabled: true, ownerUserId: "", capacityBytes: 0, capacityCheckedAt: "", capacityExceeded: false };
@@ -82,6 +82,7 @@ export default function AdminSettingsPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [measuringProviderIndex, setMeasuringProviderIndex] = useState<number | null>(null);
+    const [localStorageBytes, setLocalStorageBytes] = useState<number | null>(null);
     const [modelCosts, setModelCosts] = useState<AdminModelCost[]>([]);
     const [knownModels, setKnownModels] = useState<string[]>([]);
     const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
@@ -368,6 +369,11 @@ export default function AdminSettingsPage() {
         setMeasuringProviderIndex(index);
         try {
             const result = await measureAdminStorageProvider(token, { index });
+            if (index === -1) {
+                setLocalStorageBytes(result.bytes);
+                message.success(`服务器本地文件占用 ${formatStorageBytes(result.bytes)}`);
+                return;
+            }
             for (const [key, value] of Object.entries({ capacityBytes: result.bytes, capacityCheckedAt: result.checkedAt, capacityExceeded: result.overLimit })) {
                 form.setFieldValue(["private", "storage", "providers", index, key], value);
             }
@@ -644,8 +650,8 @@ export default function AdminSettingsPage() {
                                 <Card size="small" title="数据存储">
                                     <Row gutter={16}>
                                         <Col xs={24} md={6}>
-                                            <Form.Item label="存储模式" extra="根据对象存储配置和启用状态自动识别。">
-                                                <Input disabled value="自动识别 (动态切换)" />
+                                            <Form.Item name={["private", "storage", "mode"]} label="存储模式" extra="默认本地，切换仅影响后续上传，已有文件继续从原位置读取。">
+                                                <Select options={[{ value: "local", label: "本地存储（默认）" }, { value: "r2", label: "R2 / S3 对象存储" }]} />
                                             </Form.Item>
                                         </Col>
                                         <Col xs={24} md={6}>
@@ -654,12 +660,12 @@ export default function AdminSettingsPage() {
                                             </Form.Item>
                                         </Col>
                                         <Col xs={24} md={6}>
-                                            <Form.Item name={["private", "storage", "allowUserGlobalProvider"]} label="允许用户使用全局配置渠道" valuePropName="checked">
+                                            <Form.Item name={["private", "storage", "allowUserGlobalProvider"]} label="允许登录用户使用站点存储" valuePropName="checked">
                                                 <Switch />
                                             </Form.Item>
                                         </Col>
                                         <Col xs={24} md={6}>
-                                            <Form.Item name={["private", "storage", "autoSyncAllAssets"]} label="全部素材云端同步" extra="上传、导入及生成的图片、视频、音频自动同步到可用云存储；关闭保持原有行为" valuePropName="checked">
+                                            <Form.Item name={["private", "storage", "autoSyncAllAssets"]} label="自动保存生成与导入素材" extra="登录后按所选模式保存到服务器磁盘或 R2，匿名素材保留在浏览器本地。" valuePropName="checked">
                                                 <Switch />
                                             </Form.Item>
                                         </Col>
@@ -674,21 +680,22 @@ export default function AdminSettingsPage() {
                                             </Form.Item>
                                         </Col>
                                         <Col xs={24} md={8}>
-                                            <Form.Item name={["private", "storage", "capacityLimitBytes"]} label="容量上限(字节)" extra="默认 9GB，达到上限后会自动禁用该配置。">
+                                            <Form.Item name={["private", "storage", "capacityLimitBytes"]} label="容量上限(字节)" extra="默认 9GB。本地达到上限后拒绝新上传，R2 统计超限后停用新上传，已有文件仍可读取。">
                                                 <InputNumber min={1} className="!w-full" />
                                             </Form.Item>
                                         </Col>
                                     </Row>
+                                    <Flex align="center" gap={12} wrap className="mb-4">
+                                        <Typography.Text type="secondary">本地文件目录：data/storage（Docker 使用 data 持久化挂载）。{localStorageBytes === null ? "" : `当前占用 ${formatStorageBytes(localStorageBytes)}。`}</Typography.Text>
+                                        <Button size="small" loading={measuringProviderIndex === -1} onClick={() => void measureStorageProviderAt(-1)}>查看本地容量</Button>
+                                    </Flex>
                                     <Form.List name={["private", "storage", "providers"]}>
                                         {(fields, { add, remove }) => (
                                             <Flex vertical gap={12}>
                                                 <Button icon={<PlusOutlined />} onClick={() => add(newAdminStorageProvider("s3", storageProviders))}>
                                                     新增 S3/R2 配置
                                                 </Button>
-                                                <Button icon={<PlusOutlined />} onClick={() => add(newAdminStorageProvider("webdav", storageProviders))}>
-                                                    新增 WebDAV 配置
-                                                </Button>
-                                                <Typography.Text type="secondary">R2 先填写 Endpoint、Region（auto）、Bucket 和访问密钥并保存，再统计容量、开启配置。新建 R2 配置默认停用，避免未填完就切换存储。</Typography.Text>
+                                                <Typography.Text type="secondary">R2 配置完成并启用后再切换模式。已有文件引用的配置请保留，可关闭启用阻止新上传。公开访问域名留空时通过临时凭证读取；填写公开域名代表文件可由该域名公开访问。</Typography.Text>
                                                 {fields.map((field) => {
                                                     const provider = storageProviders[field.name] || emptyS3StorageProvider;
                                                     const isWebDAV = provider.type === "webdav";
@@ -1129,7 +1136,7 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
             },
         },
         storage: {
-            mode: setting.storage?.mode || "local_indexeddb",
+            mode: setting.storage?.mode || "local",
             allowUserProvider: setting.storage?.allowUserProvider === true,
         },
     };
@@ -1161,7 +1168,7 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             },
         },
         storage: {
-            mode: setting.storage?.mode || "local_indexeddb",
+            mode: setting.storage?.mode || "local",
             allowUserProvider: setting.storage?.allowUserProvider === true,
             allowUserGlobalProvider: setting.storage?.allowUserGlobalProvider === true,
             autoSyncAllAssets: setting.storage?.autoSyncAllAssets === true,

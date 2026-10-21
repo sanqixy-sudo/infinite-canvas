@@ -1,5 +1,6 @@
 import { apiDelete, apiGet, apiPost } from "@/services/api/request";
 import type { UserWebDAVStorageProvider } from "@/services/image-storage";
+import { useUserStore } from "@/stores/use-user-store";
 
 export type RegisteredStorageObject = {
     url: string;
@@ -15,10 +16,32 @@ export type StorageObjectInfo = {
     mimeType: string;
     bytes: number;
     direct: boolean;
+    contentUrl: string;
 };
 
 export function getStorageObjectInfo(id: string) {
-    return apiGet<StorageObjectInfo>(`/api/files/${encodeURIComponent(id)}`);
+    return apiGet<StorageObjectInfo>(`/api/files/${encodeURIComponent(id)}`, undefined, useUserStore.getState().token);
+}
+
+const contentUrls = new Map<string, { url: string; expiresAt: number }>();
+
+export function isStorageContentUrl(value: string) {
+    try {
+        const url = new URL(value, window.location.origin);
+        return url.origin === window.location.origin && /^\/api\/files\/[^/]+\/content$/.test(url.pathname);
+    } catch {
+        return false;
+    }
+}
+
+export async function getStorageContentUrl(id: string, details?: StorageObjectInfo) {
+    const key = `${useUserStore.getState().token}:${id}`;
+    const cached = contentUrls.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.url;
+    const info = details || await getStorageObjectInfo(id);
+    const url = info.publicUrl || info.contentUrl;
+    contentUrls.set(key, { url, expiresAt: Date.now() + 50 * 60 * 1000 });
+    return url;
 }
 
 export function registerDirectStorageObject(

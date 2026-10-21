@@ -3,9 +3,10 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { AppTopNav } from "@/components/layout/app-top-nav";
+import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { fetchUserConfig } from "@/services/api/user-config";
 import { useUserStore } from "@/stores/use-user-store";
+import { WorkspaceShell } from "./canvas/components/workspace-shell";
 
 const protectedPrefixes = ["/asset-library"];
 
@@ -16,6 +17,8 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     const isReady = useUserStore((state) => state.isReady);
     const wasLoggedOutRef = useRef(false);
     const isProtectedPage = protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+    const focused = /^\/canvas\/[^/]+$/.test(pathname) || pathname === "/tokendance/callback";
+    const content = isProtectedPage && (!isReady || !user) ? null : children;
 
     useEffect(() => {
         if (!isReady || !isProtectedPage || user) return;
@@ -51,8 +54,8 @@ export default function UserLayout({ children }: { children: ReactNode }) {
 
     return (
         <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
-            <AppTopNav />
-            <div className="min-h-0 flex-1 overflow-hidden">{isProtectedPage && (!isReady || !user) ? null : children}</div>
+            <div className="min-h-0 flex-1 overflow-hidden">{focused ? content : <WorkspaceShell>{content}</WorkspaceShell>}</div>
+            <AppConfigModal />
         </div>
     );
 }

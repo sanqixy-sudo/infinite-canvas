@@ -3,6 +3,7 @@ import { apiPost } from "@/services/api/request";
 import { resolveMediaUrl, uploadRemoteMediaToServer } from "@/services/file-storage";
 import { resolveImageUrl } from "@/services/image-storage";
 import { getStorageObjectInfo } from "@/services/api/storage";
+import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { buildApiUrl, localChannelForActiveModel, type AiConfig, type DirectAIProvider } from "@/stores/use-config-store";
@@ -24,6 +25,10 @@ const DIRECT_REFERENCE_HOST = "direct-reference.invalid";
 const DIRECT_IMAGE_POLL_INTERVAL_MS = 2000;
 
 export async function autoDLReferenceURL(reference: ReferenceImage | ReferenceVideo | ReferenceAudio, providerName = "AutoDL") {
+    if (useUserStore.getState().token && reference.storageKey?.startsWith("server:") && !reference.storageKey.startsWith("server:webdav:")) {
+        const storedUrl = await storedReferenceURL(reference.storageKey);
+        if (storedUrl) return storedUrl;
+    }
     for (const value of [reference.url, "dataUrl" in reference ? reference.dataUrl : ""]) {
         const url = publicReferenceURL(value);
         if (url) return url;
@@ -44,7 +49,7 @@ export async function autoDLReferenceURL(reference: ReferenceImage | ReferenceVi
 async function storedReferenceURL(storageKey?: string) {
     if (!storageKey?.startsWith("server:") || storageKey.startsWith("server:webdav:")) return "";
     const info = await getStorageObjectInfo(storageKey.slice("server:".length));
-    return publicReferenceURL(info.publicUrl);
+    return publicReferenceURL(info.publicUrl || new URL(info.contentUrl, window.location.origin).href);
 }
 
 function publicReferenceURL(value?: string) {

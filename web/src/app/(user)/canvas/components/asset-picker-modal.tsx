@@ -10,6 +10,7 @@ import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { fetchAssetLibrary, type AssetLibraryItem } from "@/services/api/assets";
 import { uploadAssetMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
+import { copyLibraryAsset } from "@/services/asset-library-copy";
 import type { InsertAssetPayload } from "../types";
 
 export type { InsertAssetPayload } from "../types";
@@ -73,17 +74,10 @@ function LibraryTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => v
     const handleInsert = async (asset: AssetLibraryItem) => {
         try {
             setInserting(asset.id);
-            if (asset.type === "text") {
-                onInsert({ kind: "text", content: asset.content, title: asset.title, source: "library" });
-            } else if (asset.type === "video") {
-                onInsert({ kind: "video", url: asset.url, title: asset.title, source: "library" });
-            } else if (asset.type === "audio") {
-                onInsert({ kind: "audio", url: asset.url, title: asset.title, source: "library" });
-            } else {
-                onInsert({ kind: "image", dataUrl: asset.url, title: asset.title, source: "library" });
-            }
-        } catch {
-            message.error("插入失败");
+            const { payload } = await copyLibraryAsset(asset.id);
+            await onInsert(payload);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "插入失败");
         } finally {
             setInserting(null);
         }

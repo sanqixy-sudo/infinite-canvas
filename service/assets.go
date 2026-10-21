@@ -1,16 +1,36 @@
 package service
 
 import (
+	"errors"
 	"time"
 
 	"github.com/tigerowo/infinite-canvas/model"
 	"github.com/tigerowo/infinite-canvas/repository"
 )
 
+var ErrPublicAssetNotFound = errors.New("素材已下架或不存在")
+
+func PublicAsset(id string) (model.Asset, error) {
+	item, found, err := repository.GetAsset(id)
+	if err != nil {
+		return model.Asset{}, err
+	}
+	if !found {
+		return model.Asset{}, ErrPublicAssetNotFound
+	}
+	item.CoverURL = refreshPublishedStorageURL(item.CoverURL)
+	item.URL = refreshPublishedStorageURL(item.URL)
+	return item, nil
+}
+
 func ListAssets(q model.Query) (model.AssetList, error) {
 	items, total, err := repository.ListAssets(q)
 	if err != nil {
 		return model.AssetList{}, err
+	}
+	for i := range items {
+		items[i].CoverURL = refreshPublishedStorageURL(items[i].CoverURL)
+		items[i].URL = refreshPublishedStorageURL(items[i].URL)
 	}
 	tags, categories, err := repository.ListAssetFilters(q)
 	if err != nil {

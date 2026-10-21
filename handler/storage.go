@@ -2,11 +2,13 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/tigerowo/infinite-canvas/config"
 	"github.com/tigerowo/infinite-canvas/service"
 )
 
@@ -56,15 +58,19 @@ func MeasureUserStorageProvider(w http.ResponseWriter, r *http.Request) {
 
 // UploadFile 上传文件到对象存储。
 func UploadFile(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 129<<20)
 	file, header, err := r.FormFile("file")
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
 	if err != nil {
-		Fail(w, "请选择要上传的文件")
+		Fail(w, "请选择文件，单个文件不能超过 128 MB")
 		return
 	}
 	defer file.Close()
-	data, err := io.ReadAll(file)
-	if err != nil {
-		FailError(w, err)
+	data, err := io.ReadAll(io.LimitReader(file, (128<<20)+1))
+	if err != nil || len(data) > 128<<20 {
+		Fail(w, "读取文件失败，单个文件不能超过 128 MB")
 		return
 	}
 	contentType := header.Header.Get("Content-Type")
@@ -85,6 +91,7 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 		FailError(w, err)
 		return
 	}
+	setStorageReadSession(w, r)
 	OK(w, object)
 }
 
@@ -129,14 +136,23 @@ func DeleteDirectFileRecord(w http.ResponseWriter, r *http.Request, id string) {
 
 // FileContent 获取文件内容。
 func FileContent(w http.ResponseWriter, r *http.Request, id string) {
-	download, err := service.DownloadStorageObject(id, r.Header.Get("Range"))
+	download, err := service.DownloadStorageObject(r.Context(), id, r.Header.Get("Range"), r.URL.Query().Get("access"))
 	if err != nil {
+		if errors.Is(err, service.ErrStorageAccessDenied) {
+			FailWithStatus(w, http.StatusForbidden, "无权访问该文件或访问凭证已过期")
+			return
+		}
 		FailError(w, err)
 		return
 	}
 	defer download.Stream.Close()
 	w.Header().Set("Content-Type", download.Object.MimeType)
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	if !strings.HasPrefix(download.Object.MimeType, "image/") && !strings.HasPrefix(download.Object.MimeType, "video/") && !strings.HasPrefix(download.Object.MimeType, "audio/") {
+		w.Header().Set("Content-Disposition", "attachment")
+	}
 	if download.AcceptRanges {
 		w.Header().Set("Accept-Ranges", "bytes")
 	}
@@ -149,17 +165,39 @@ func FileContent(w http.ResponseWriter, r *http.Request, id string) {
 	if download.StatusCode != 0 {
 		w.WriteHeader(download.StatusCode)
 	}
+	if r.Method == http.MethodHead {
+		return
+	}
 	_, _ = io.Copy(w, download.Stream)
 }
 
 // FileInfo 获取文件元数据。
 func FileInfo(w http.ResponseWriter, r *http.Request, id string) {
-	object, err := service.StorageObjectInfo(id)
+	object, err := service.StorageObjectInfo(r.Context(), id)
 	if err != nil {
+		if errors.Is(err, service.ErrStorageAccessDenied) {
+			FailWithStatus(w, http.StatusForbidden, "无权访问该文件")
+			return
+		}
 		FailError(w, err)
 		return
 	}
+	setStorageReadSession(w, r)
+	w.Header().Set("Cache-Control", "private, no-store")
 	OK(w, object)
+}
+
+func setStorageReadSession(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if token == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: "xiaomeng_storage_viewer", Value: token, Path: "/api/files", MaxAge: config.Cfg.JWTExpireHours * 3600, HttpOnly: true, Secure: r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"), SameSite: http.SameSiteLaxMode})
+}
+
+func ClearStorageSession(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{Name: "xiaomeng_storage_viewer", Value: "", Path: "/api/files", MaxAge: -1, HttpOnly: true, Secure: r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"), SameSite: http.SameSiteLaxMode})
+	OK(w, true)
 }
 
 // AdminMeasureStorageProvider 管理员统计存储容量。

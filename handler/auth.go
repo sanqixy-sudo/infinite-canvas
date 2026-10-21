@@ -31,7 +31,7 @@ type saveUserRequest struct {
 }
 
 type adjustUserCreditsRequest struct {
-	Credits float64 `json:"credits"`
+	Credits *float64 `json:"credits"`
 }
 
 func Register(w http.ResponseWriter, r *http.Request) {
@@ -126,8 +126,11 @@ func AdminSaveUser(w http.ResponseWriter, r *http.Request) {
 
 func AdminAdjustUserCredits(w http.ResponseWriter, r *http.Request, id string) {
 	var request adjustUserCreditsRequest
-	_ = json.NewDecoder(r.Body).Decode(&request)
-	user, err := service.AdjustUserCredits(id, request.Credits)
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Credits == nil {
+		Fail(w, "请输入有效的目标算力点余额")
+		return
+	}
+	user, err := service.AdjustUserCredits(id, *request.Credits)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -145,22 +148,11 @@ func AdminCreditLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func AdminSaveCreditLog(w http.ResponseWriter, r *http.Request) {
-	var log model.CreditLog
-	_ = json.NewDecoder(r.Body).Decode(&log)
-	result, err := service.SaveCreditLog(log)
-	if err != nil {
-		FailError(w, err)
-		return
-	}
-	OK(w, result)
+	FailWithStatus(w, http.StatusMethodNotAllowed, "算力点流水为只读审计记录，请在用户管理中调整余额")
 }
 
 func AdminDeleteCreditLog(w http.ResponseWriter, r *http.Request, id string) {
-	if err := service.DeleteCreditLog(id); err != nil {
-		FailError(w, err)
-		return
-	}
-	OK(w, true)
+	FailWithStatus(w, http.StatusMethodNotAllowed, "算力点流水为只读审计记录，不允许删除")
 }
 
 func loginRedirect(r *http.Request, redirect string, token string, message string) string {

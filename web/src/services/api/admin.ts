@@ -81,14 +81,6 @@ export async function fetchAdminCreditLogs(token: string, query: AdminUserQuery 
     return apiGet<AdminCreditLogListResponse>("/api/admin/credit-logs", compactApiParams(query), token);
 }
 
-export async function saveAdminCreditLog(token: string, log: Partial<AdminCreditLog>) {
-    return apiPost<AdminCreditLog>("/api/admin/credit-logs", log, token);
-}
-
-export async function deleteAdminCreditLog(token: string, id: string) {
-    return apiDelete<boolean>(`/api/admin/credit-logs/${encodeURIComponent(id)}`, token);
-}
-
 export async function fetchAdminPromptCategories(token: string) {
     return apiGet<AdminPromptCategory[]>("/api/admin/prompt-categories", undefined, token);
 }

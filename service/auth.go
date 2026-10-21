@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/tigerowo/infinite-canvas/config"
 	"github.com/tigerowo/infinite-canvas/model"
 	"github.com/tigerowo/infinite-canvas/repository"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -308,7 +308,7 @@ func SaveUser(user model.User, password string) (model.User, error) {
 }
 
 func AdjustUserCredits(id string, credits float64) (model.User, error) {
-	if math.IsNaN(credits) || math.IsInf(credits, 0) || credits < 0 {
+	if math.IsNaN(credits) || math.IsInf(credits, 0) || math.IsInf(credits*100, 0) || credits < 0 {
 		return model.User{}, safeMessageError{message: "算力点余额不能为负数"}
 	}
 	credits = normalizeCredits(credits)
