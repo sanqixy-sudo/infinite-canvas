@@ -376,7 +376,7 @@ export function resolveModelForCapability(config: AiConfig, currentModel: string
     return selectableModels[0] || (matches(fallbackModel) ? fallbackModel : "");
 }
 
-function isAiConfigReady(config: AiConfig, model: string) {
+function isAiConfigReady(config: AiConfig, model: string): boolean {
     const { token, user } = useUserStore.getState();
     const modelChannel = useConfigStore.getState().publicSettings?.modelChannel;
     return Boolean(config.channelMode === "remote" && model.trim() && token && user && (user.role === "admin" || modelChannel?.allowUserRemoteChannel === true) && modelChannel?.availableModels.includes(model) && modelChannel.channels.some((channel) => channel.enabled !== false && !isWorkflowProtocol(channel.protocol) && channel.models.includes(model)));

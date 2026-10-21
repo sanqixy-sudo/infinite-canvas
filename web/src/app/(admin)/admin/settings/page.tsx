@@ -375,7 +375,7 @@ export default function AdminSettingsPage() {
                 return;
             }
             for (const [key, value] of Object.entries({ capacityBytes: result.bytes, capacityCheckedAt: result.checkedAt, capacityExceeded: result.overLimit })) {
-                form.setFieldValue(["private", "storage", "providers", index, key], value);
+                form.setFieldValue(["private", "storage", "providers", index, key as keyof AdminStorageProvider], value);
             }
             if (result.overLimit) form.setFieldValue(["private", "storage", "providers", index, "enabled"], false);
             const next = normalizeSettings(form.getFieldsValue(true) as AdminSettings);
