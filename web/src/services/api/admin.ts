@@ -379,6 +379,6 @@ export type StorageCapacityResult = {
     providerName: string;
 };
 
-export async function measureAdminStorageProvider(token: string, payload: { index: number; provider: AdminStorageProvider }) {
+export async function measureAdminStorageProvider(token: string, payload: { index: number }) {
     return apiPost<StorageCapacityResult>("/api/admin/storage/measure", payload, token);
 }

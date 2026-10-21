@@ -184,4 +184,34 @@ func TestModelProtocolChannelFlow(t *testing.T) {
 			}
 		})
 	}
+	for _, test := range []struct {
+		name, modelName string
+		available       []string
+		costs           []model.ModelCost
+	}{
+		{name: "unlisted model", modelName: "hidden-model", available: []string{"future-model"}, costs: []model.ModelCost{{Model: "hidden-model", Credits: 0}}},
+		{name: "model without price", modelName: "future-model", available: []string{"future-model"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			channel := model.ModelChannel{ID: "blocked-channel", Protocol: "openai", BaseURL: "https://upstream.invalid", APIKey: "fixture-key", Models: []string{"future-model", "hidden-model"}, Enabled: true, Weight: 1}
+			settings := model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{channel}}, Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{AvailableModels: test.available, ModelCosts: test.costs}}}
+			if _, err := repository.SaveSettings(settings, "fixture"); err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			protocolMockHTTP(t, func(*http.Request) (*http.Response, error) {
+				calls++
+				return nil, nil
+			})
+			request := httptest.NewRequest(http.MethodPost, "/chat/completions", strings.NewReader(`{"model":"`+test.modelName+`","messages":[]}`))
+			request.Header.Set("Content-Type", "application/json")
+			request = request.WithContext(service.WithUser(request.Context(), model.PublicUser(user)))
+			writer := httptest.NewRecorder()
+			proxyAIRequest(writer, request, "/chat/completions")
+			var result response
+			if err := json.Unmarshal(writer.Body.Bytes(), &result); err != nil || result.Code != 1 || calls != 0 {
+				t.Fatalf("blocked model response=%s, upstream calls=%d, err=%v", writer.Body, calls, err)
+			}
+		})
+	}
 }

@@ -166,14 +166,13 @@ func FileInfo(w http.ResponseWriter, r *http.Request, id string) {
 // AdminMeasureStorageProvider 管理员统计存储容量。
 func AdminMeasureStorageProvider(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		Index    int                    `json:"index"`
-		Provider *model.StorageProvider `json:"provider"`
+		Index int `json:"index"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		Fail(w, "配置内容格式错误")
 		return
 	}
-	result, err := service.MeasureAdminStorageProvider(request.Index, request.Provider)
+	result, err := service.MeasureAdminStorageProvider(request.Index)
 	if err != nil {
 		FailError(w, err)
 		return

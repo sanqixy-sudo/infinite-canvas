@@ -18,6 +18,8 @@
 | 小盟视频工作台品牌与入口 | 部分验证 | `web/src/app/`、`web/src/components/layout/` | `2f23672bbbde1a0aba00ac903bd13a97443ccf36` | 页面品牌、宣传轮播、版本与入口、许可页面 |
 | 管理员调点事务保护 | 待验证 | `repository/user.go`、`service/auth.go` | `2f23672bbbde1a0aba00ac903bd13a97443ccf36` | 余额与流水原子性 |
 | 内置模型价格显式配置 | 待验证 | `service/settings.go`、`service/workflow_agent.go`、管理后台设置页 | `2f23672bbbde1a0aba00ac903bd13a97443ccf36` | 未配置拒绝、显式零价可用 |
+| 模型清单与扣返保护 | 部分验证 | `service/settings.go`、`handler/ai.go`、`handler/video_task.go`、`repository/user.go` | `09d3959` | 模型开放清单、视频时长、失败返还 |
+| R2 配置防误用 | 待真实存储桶验证 | `service/storage.go`、管理后台设置页 | `09d3959` | 配置身份、Endpoint、已保存配置容量统计 |
 
 ### 功能名称：小盟视频工作台品牌与入口
 
@@ -60,6 +62,34 @@
 - 上游同文件或同链路改动的兼容要求：检查所有 `ModelCost` 调用方，新增系统模型调用链不得忽略错误。
 - 更新后验证方法与最近验证结果：人工分别检查未配置、零价、正价模型和工作流 Agent；当前尚未运行测试。
 - 数据备份或回滚要求：不改表；上线前导出后台设置，避免价格误配。
+
+### 功能名称：模型清单与扣返保护
+
+- 状态与目的：部分验证；只有管理员明确开放且渠道配置完整的系统模型可调用，价格配置必须有效，失败返还与余额流水保持原子性。
+- 对应代码位置及涉及文件：`service/settings.go`、`service/workflow_resolve.go`、`handler/ai.go`、`handler/video_task.go`、`repository/user.go`、`service/auth.go`、`service/workflow_agent.go`、`web/src/app/(admin)/admin/settings/page.tsx`；相关测试在同目录测试文件。
+- 官方原版行为与二开差异：后台空开放清单不再自动暴露所有渠道模型；禁用的工作流不可新建任务；重复、负数或精度错误的模型价格被拒绝；视频小数秒向上计点；失败返还连同流水在事务中保存；视频任务记录保存失败也会尝试返还。
+- 关键依赖：后台系统渠道、`modelCosts`、用户余额和 `credit_logs`、视频任务记录与工作流 Agent。
+- 数据库变化：无。
+- API 变化：路径与结构不变；未开放模型和错误视频时长会被拒绝。
+- Git 提交与关联 PR：`09d3959`、`3103de6`；草稿 PR [#1](https://github.com/sanqixy-sudo/infinite-canvas/pull/1)。
+- **必须保护的行为**：渠道存在不等于模型已开放；未填价格不能免费调用；零价须明确配置；扣点失败不发起上游请求；普通 AI 失败返还、视频任务失败返还与流水一致；用户自有本地渠道不受系统价格限制。
+- 上游同文件或同链路改动的兼容要求：逐一检查新增 AI 路由、视频时长标准化、工作流状态和异步任务失败状态；不能仅凭 HTTP 成功判断实际生成成功。
+- 更新后验证方法与最近验证结果：Go 的 `service`、`handler`、`repository` 测试在测试服务器容器中通过；没有真实模型密钥和供应商账单，计费单位与实际调用仍待验证。
+- 数据备份或回滚要求：不改表；升级前备份用户余额、流水和任务记录，不能清空已有数据。
+
+### 功能名称：R2 配置防误用
+
+- 状态与目的：待真实存储桶验证；管理员可以先保存停用的 R2 草稿，启用时必须提供完整配置，容量统计只使用已保存配置。
+- 对应代码位置及涉及文件：`service/settings.go`、`service/storage.go`、`handler/storage.go`、`web/src/services/api/admin.ts`、`web/src/app/(admin)/admin/settings/page.tsx`。
+- 官方原版行为与二开差异：新配置默认停用；Endpoint 必须是无路径、查询参数和账号密码的 HTTP(S) 根地址；密钥只按配置身份沿用；容量统计不再把前端未保存草稿写回配置。
+- 关键依赖：S3 兼容接口、管理员存储配置、`storage_objects` 元数据、素材同步。
+- 数据库变化：无。
+- API 变化：`/api/admin/storage/measure` 只需传已保存配置的 `index`；额外传入的 `provider` 不再参与容量统计。
+- Git 提交与关联 PR：`09d3959` 及后续本分支提交；草稿 PR [#1](https://github.com/sanqixy-sudo/infinite-canvas/pull/1)。
+- **必须保护的行为**：未配置完整时不能启用 R2；更换配置不能意外继承旧密钥；容量统计不保存未提交的草稿；已有素材和本地数据不能因配置切换被清空。
+- 上游同文件或同链路改动的兼容要求：检查签名请求、对象路径、公开 URL、上传/下载/删除和素材同步，并核对容量阈值。
+- 更新后验证方法与最近验证结果：Go 单元测试覆盖 Endpoint 格式和密钥身份匹配；尚无 R2 存储桶，未做真实读写。
+- 数据备份或回滚要求：先备份设置与素材元数据；切换存储时保留原对象与本地数据。
 
 ## 新功能登记模板
 

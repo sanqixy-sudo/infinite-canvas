@@ -360,7 +360,7 @@ func MeasureUserStorageProvider(ctx context.Context, providerInput StorageObject
 }
 
 // MeasureAdminStorageProvider 管理员统计存储容量。
-func MeasureAdminStorageProvider(index int, providerInput *model.StorageProvider) (StorageCapacityResult, error) {
+func MeasureAdminStorageProvider(index int) (StorageCapacityResult, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return StorageCapacityResult{}, err
@@ -371,19 +371,6 @@ func MeasureAdminStorageProvider(index int, providerInput *model.StorageProvider
 		return StorageCapacityResult{}, errors.New("对象存储配置不存在")
 	}
 	provider := storage.Providers[index]
-	if providerInput != nil {
-		provider = normalizeStorageProvider(*providerInput)
-		if saved, ok := findSavedStorageProvider(provider, storage.Providers); ok {
-			provider.SecretAccessKey = saved.SecretAccessKey
-			provider.Password = saved.Password
-		}
-		if strings.TrimSpace(providerInput.SecretAccessKey) != "" {
-			provider.SecretAccessKey = providerInput.SecretAccessKey
-		}
-		if strings.TrimSpace(providerInput.Password) != "" {
-			provider.Password = providerInput.Password
-		}
-	}
 	bytes, err := measureStorageProvider(provider)
 	if err != nil {
 		return StorageCapacityResult{}, err

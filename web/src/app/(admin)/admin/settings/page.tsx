@@ -365,14 +365,16 @@ export default function AdminSettingsPage() {
 
     async function measureStorageProviderAt(index: number) {
         if (!token) return;
-        const provider = normalizeStorageProvider(form.getFieldValue(["private", "storage", "providers", index]));
         setMeasuringProviderIndex(index);
         try {
-            const result = await measureAdminStorageProvider(token, { index, provider });
-            const next = normalizeSettings(await fetchAdminSettings(token));
-            form.setFieldsValue(next);
+            const result = await measureAdminStorageProvider(token, { index });
+            for (const [key, value] of Object.entries({ capacityBytes: result.bytes, capacityCheckedAt: result.checkedAt, capacityExceeded: result.overLimit })) {
+                form.setFieldValue(["private", "storage", "providers", index, key], value);
+            }
+            if (result.overLimit) form.setFieldValue(["private", "storage", "providers", index, "enabled"], false);
+            const next = normalizeSettings(form.getFieldsValue(true) as AdminSettings);
             setJsonText({ public: JSON.stringify(next.public, null, 2), private: JSON.stringify(next.private, null, 2) });
-            message.success(`容量统计完成：${formatStorageBytes(result.bytes)}${result.overLimit ? "，已达到上限并禁用" : ""}`);
+            message.success(`已按保存的配置统计容量：${formatStorageBytes(result.bytes)}${result.overLimit ? "，已达到上限并禁用" : ""}`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "容量统计失败");
         } finally {
@@ -686,6 +688,7 @@ export default function AdminSettingsPage() {
                                                 <Button icon={<PlusOutlined />} onClick={() => add(newAdminStorageProvider("webdav", storageProviders))}>
                                                     新增 WebDAV 配置
                                                 </Button>
+                                                <Typography.Text type="secondary">R2 先填写 Endpoint、Region（auto）、Bucket 和访问密钥并保存，再统计容量、开启配置。新建 R2 配置默认停用，避免未填完就切换存储。</Typography.Text>
                                                 {fields.map((field) => {
                                                     const provider = storageProviders[field.name] || emptyS3StorageProvider;
                                                     const isWebDAV = provider.type === "webdav";
@@ -1193,7 +1196,7 @@ function newAdminStorageProvider(type: AdminStorageProvider["type"], providers: 
     const template = type === "webdav" ? emptyWebDAVStorageProvider : emptyS3StorageProvider;
     return {
         ...template,
-        enabled: !providers.some((provider) => provider.enabled && provider.type !== type),
+        enabled: type !== "s3" && !providers.some((provider) => provider.enabled && provider.type !== type),
     };
 }
 
