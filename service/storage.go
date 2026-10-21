@@ -373,8 +373,10 @@ func MeasureAdminStorageProvider(index int, providerInput *model.StorageProvider
 	provider := storage.Providers[index]
 	if providerInput != nil {
 		provider = normalizeStorageProvider(*providerInput)
-		provider.SecretAccessKey = storage.Providers[index].SecretAccessKey
-		provider.Password = storage.Providers[index].Password
+		if saved, ok := findSavedStorageProvider(provider, storage.Providers); ok {
+			provider.SecretAccessKey = saved.SecretAccessKey
+			provider.Password = saved.Password
+		}
 		if strings.TrimSpace(providerInput.SecretAccessKey) != "" {
 			provider.SecretAccessKey = providerInput.SecretAccessKey
 		}
@@ -612,7 +614,7 @@ func storageProviderConfigured(provider model.StorageProvider) bool {
 	}
 	switch provider.Type {
 	case model.StorageProviderTypeS3:
-		return provider.Bucket != "" && provider.AccessKeyID != "" && provider.SecretAccessKey != ""
+		return provider.Bucket != "" && provider.AccessKeyID != "" && provider.SecretAccessKey != "" && validateS3Endpoint(provider.Endpoint) == nil
 	case model.StorageProviderTypeWebDAV:
 		return provider.Username != "" && provider.Password != ""
 	default:
@@ -758,6 +760,9 @@ func newS3Request(method string, provider model.StorageProvider, objectKey strin
 }
 
 func newS3RequestWithQuery(method string, provider model.StorageProvider, objectKey string, query url.Values, body io.Reader, contentLength int64) (*http.Request, error) {
+	if err := validateS3Endpoint(provider.Endpoint); err != nil {
+		return nil, err
+	}
 	endpoint, err := url.Parse(strings.TrimRight(provider.Endpoint, "/"))
 	if err != nil {
 		return nil, err
@@ -776,6 +781,14 @@ func newS3RequestWithQuery(method string, provider model.StorageProvider, object
 	}
 	signS3Request(request, provider, escapedKey)
 	return request, nil
+}
+
+func validateS3Endpoint(raw string) error {
+	endpoint, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || (endpoint.Path != "" && endpoint.Path != "/") {
+		return safeMessageError{message: "S3/R2 Endpoint 应为不含路径、查询参数和账号密码的 HTTP(S) 地址"}
+	}
+	return nil
 }
 
 func signS3Request(request *http.Request, provider model.StorageProvider, objectKey string) {

@@ -367,25 +367,24 @@ func RefundUserCredits(userID string, modelName string, credits float64, path st
 	if credits <= 0 {
 		return nil
 	}
-	user, ok, err := repository.RefundUserCredits(userID, credits, now())
+	timestamp := now()
+	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
+	_, ok, err := repository.RefundUserCredits(userID, credits, timestamp, model.CreditLog{
+		ID:        newID("credit"),
+		UserID:    userID,
+		Type:      model.CreditLogTypeAIRefund,
+		Amount:    credits,
+		Remark:    "模型调用失败返还 " + modelName,
+		Extra:     string(extra),
+		CreatedAt: timestamp,
+	})
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return safeMessageError{message: "用户不存在"}
 	}
-	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
-	_, err = repository.SaveCreditLog(model.CreditLog{
-		ID:        newID("credit"),
-		UserID:    userID,
-		Type:      model.CreditLogTypeAIRefund,
-		Amount:    credits,
-		Balance:   user.Credits,
-		Remark:    "模型调用失败返还 " + modelName,
-		Extra:     string(extra),
-		CreatedAt: now(),
-	})
-	return err
+	return nil
 }
 
 func ListCreditLogs(q model.Query) (model.CreditLogList, error) {

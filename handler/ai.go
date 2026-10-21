@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -150,7 +153,12 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			Fail(w, "AI 接口请求失败")
 			return
 		}
-		credits *= float64(readAIRequestCount(body, contentType, false))
+		count, countErr := readAIRequestCount(body, contentType, false)
+		if countErr != nil {
+			Fail(w, countErr.Error())
+			return
+		}
+		credits *= float64(count)
 	}
 	if serveParameterTranslation(w, r, body, path, channel, user, credits, startedAt) {
 		return
@@ -474,26 +482,24 @@ func readMultipartModel(body []byte, contentType string) string {
 	return ""
 }
 
-func readAIRequestCount(body []byte, contentType string, video bool) int {
+func readAIRequestCount(body []byte, contentType string, video bool) (int, error) {
 	count := 1
 	var videoPayload map[string]any
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		_, params, err := mime.ParseMediaType(contentType)
 		if err != nil {
-			return count
+			return count, nil
 		}
 		form, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(32 << 20)
 		if err != nil {
-			return count
+			return count, nil
 		}
 		defer form.RemoveAll()
 		if video {
 			count = 0
 			for _, field := range []string{"seconds", "duration"} {
 				if values := form.Value[field]; len(values) > 0 {
-					if _, err := fmt.Sscan(values[0], &count); err == nil && count != 0 {
-						break
-					}
+					return billableVideoSeconds(values[0])
 				}
 			}
 		} else if values := form.Value["n"]; len(values) > 0 {
@@ -503,8 +509,8 @@ func readAIRequestCount(body []byte, contentType string, video bool) int {
 		count = 0
 		if json.Unmarshal(body, &videoPayload) == nil {
 			for _, field := range []string{"seconds", "duration", "parameters.durationSeconds"} {
-				if _, err := fmt.Sscan(readStringPath(videoPayload, field), &count); err == nil && count != 0 {
-					break
+				if value := readStringPath(videoPayload, field); value != "" {
+					return billableVideoSeconds(value)
 				}
 			}
 		}
@@ -515,9 +521,6 @@ func readAIRequestCount(body []byte, contentType string, video bool) int {
 		_ = json.Unmarshal(body, &payload)
 		count = payload.N
 	}
-	if video && count == -1 {
-		return 15
-	}
 	if video && count < 1 {
 		frames := readIntPath(videoPayload, "num_frames")
 		frameRate := readIntPath(videoPayload, "frame_rate")
@@ -526,9 +529,21 @@ func readAIRequestCount(body []byte, contentType string, video bool) int {
 		}
 	}
 	if count < 1 {
-		return 1
+		return 1, nil
 	}
-	return count
+	return count, nil
+}
+
+func billableVideoSeconds(value string) (int, error) {
+	value = strings.TrimSpace(strings.TrimSuffix(strings.ToLower(strings.TrimSpace(value)), "s"))
+	seconds, err := strconv.ParseFloat(value, 64)
+	if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds <= 0 && seconds != -1 || seconds >= float64(int(^uint(0)>>1)) {
+		return 0, errors.New("视频时长无效")
+	}
+	if seconds == -1 {
+		return 15, nil
+	}
+	return int(math.Ceil(seconds)), nil
 }
 
 func resolveAIProxyURL(channel model.ModelChannel, modelName string, path string) string {

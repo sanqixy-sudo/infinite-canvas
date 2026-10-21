@@ -41,7 +41,7 @@ func resolveWorkflowForUser(user model.AuthUser, ref WorkflowRef, requireEntry b
 		if err != nil {
 			return ResolvedWorkflow{}, err
 		}
-		if requireEntry && user.Role != model.UserRoleAdmin && len(settings.Public.ModelChannel.AvailableWorkflows) > 0 && !slices.Contains(settings.Public.ModelChannel.AvailableWorkflows, workflowBillingName(ref)) {
+		if requireEntry && user.Role != model.UserRoleAdmin && !slices.Contains(settings.Public.ModelChannel.AvailableWorkflows, workflowBillingName(ref)) {
 			return ResolvedWorkflow{}, errors.New("这条工作流未公开")
 		}
 		channels = settings.Private.Channels
@@ -72,6 +72,9 @@ func resolveWorkflowForUser(user model.AuthUser, ref WorkflowRef, requireEntry b
 	for _, channel := range channels {
 		if channel.ID != ref.ChannelID {
 			continue
+		}
+		if requireEntry && !channel.Enabled {
+			return ResolvedWorkflow{}, errors.New("工作流渠道已停用")
 		}
 		if !isWorkflowChannelProtocol(channel.Protocol) {
 			return ResolvedWorkflow{}, errors.New("目标渠道不是工作流渠道")

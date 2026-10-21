@@ -96,7 +96,12 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 			Fail(w, "AI 接口请求失败")
 			return
 		}
-		credits *= float64(readAIRequestCount(body, contentType, true))
+		count, countErr := readAIRequestCount(body, contentType, true)
+		if countErr != nil {
+			Fail(w, countErr.Error())
+			return
+		}
+		credits *= float64(count)
 	}
 	if serveParameterTranslationVideo(w, r, body, channel, user, credits, startedAt) {
 		return

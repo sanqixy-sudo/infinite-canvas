@@ -151,12 +151,30 @@ func ConsumeUserCredits(id string, credits float64, now string, log model.Credit
 	return user, consumed, err
 }
 
-func RefundUserCredits(id string, credits float64, now string) (model.User, bool, error) {
+func RefundUserCredits(id string, credits float64, now string, log model.CreditLog) (model.User, bool, error) {
 	db, err := DB()
 	if err != nil {
 		return model.User{}, false, err
 	}
-	return refundUserCredits(db, id, credits, now)
+	return refundUserCreditsWithLog(db, id, credits, now, log)
+}
+
+func refundUserCreditsWithLog(db *gorm.DB, id string, credits float64, now string, log model.CreditLog) (model.User, bool, error) {
+	if credits <= 0 {
+		return findUser(db, "id = ?", id)
+	}
+	var user model.User
+	var found bool
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var refundErr error
+		user, found, refundErr = refundUserCredits(tx, id, credits, now)
+		if refundErr != nil || !found {
+			return refundErr
+		}
+		log.Balance = user.Credits
+		return tx.Create(&log).Error
+	})
+	return user, found, err
 }
 
 func refundUserCredits(db *gorm.DB, id string, credits float64, now string) (model.User, bool, error) {

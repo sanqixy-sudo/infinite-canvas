@@ -1232,8 +1232,8 @@ function setModelCost(form: any, setModelCosts: (items: AdminModelCost[]) => voi
 }
 
 function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminSettings): AdminSettings {
-    const channels = saved.private.channels.map((item, index) => {
-        const source = isWorkflowProtocol(item.protocol) ? currentChannels.find((channel) => channel.id === item.id && channel.protocol === item.protocol) : currentChannels[index];
+    const channels = saved.private.channels.map((item) => {
+        const source = currentChannels.find((channel) => channel.protocol === item.protocol && ((channel.id !== "" && channel.id === item.id) || (channel.name === item.name && channel.baseUrl === item.baseUrl)));
         return { ...item, apiKey: source?.apiKey || item.apiKey, uploadApiKey: source?.uploadApiKey || item.uploadApiKey };
     });
     return {
