@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import { StyleProvider } from "@ant-design/cssinjs";
 import { ProConfigProvider } from "@ant-design/pro-components";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App, ConfigProvider } from "antd";
@@ -31,14 +32,16 @@ export function AppProviders({ children }: { children: ReactNode }) {
     }, [dark, theme]);
 
     return (
-        <ConfigProvider locale={zhCN} theme={getAntThemeConfig(dark)}>
-            <ProConfigProvider dark={dark}>
-                <App>
-                    <QueryClientProvider client={queryClient}>
-                        <ClientRootInit>{children}</ClientRootInit>
-                    </QueryClientProvider>
-                </App>
-            </ProConfigProvider>
-        </ConfigProvider>
+        <StyleProvider layer>
+            <ConfigProvider locale={zhCN} theme={getAntThemeConfig(dark)}>
+                <ProConfigProvider dark={dark}>
+                    <App>
+                        <QueryClientProvider client={queryClient}>
+                            <ClientRootInit>{children}</ClientRootInit>
+                        </QueryClientProvider>
+                    </App>
+                </ProConfigProvider>
+            </ConfigProvider>
+        </StyleProvider>
     );
 }

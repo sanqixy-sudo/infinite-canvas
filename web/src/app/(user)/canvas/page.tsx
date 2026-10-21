@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { App, Button, Input, Modal } from "antd";
-import { FileUp, FolderOpen, Plus, Search } from "lucide-react";
+import { ArrowUpRight, FileUp, FolderOpen, Layers3, Plus, Search } from "lucide-react";
 import { nanoid } from "nanoid";
 
 import { readZip } from "@/lib/zip";
@@ -70,22 +70,23 @@ export default function CanvasPage() {
 
     return <>
         <main className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-[1480px] px-5 py-7 md:px-8 md:py-9">
-            <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
-                <div><h1 className="text-2xl font-semibold tracking-tight">我的项目<span className="ml-3 text-sm font-normal text-muted-foreground">{roots.length}</span></h1><p className="mt-2 text-sm text-muted-foreground">按项目组织创作，在项目内管理多张画布。</p></div>
-                <Button type="primary" icon={<Plus className="size-4" />} disabled={!hydrated} onClick={() => setCreateOpen(true)}>新建项目</Button>
+        <div className="mx-auto max-w-[1320px] px-5 py-8 sm:px-8 lg:px-10">
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-5">
+                <div><p className="mb-2 flex items-center gap-2 text-xs font-medium text-primary"><FolderOpen className="size-3.5" />创作空间</p><h1 className="text-[28px] font-semibold tracking-tight">我的项目</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">把灵感整理成项目，在画布里自由展开。</p></div>
+                <Button type="primary" className="h-10 rounded-xl px-5" icon={<Plus className="size-4" />} disabled={!hydrated} onClick={() => setCreateOpen(true)}>新建项目</Button>
             </div>
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-                <label className="flex h-10 w-full max-w-xs items-center gap-2 rounded-lg border border-border bg-card px-3 text-muted-foreground focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"><Search className="size-4" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目" aria-label="搜索项目" className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" /></label>
-                <div className="flex items-center gap-2"><select aria-label="项目排序" value={sort} onChange={(event) => setSort(event.target.value)} className="h-9 rounded-lg border border-border bg-background px-3 text-xs text-muted-foreground"><option value="updated">最近修改</option><option value="name">项目名称</option></select><Button type="text" icon={<FileUp className="size-4" />} loading={importing} disabled={!hydrated || importing} onClick={() => inputRef.current?.click()}>导入项目</Button></div>
+                <label className="flex h-10 w-full max-w-sm items-center gap-2.5 rounded-xl border border-border/70 bg-card px-3.5 text-muted-foreground transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-ring/15"><Search className="size-4 shrink-0" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目名称" aria-label="搜索项目" className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" /></label>
+                <div className="flex items-center gap-2"><select aria-label="项目排序" value={sort} onChange={(event) => setSort(event.target.value)} className="h-10 rounded-xl border border-border/70 bg-card px-3 text-sm text-muted-foreground outline-none focus:border-primary/50 focus:ring-2 focus:ring-ring/15"><option value="updated">最近修改</option><option value="name">项目名称</option></select><Button type="text" className="h-10 rounded-xl" icon={<FileUp className="size-4" />} loading={importing} disabled={!hydrated || importing} onClick={() => inputRef.current?.click()}>导入项目</Button></div>
             </div>
-            {!hydrated ? <div className="py-28 text-center text-sm text-muted-foreground">正在读取项目...</div> : filtered.length ? <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{filtered.map(({ root, group, latest, cover }) => {
-                return <Link href={`/canvas/project/${root.id}`} key={root.id} className="group overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-foreground/35">
+            {hydrated && roots.length > 0 ? <p className="mb-4 text-xs text-muted-foreground">{query ? `找到 ${filtered.length} 个项目` : `共 ${roots.length} 个项目`}</p> : null}
+            {!hydrated ? <div className="py-28 text-center text-sm text-muted-foreground">正在读取项目...</div> : filtered.length ? <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">{filtered.map(({ root, group, latest, cover }) => {
+                return <Link href={`/canvas/project/${root.id}`} key={root.id} className="group overflow-hidden rounded-2xl border border-border/70 bg-card transition duration-200 hover:-translate-y-0.5 hover:border-primary/35 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring motion-reduce:transform-none">
                     <CanvasProjectPreview project={cover} className="aspect-[16/10] w-full" />
-                    <div className="border-t border-border px-4 py-4"><h2 className="truncate text-base font-medium transition-colors group-hover:text-primary">{root.workspaceTitle || root.title}</h2><div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground"><span>{group.length} 张画布</span><span>{latest ? `${new Date(latest).toLocaleDateString("zh-CN")} 更新` : ""}</span></div></div>
+                    <div className="px-4 pb-4 pt-3.5"><div className="flex items-center justify-between gap-3"><h2 className="truncate text-[15px] font-medium transition-colors group-hover:text-primary">{root.workspaceTitle || root.title}</h2><ArrowUpRight className="size-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-primary" /></div><div className="mt-2.5 flex items-center justify-between gap-2 text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Layers3 className="size-3.5" />{group.length} 张画布</span><time dateTime={group[0]?.updatedAt || root.updatedAt}>{latest ? `${new Date(latest).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })} 更新` : ""}</time></div></div>
                 </Link>;
-            })}</div> : <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-border px-5 text-center"><FolderOpen className="mb-4 size-7 text-muted-foreground" /><h2 className="text-lg font-medium">{query ? "没有找到匹配的项目" : "创建第一个项目"}</h2><p className="mt-2 text-sm text-muted-foreground">{query ? "试试其他名称，或清除搜索查看全部项目。" : "给项目起个名字，打开第一张画布开始创作。"}</p><Button className="mt-5" type={query ? "default" : "primary"} onClick={() => query ? setQuery("") : setCreateOpen(true)}>{query ? "清除搜索" : "新建项目"}</Button></div>}
-            <p className="mt-8 text-xs text-muted-foreground">未登录内容保存在当前浏览器；登录后按账号同步设置保存。</p>
+            })}</div> : <div className="flex min-h-80 flex-col items-center justify-center rounded-2xl border border-border/70 bg-card px-6 py-12 text-center"><span className="mb-5 flex size-16 items-center justify-center rounded-2xl bg-accent text-primary">{query ? <Search className="size-6" /> : <Layers3 className="size-7" />}</span><h2 className="text-lg font-medium">{query ? "没有找到匹配的项目" : "为下一个灵感，留一张画布"}</h2><p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">{query ? "试试其他名称，或清除搜索查看全部项目。" : "从右上角新建项目，把脚本、分镜与素材放在一起。"}</p>{query ? <Button className="mt-5 rounded-xl" onClick={() => setQuery("")}>清除搜索</Button> : null}</div>}
+            <p className="mt-8 text-xs leading-5 text-muted-foreground">未登录内容保存在当前浏览器；登录后按账号同步设置保存。</p>
         </div>
         </main>
         <input ref={inputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importArchive(event.target.files?.[0])} />
