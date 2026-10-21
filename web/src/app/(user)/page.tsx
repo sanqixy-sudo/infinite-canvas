@@ -129,6 +129,10 @@ export default function IndexPage() {
         <main className="relative h-full overflow-x-hidden overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] text-stone-950 dark:bg-[radial-gradient(rgba(245,245,244,.18)_1px,transparent_1px)] dark:text-stone-100">
             <section className="relative mx-auto min-h-[calc(100vh-4rem)] max-w-7xl px-6">
                 <section className="relative flex min-h-[620px] flex-col items-center justify-center py-10 sm:py-14">
+                    <div className="mb-8 text-center">
+                        <h1 className="text-balance text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl lg:text-6xl dark:text-stone-100">小盟万能视频工作台</h1>
+                        <p className="mt-4 text-xs tracking-[0.08em] text-stone-500 sm:text-sm sm:tracking-[0.2em] dark:text-stone-400">Xiaomeng All-in-One Video Workbench</p>
+                    </div>
                     <div className="w-full max-w-[820px]">
                         <CanvasAssistantComposer
                             prompt={prompt}
