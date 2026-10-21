@@ -15,22 +15,22 @@
 
 | 功能 | 状态 | 主要代码位置 | 首次提交 | 更新验证 |
 | --- | --- | --- | --- | --- |
-| 小盟视频工作台品牌与入口 | 待验证 | `web/src/app/`、`web/src/components/layout/` | `2f23672bbbde1a0aba00ac903bd13a97443ccf36` | 页面品牌、版本与入口、许可页面 |
+| 小盟视频工作台品牌与入口 | 部分验证 | `web/src/app/`、`web/src/components/layout/` | `2f23672bbbde1a0aba00ac903bd13a97443ccf36` | 页面品牌、宣传轮播、版本与入口、许可页面 |
 | 管理员调点事务保护 | 待验证 | `repository/user.go`、`service/auth.go` | `2f23672bbbde1a0aba00ac903bd13a97443ccf36` | 余额与流水原子性 |
 | 内置模型价格显式配置 | 待验证 | `service/settings.go`、`service/workflow_agent.go`、管理后台设置页 | `2f23672bbbde1a0aba00ac903bd13a97443ccf36` | 未配置拒绝、显式零价可用 |
 
 ### 功能名称：小盟视频工作台品牌与入口
 
-- 状态与目的：待验证；把面向用户的产品名称改为“小盟视频工作台”，移除顶部 GitHub 图标、版本展示和原项目公告。
-- 对应代码位置及涉及文件：`web/src/app/layout.tsx`、用户与管理后台页面、`web/src/components/layout/app-top-nav.tsx`、`web/src/components/layout/user-status-actions.tsx`、`web/src/app/(user)/legal/page.tsx`；画布默认名称及导出文件名只改展示文案。
-- 官方原版行为与二开差异：官方页面展示“无限画布”、GitHub 入口和官方版本弹窗；二开版使用小盟品牌，保留单独的许可与源码页面直至授权范围核实。
+- 状态与目的：部分验证；把面向用户的产品名称改为“小盟视频工作台”，移除顶部 GitHub 图标、版本展示、原项目公告和首页官方宣传轮播。
+- 对应代码位置及涉及文件：`web/src/app/layout.tsx`、`web/src/app/(user)/page.tsx`、用户与管理后台页面、`web/src/components/layout/app-top-nav.tsx`、`web/src/components/layout/user-status-actions.tsx`、`web/src/app/(user)/legal/page.tsx`；已删除仅供该轮播使用的 `web/src/app/(user)/home-banner-carousel.tsx`；画布默认名称及导出文件名只改展示文案。
+- 官方原版行为与二开差异：官方页面展示“无限画布”、GitHub 入口、官方版本弹窗和指向外部推广页面的静态轮播；二开版使用小盟品牌，移除该轮播及推广链接，保留单独的许可与源码页面直至授权范围核实。
 - 关键依赖：Next.js App Router、用户/画布布局、浏览器本地存储。不得批量改动 `infinite-canvas` 本地存储键，否则既有浏览器数据会失联。
 - 数据库变化：无。
 - API 变化：无。
-- Git 提交与关联 PR：`2f23672bbbde1a0aba00ac903bd13a97443ccf36`；草稿 PR [#1](https://github.com/sanqixy-sudo/infinite-canvas/pull/1)。
-- **必须保护的行为**：登录页、用户页、画布列表、管理后台和浏览器标题显示小盟品牌；原有画布仍能读取；顶栏不展示 GitHub 图标、官方版本号或官方公告。
-- 上游同文件或同链路改动的兼容要求：检查导航、账户操作区、画布工具栏及本地存储键；不要重新引入官方版本检查入口。
-- 更新后验证方法与最近验证结果：人工打开上述页面并核对旧数据、页面入口与许可页面；当前尚未运行构建或人工验证。
+- Git 提交与关联 PR：`2f23672bbbde1a0aba00ac903bd13a97443ccf36`、`24f4b288cc77acb180a93eb50346678e75cae97f`；草稿 PR [#1](https://github.com/sanqixy-sudo/infinite-canvas/pull/1)。
+- **必须保护的行为**：登录页、用户页、画布列表、管理后台和浏览器标题显示小盟品牌；原有画布仍能读取；顶栏不展示 GitHub 图标、官方版本号或官方公告；首页不加载官方宣传轮播及外部推广链接。
+- 上游同文件或同链路改动的兼容要求：检查导航、账户操作区、画布工具栏及本地存储键；不要重新引入官方版本检查入口、宣传轮播或外部推广链接。
+- 更新后验证方法与最近验证结果：测试服务器 Docker 构建成功，首页返回 200，创作输入区存在，返回内容不含轮播和两条推广链接；其他页面、浏览器旧数据及完整交互仍待人工验证。
 - 数据备份或回滚要求：无数据库迁移；回滚前保留浏览器画布与素材数据。
 
 ### 功能名称：管理员调点事务保护
