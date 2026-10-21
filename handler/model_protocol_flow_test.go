@@ -80,7 +80,7 @@ func TestModelProtocolChannelFlow(t *testing.T) {
 			test.body = firstNonEmpty(test.body, `{"model":"future-model"}`)
 			test.wantBody = firstNonEmpty(test.wantBody, test.body)
 			channel := model.ModelChannel{ID: "channel", Name: "fixture", Protocol: test.protocol, BaseURL: "https://upstream.invalid", APIKey: "remote-key", Models: []string{test.modelName}, Enabled: true, Weight: 1}
-			if _, err := repository.SaveSettings(model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{channel}}}, "fixture"); err != nil {
+			if _, err := repository.SaveSettings(model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{channel}}, Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{AvailableModels: []string{test.modelName}, ModelCosts: []model.ModelCost{{Model: test.modelName, Credits: 0}}}}}, "fixture"); err != nil {
 				t.Fatal(err)
 			}
 			key, localID := channel.APIKey, ""

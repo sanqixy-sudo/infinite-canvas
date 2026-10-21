@@ -50,7 +50,7 @@ func TestParameterTranslationChannelFlow(t *testing.T) {
 				source = `{poll:{taskId:"id",GET:{url:"/custom/{taskId}"},status:"state",success:["done"],failure:["failed"]},models:{"custom-model":{POST:{url:"/custom",body:{text:prompt,model}},result:"output.url"}}}`
 			}
 			channel := model.ModelChannel{ID: "custom-channel", Name: "custom", Protocol: "apimart", BaseURL: "https://upstream.invalid/v1", APIKey: "secret-key", Models: []string{"custom-model"}, Enabled: true, Weight: 1, ParameterTranslation: source}
-			if _, err := repository.SaveSettings(model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{channel}}, Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{ModelCosts: []model.ModelCost{{Model: "custom-model", Credits: 2}}}}}, "fixture"); err != nil {
+			if _, err := repository.SaveSettings(model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{channel}}, Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{AvailableModels: []string{"custom-model"}, ModelCosts: []model.ModelCost{{Model: "custom-model", Credits: 2}}}}}, "fixture"); err != nil {
 				t.Fatal(err)
 			}
 			public, err := service.PublicSettings()

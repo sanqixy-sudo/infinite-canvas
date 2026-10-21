@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -49,7 +50,9 @@ func DraftCreativeWorkflow(ctx context.Context, request WorkflowAgentDraftReques
 	}
 	refundCredits := func() {
 		if chargedCredits {
-			_ = RefundUserCredits(user.ID, modelName, credits, "/workflows/agent-draft")
+			if err := RefundUserCredits(user.ID, modelName, credits, "/workflows/agent-draft"); err != nil {
+				log.Printf("workflow agent refund credits failed: user=%s model=%s credits=%g err=%v", user.ID, modelName, credits, err)
+			}
 		}
 	}
 

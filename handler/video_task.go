@@ -217,6 +217,9 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Printf("save video task failed: model=%s err=%v", modelName, err)
+		if credits > 0 {
+			refundVideoCredits(user.ID, modelName, credits, upstreamPath)
+		}
 		Fail(w, "AI 接口请求失败")
 		return
 	}
