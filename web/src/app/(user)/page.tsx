@@ -4,18 +4,11 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Input, Modal } from "antd";
-import { ArrowRight, ArrowUpRight, Clock3, FolderOpen, Image, Music2, Plus, Sparkles, Video } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Clock3, FolderOpen, Plus } from "lucide-react";
 import { useUserStore } from "@/stores/use-user-store";
 import { CanvasProjectPreview } from "./canvas/components/canvas-project-preview";
 import { useCanvasActivityStore } from "./canvas/stores/use-canvas-activity-store";
 import { useCanvasStore, type CanvasProject, workspaceRoot } from "./canvas/stores/use-canvas-store";
-
-const tools = [
-    { href: "/image", title: "图片创作", detail: "生成图片、修改与扩展画面", icon: Image },
-    { href: "/video", title: "视频创作", detail: "从文字与参考画面生成视频", icon: Video },
-    { href: "/music", title: "音频创作", detail: "生成配音与语音素材", icon: Music2 },
-    { href: "/prompts", title: "提示词库", detail: "查找和收藏创作提示词", icon: Sparkles },
-];
 
 export default function IndexPage() {
     const router = useRouter();
@@ -75,7 +68,6 @@ export default function IndexPage() {
                         : <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border px-6 py-8 text-center"><FolderOpen className="mb-3 size-8 text-muted-foreground/65" /><h3 className="font-medium">创建你的第一个项目</h3><p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">把脚本、分镜和视频制作放进同一个项目，用多张画布展开创作。</p><Button className="mt-5" onClick={() => setCreateOpen(true)} icon={<Plus className="size-4" />}>创建项目</Button></div>}
             </section>
 
-            <section className="mt-9 border-t border-border pt-6" aria-labelledby="creation-tools"><div className="mb-4 flex flex-wrap items-baseline justify-between gap-2"><h2 id="creation-tools" className="text-base font-semibold">创作工具</h2><p className="text-xs text-muted-foreground">也可以独立创作，再把结果加入素材库或画布</p></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{tools.map(({ href, title, detail, icon: Icon }) => <Link key={href} href={href} className="group flex min-w-0 items-start gap-3 rounded-lg px-3 py-4 transition-colors hover:bg-muted"><Icon className="mt-0.5 size-5 shrink-0 text-muted-foreground" /><div className="min-w-0"><h3 className="text-sm font-medium">{title}</h3><p className="mt-1.5 text-xs leading-5 text-muted-foreground">{detail}</p></div></Link>)}</div></section>
             {!user ? <p className="mt-7 text-xs leading-5 text-muted-foreground">未登录的项目与素材保存在当前浏览器。<Link href="/login" className="ml-1 text-foreground underline underline-offset-4">登录账户</Link>后可使用账号同步及平台内置模型。</p> : null}
         </main>
         <Modal title="新建项目" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={create} okText="创建并打开画布" cancelText="取消" okButtonProps={{ disabled: !hydrated }}><p className="mb-4 text-sm text-muted-foreground">自动创建第一张空白画布，之后可以在项目内继续添加。创建项目不消耗算力点。</p><Input autoFocus maxLength={80} value={title} onChange={(event) => setTitle(event.target.value)} onPressEnter={create} placeholder="给这次创作起个名字" aria-label="项目名称" /></Modal>

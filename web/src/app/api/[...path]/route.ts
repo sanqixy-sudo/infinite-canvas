@@ -20,7 +20,7 @@ function proxyHeaders(request: NextRequest) {
 
 function responseHeaders(response: Response) {
     const headers = new Headers(response.headers);
-    headers.delete("content-length");
+    if (response.headers.has("content-encoding")) headers.delete("content-length");
     headers.delete("content-encoding");
     headers.delete("transfer-encoding");
     return headers;

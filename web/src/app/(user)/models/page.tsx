@@ -9,9 +9,9 @@ import { useConfigStore, type ModelCapability } from "@/stores/use-config-store"
 import { useUserStore } from "@/stores/use-user-store";
 
 const capabilities = [
-    { value: "image", label: "图片", icon: Image, href: "/image" },
-    { value: "video", label: "视频", icon: Video, href: "/video" },
-    { value: "audio", label: "音频", icon: Music2, href: "/music" },
+    { value: "image", label: "图片", icon: Image, href: "/canvas" },
+    { value: "video", label: "视频", icon: Video, href: "/canvas" },
+    { value: "audio", label: "音频", icon: Music2, href: "/canvas" },
     { value: "text", label: "文本", icon: MessageSquare, href: "/canvas" },
 ] as const;
 const number = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });

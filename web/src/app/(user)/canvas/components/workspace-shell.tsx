@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Drawer } from "antd";
-import { Boxes, Clapperboard, FolderOpen, House, Images, Image, Menu, Music2, Settings2, Sparkles, UserRound, Video } from "lucide-react";
+import { Boxes, Clapperboard, FolderOpen, House, Images, Menu, Settings2, Sparkles, UserRound } from "lucide-react";
 
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { cn } from "@/lib/utils";
@@ -18,10 +18,7 @@ const navigation = [
         { href: "/assets", label: "我的素材", icon: Images },
         { href: "/asset-library", label: "公共素材库", icon: Images },
     ] },
-    { label: "创作工具", links: [
-        { href: "/image", label: "图片创作", icon: Image },
-        { href: "/video", label: "视频创作", icon: Video },
-        { href: "/music", label: "音频创作", icon: Music2 },
+    { label: "创作资源", links: [
         { href: "/prompts", label: "提示词库", icon: Sparkles },
     ] },
 ];
