@@ -10,6 +10,7 @@ import zhCN from "antd/locale/zh_CN";
 
 import { ClientRootInit } from "@/components/layout/client-root-init";
 import { getAntThemeConfig } from "@/lib/app-theme";
+import { ACCOUNT_WALLET_REFRESH_EVENT } from "@/lib/account-wallet-events";
 import { useThemeStore } from "@/stores/use-theme-store";
 
 const queryClient = new QueryClient({
@@ -30,6 +31,12 @@ export function AppProviders({ children }: { children: ReactNode }) {
         document.documentElement.classList.toggle("dark", dark);
         document.documentElement.style.colorScheme = theme;
     }, [dark, theme]);
+
+    useEffect(() => {
+        const refreshWallet = () => { void queryClient.invalidateQueries({ queryKey: ["account-wallet"] }); };
+        window.addEventListener(ACCOUNT_WALLET_REFRESH_EVENT, refreshWallet);
+        return () => window.removeEventListener(ACCOUNT_WALLET_REFRESH_EVENT, refreshWallet);
+    }, []);
 
     return (
         <StyleProvider layer>

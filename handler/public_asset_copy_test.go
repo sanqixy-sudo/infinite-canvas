@@ -40,6 +40,14 @@ func TestPublicAssetCopyRemainsOwnedAfterWithdrawal(t *testing.T) {
 	}
 	connection.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = connection.Close() })
+	for _, user := range []model.User{
+		{ID: "admin-owner", Username: "admin-owner", AffCode: "admin-owner", Role: model.UserRoleAdmin, Status: model.UserStatusActive},
+		{ID: "member-owner", Username: "member-owner", AffCode: "member-owner", Role: model.UserRoleUser, Status: model.UserStatusActive},
+	} {
+		if err := db.Create(&user).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	admin := service.WithUser(context.Background(), model.AuthUser{ID: "admin-owner", Role: model.UserRoleAdmin})
 	member := service.WithUser(context.Background(), model.AuthUser{ID: "member-owner", Role: model.UserRoleUser})
 	original, err := service.UploadStorageObject(admin, "library.png", "image/png", []byte("public-media-content"))

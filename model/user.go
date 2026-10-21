@@ -25,6 +25,7 @@ type User struct {
 	AvatarURL   string     `json:"avatarUrl"`
 	Role        UserRole   `json:"role"`
 	Credits     float64    `json:"credits" gorm:"type:decimal(20,2)"`
+	StorageExtraBytes int64 `json:"storageExtraBytes" gorm:"default:0"`
 	AffCode     string     `json:"affCode" gorm:"uniqueIndex"`
 	AffCount    int        `json:"affCount"`
 	InviterID   string     `json:"inviterId"`

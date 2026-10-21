@@ -1,3 +1,4 @@
+import { notifyAccountWalletRefresh } from "@/lib/account-wallet-events";
 "use client";
 
 import localforage from "localforage";
@@ -89,6 +90,7 @@ async function uploadMediaBlobToServer(blob: Blob, filename: string, metadataUrl
     const response = await fetch("/api/v1/files", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData });
     const payload = (await response.json().catch(() => null)) as { code?: number; msg?: string; data?: UploadedFile } | null;
     if (!response.ok || payload?.code !== 0 || !payload.data) throw new Error(payload?.msg || "媒体同步失败");
+    notifyAccountWalletRefresh();
     const meta = metadataUrl || payload.data.mimeType?.startsWith("video/") ? await readVideoMeta(metadataUrl || payload.data.url) : {};
     return { ...payload.data, bytes: payload.data.bytes || blob.size, mimeType: payload.data.mimeType || blob.type || "application/octet-stream", ...meta };
 }
@@ -202,6 +204,7 @@ async function deleteServerMedia(storageKey: string) {
     });
     const payload = (await response.json().catch(() => null)) as { code?: number; msg?: string } | null;
     if (!response.ok || payload?.code !== 0) throw new Error(payload?.msg || "删除服务端视频失败");
+    notifyAccountWalletRefresh();
     clearAutoSyncCache(storageKey);
 }
 

@@ -12,6 +12,7 @@ import { adminLayoutStyle } from "@/lib/app-theme";
 import { useUserStore } from "@/stores/use-user-store";
 
 const adminMenus = [
+    { key: "/admin/commerce", icon: <TransactionOutlined />, label: "充值与空间" },
     { key: "/admin/users", icon: <UserOutlined />, label: "用户管理" },
     { key: "/admin/credit-logs", icon: <TransactionOutlined />, label: "算力点日志" },
     { key: "/admin/ai-logs", icon: <AuditOutlined />, label: "AI 日志" },
@@ -29,7 +30,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const user = useUserStore((state) => state.user);
     const isReady = useUserStore((state) => state.isReady);
     const logout = useUserStore((state) => state.clearSession);
-    const activeKey = pathname.startsWith("/admin/settings")
+    const activeKey = pathname.startsWith("/admin/commerce") ? "/admin/commerce" : pathname.startsWith("/admin/settings")
         ? "/admin/settings"
         : pathname.startsWith("/admin/assets")
           ? "/admin/assets"
@@ -44,7 +45,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                   : pathname.startsWith("/admin/users")
                     ? "/admin/users"
                     : "";
-    const pageTitle = pathname.startsWith("/admin/settings") ? "系统设置" : pathname.startsWith("/admin/assets") ? "素材库管理" : pathname.startsWith("/admin/skills") ? "Skill 管理" : pathname.startsWith("/admin/prompts") ? "提示词管理" : pathname.startsWith("/admin/ai-logs") ? "AI 日志" : pathname.startsWith("/admin/credit-logs") ? "算力点日志" : "用户管理";
+    const pageTitle = pathname.startsWith("/admin/commerce") ? "充值与存储空间" : pathname.startsWith("/admin/settings") ? "系统设置" : pathname.startsWith("/admin/assets") ? "素材库管理" : pathname.startsWith("/admin/skills") ? "Skill 管理" : pathname.startsWith("/admin/prompts") ? "提示词管理" : pathname.startsWith("/admin/ai-logs") ? "AI 日志" : pathname.startsWith("/admin/credit-logs") ? "算力点日志" : "用户管理";
 
     useEffect(() => {
         if (!isReady) return;

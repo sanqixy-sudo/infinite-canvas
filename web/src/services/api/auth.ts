@@ -37,7 +37,7 @@ export async function fetchCurrentUser(token?: string) {
     return apiGet<AuthUser>("/api/auth/me", undefined, token);
 }
 
-export type CreditLogType = "admin_adjust" | "ai_consume" | "ai_refund";
+export type CreditLogType = "admin_adjust" | "ai_consume" | "ai_refund" | "recharge";
 
 export type AccountCreditLog = {
     id: string;

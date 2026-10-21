@@ -44,7 +44,7 @@ func StorageBytesForProvider(providerID string) (int64, error) {
 	return bytes, err
 }
 
-// DeleteStorageObjectRecord 删除存储对象记录（软删除）。
+// DeleteStorageObjectRecord 删除文件索引；个人已用空间按现存索引实时累计。
 func DeleteStorageObjectRecord(id string) error {
 	db, err := DB()
 	if err != nil {

@@ -13,7 +13,7 @@ func CurrentUserCreditLogs(ctx context.Context, q model.Query) (model.AccountCre
 	if !ok || user.ID == "" || user.Role == model.UserRoleGuest {
 		return model.AccountCreditLogList{}, safeMessageError{message: "请先登录"}
 	}
-	if q.Type != "" && q.Type != string(model.CreditLogTypeAdminAdjust) && q.Type != string(model.CreditLogTypeAIConsume) && q.Type != string(model.CreditLogTypeAIRefund) {
+	if q.Type != "" && q.Type != string(model.CreditLogTypeAdminAdjust) && q.Type != string(model.CreditLogTypeAIConsume) && q.Type != string(model.CreditLogTypeAIRefund) && q.Type != string(model.CreditLogTypeRecharge) {
 		return model.AccountCreditLogList{}, safeMessageError{message: "流水类型无效"}
 	}
 	logs, total, err := repository.ListUserCreditLogs(user.ID, q)

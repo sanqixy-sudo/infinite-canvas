@@ -77,7 +77,27 @@ func SaveUser(user model.User) (model.User, error) {
 	if err != nil {
 		return user, err
 	}
-	return user, db.Save(&user).Error
+	return saveUser(db, user)
+}
+
+func saveUser(db *gorm.DB, user model.User) (model.User, error) {
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var saved model.User
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&saved, "id = ?", user.ID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return tx.Create(&user).Error
+		}
+		if err != nil {
+			return err
+		}
+		// 资料和登录写入不能覆盖同时到账、扣费或扩容的资产。
+		columns := []string{"Username", "Password", "Email", "DisplayName", "AvatarURL", "Role", "AffCode", "GithubID", "LinuxDoID", "WechatID", "Status", "LastLoginAt", "Extra", "UpdatedAt"}
+		if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Select(columns).Updates(&user).Error; err != nil {
+			return err
+		}
+		return tx.First(&user, "id = ?", user.ID).Error
+	})
+	return user, err
 }
 
 // AdjustUserCredits 在同一事务中更新余额并记录管理员调整流水。

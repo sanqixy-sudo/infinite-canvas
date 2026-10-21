@@ -1,4 +1,5 @@
 import { apiDelete, apiGet, apiPost } from "@/services/api/request";
+import { notifyAccountWalletRefresh } from "@/lib/account-wallet-events";
 import type { UserWebDAVStorageProvider } from "@/services/image-storage";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -44,13 +45,17 @@ export async function getStorageContentUrl(id: string, details?: StorageObjectIn
     return url;
 }
 
-export function registerDirectStorageObject(
+export async function registerDirectStorageObject(
     token: string,
     payload: { provider: UserWebDAVStorageProvider; objectKey: string; mimeType: string; bytes: number },
 ) {
-    return apiPost<RegisteredStorageObject>("/api/v1/files/direct", payload, token);
+    const object = await apiPost<RegisteredStorageObject>("/api/v1/files/direct", payload, token);
+    notifyAccountWalletRefresh();
+    return object;
 }
 
-export function deleteDirectStorageObjectRecord(token: string, id: string) {
-    return apiDelete<boolean>(`/api/v1/files/${encodeURIComponent(id)}/record`, token);
+export async function deleteDirectStorageObjectRecord(token: string, id: string) {
+    const result = await apiDelete<boolean>(`/api/v1/files/${encodeURIComponent(id)}/record`, token);
+    notifyAccountWalletRefresh();
+    return result;
 }

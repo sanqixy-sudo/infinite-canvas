@@ -2,12 +2,13 @@
 
 import type { CSSProperties, RefObject } from "react";
 import { Avatar, Dropdown, Tooltip } from "antd";
-import { Keyboard, LogOut, Settings2, Shield, Wallet } from "lucide-react";
+import { CirclePlus, HardDrive, Keyboard, LogOut, Settings2, Shield, UserRound, Wallet } from "lucide-react";
 import type { ItemType } from "antd/es/menu/interface";
 import Link from "next/link";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { CreditSymbol } from "@/constant/credits";
+import { useAccountWallet } from "@/hooks/use-account-wallet";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -27,11 +28,12 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const theme = useThemeStore((state) => state.theme);
     const setTheme = useThemeStore((state) => state.setTheme);
     const user = useUserStore((state) => state.user);
+    const wallet = useAccountWallet();
     const logout = useUserStore((state) => state.clearSession);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const canvasTheme = canvasThemes[theme];
     const userName = user?.displayName || user?.username || "";
-    const credits = user?.credits ?? 0;
+    const credits = wallet.data?.credits ?? (wallet.isPending ? user?.credits : undefined);
     const avatarUrl = user?.avatarUrl?.trim();
     const avatarText = (userName.trim()[0] || "U").toUpperCase();
     const naturalIconClass = "inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted/60 hover:text-foreground [&_svg]:size-4";
@@ -39,7 +41,10 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const avatarStyle: CSSProperties | undefined = variant === "canvas" ? { borderColor: canvasTheme.toolbar.border, color: canvasTheme.node.text, background: "transparent" } : undefined;
     const menuItems: ItemType[] = [
         { key: "user", disabled: true, label: <span className="block max-w-[200px] truncate font-medium text-current">{userName}</span> },
-        { key: "account", icon: <Wallet className="size-4" />, label: <Link href="/account">账户与用量</Link> },
+        { key: "account", icon: <UserRound className="size-4" />, label: <Link href="/account">个人中心</Link> },
+        { key: "wallet", icon: <Wallet className="size-4" />, label: <Link href="/account#wallet">我的钱包</Link> },
+        { key: "recharge", icon: <CirclePlus className="size-4" />, label: <Link href="/account/recharge?kind=credits">算力充值</Link> },
+        { key: "storage", icon: <HardDrive className="size-4" />, label: <Link href="/account/recharge?kind=storage">空间扩容</Link> },
         ...(user?.role === "admin" ? [{ key: "admin", icon: <Shield className="size-4" />, label: <Link href="/admin">管理后台</Link> }] : []),
         ...(onOpenShortcuts ? [{ key: "shortcuts", icon: <Keyboard className="size-4" />, label: "快捷键", onClick: onOpenShortcuts }] : []),
         { type: "divider" },
@@ -56,9 +61,9 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
             <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
             {user ? (
                 <Tooltip title="查看算力点余额与流水" placement="bottom">
-                    <Link href="/account" aria-label={`算力点 ${credits}，查看账户与用量`} className="flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-xs font-medium tabular-nums opacity-75 transition hover:opacity-100" style={iconStyle}>
+                    <Link href="/account#wallet" aria-label={credits === undefined ? "余额暂不可用，查看我的钱包" : `算力点 ${credits}，查看我的钱包`} className="flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-xs font-medium tabular-nums opacity-75 transition hover:opacity-100" style={iconStyle}>
                         <CreditSymbol className="text-sm leading-none" />
-                        <span>{credits.toLocaleString()}</span>
+                        <span>{credits === undefined ? "—" : credits.toLocaleString()}</span>
                     </Link>
                 </Tooltip>
             ) : null}

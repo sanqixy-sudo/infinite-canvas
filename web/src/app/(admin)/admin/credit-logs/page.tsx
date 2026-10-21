@@ -9,6 +9,7 @@ import type { AdminCreditLog } from "@/services/api/admin";
 import { useAdminCreditLogs } from "./use-admin-credit-logs";
 
 const creditLogTypeLabels: Record<string, string> = {
+    recharge: "充值到账",
     admin_adjust: "后台调整",
     ai_consume: "模型消费",
     ai_refund: "失败返还",

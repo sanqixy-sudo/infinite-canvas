@@ -20,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 	"github.com/tigerowo/infinite-canvas/model"
 	"github.com/tigerowo/infinite-canvas/repository"
@@ -224,6 +223,11 @@ func UploadStorageObjectWithProvider(ctx context.Context, filename string, conte
 			return UploadedStorageObject{}, errors.New("服务端对象存储未启用")
 		}
 	}
+	reservation, err := reserveStorageUpload(ctx, int64(len(data)))
+	if err != nil {
+		return UploadedStorageObject{}, err
+	}
+	defer releaseStorageUpload(reservation)
 	if provider.Type == model.StorageProviderTypeLocal {
 		localStorageUploadMu.Lock()
 		defer localStorageUploadMu.Unlock()
@@ -235,7 +239,7 @@ func UploadStorageObjectWithProvider(ctx context.Context, filename string, conte
 			return UploadedStorageObject{}, safeMessageError{message: "服务器本地存储容量已达上限，请联系管理员调整容量或切换 R2"}
 		}
 	}
-	objectID := uuid.NewString()
+	objectID := reservation.ID
 	ext := path.Ext(filename)
 	if ext == "" {
 		ext = extensionForContentType(contentType)
@@ -243,10 +247,7 @@ func UploadStorageObjectWithProvider(ctx context.Context, filename string, conte
 	if provider.Type == model.StorageProviderTypeWebDAV && ext == ".bin" && strings.HasPrefix(strings.ToLower(contentType), "video/mp4") {
 		ext = ".mp4"
 	}
-	userID := "anonymous"
-	if user, ok := UserFromContext(ctx); ok && user.ID != "" {
-		userID = user.ID
-	}
+	userID := reservation.UserID
 	nowTime := time.Now()
 	objectKey := strings.Trim(strings.Trim(provider.PathPrefix, "/")+"/"+userID+"/"+nowTime.Format("2006/01/02")+"/"+objectID+ext, "/")
 	sum := sha256.Sum256(data)
@@ -258,7 +259,7 @@ func UploadStorageObjectWithProvider(ctx context.Context, filename string, conte
 		ID: objectID, ProviderID: provider.ID, Bucket: provider.Bucket, ObjectKey: objectKey, PublicURL: publicURL,
 		MimeType: contentType, Bytes: int64(len(data)), SHA256: hex.EncodeToString(sum[:]), CreatedBy: userID, CreatedAt: now(),
 	}
-	if _, err := repository.SaveStorageObject(object); err != nil {
+	if err := commitStorageUpload(reservation, object); err != nil {
 		_ = deleteStorageObjectData(provider, objectKey)
 		return UploadedStorageObject{}, err
 	}
@@ -305,17 +306,31 @@ func RegisterDirectStorageObject(ctx context.Context, input DirectStorageObjectI
 	if input.Bytes < 0 {
 		return UploadedStorageObject{}, errors.New("文件大小无效")
 	}
-	objectID := uuid.NewString()
+	client, err := newWebDAVClient(provider)
+	if err != nil {
+		return UploadedStorageObject{}, err
+	}
+	info, err := client.Stat(objectKey)
+	if err != nil || info.IsDir() || info.Size() < 0 {
+		return UploadedStorageObject{}, safeMessageError{message: "无法核实直传文件的实际大小，请检查文件是否上传完成"}
+	}
+	actualBytes := info.Size()
+	reservation, err := reserveStorageUpload(ctx, actualBytes)
+	if err != nil {
+		return UploadedStorageObject{}, err
+	}
+	defer releaseStorageUpload(reservation)
+	objectID := reservation.ID
 	object := model.StorageObject{
 		ID: objectID, ProviderID: provider.ID, ObjectKey: objectKey, MimeType: contentType,
-		Bytes: input.Bytes, Direct: true, CreatedBy: user.ID, CreatedAt: now(),
+		Bytes: actualBytes, Direct: true, CreatedBy: user.ID, CreatedAt: now(),
 	}
-	if _, err := repository.SaveStorageObject(object); err != nil {
+	if err := commitStorageUpload(reservation, object); err != nil {
 		return UploadedStorageObject{}, err
 	}
 	return UploadedStorageObject{
 		ID: objectID, URL: "/api/files/" + objectID + "/content?direct=1", StorageKey: "server:" + objectID,
-		Bytes: input.Bytes, MimeType: contentType,
+		Bytes: actualBytes, MimeType: contentType,
 	}, nil
 }
 

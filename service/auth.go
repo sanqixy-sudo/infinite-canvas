@@ -270,6 +270,7 @@ func SaveUser(user model.User, password string) (model.User, error) {
 	isCreate := user.ID == ""
 	if isCreate {
 		user.ID = newID("user")
+		user.StorageExtraBytes = 0
 		user.AffCode = newAffCode()
 		user.CreatedAt = now()
 	} else if saved, ok, err := repository.GetUserByID(user.ID); err != nil {
@@ -279,6 +280,7 @@ func SaveUser(user model.User, password string) (model.User, error) {
 		user.Password = saved.Password
 		user.AvatarURL = saved.AvatarURL
 		user.Credits = saved.Credits
+		user.StorageExtraBytes = saved.StorageExtraBytes
 		user.Extra = saved.Extra
 		if user.AffCode == "" {
 			user.AffCode = saved.AffCode

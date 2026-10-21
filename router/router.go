@@ -42,6 +42,10 @@ func New() *gin.Engine {
 		handler.DeleteFile(c.Writer, c.Request, c.Param("id"))
 	})
 	v1 := api.Group("/v1", middleware.UserAuth)
+	v1.GET("/wallet", gin.WrapF(handler.CurrentUserWallet))
+	v1.GET("/purchase-orders", gin.WrapF(handler.UserPurchaseOrders))
+	v1.POST("/purchase-orders", gin.WrapF(handler.CreateUserPurchaseOrder))
+	v1.POST("/purchase-orders/:id/cancel", func(c *gin.Context) { handler.CancelUserPurchaseOrder(c.Writer, c.Request, c.Param("id")) })
 	v1.GET("/credit-logs", gin.WrapF(handler.UserCreditLogs))
 	v1.POST("/images/generations", gin.WrapF(handler.AIImagesGenerations))
 	v1.POST("/images/edits", gin.WrapF(handler.AIImagesEdits))
@@ -138,6 +142,10 @@ func New() *gin.Engine {
 	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))
 
 	admin := api.Group("/admin", middleware.AdminAuth)
+	admin.GET("/commerce/settings", gin.WrapF(handler.AdminCommerceSettings))
+	admin.POST("/commerce/settings", gin.WrapF(handler.AdminSaveCommerceSettings))
+	admin.GET("/purchase-orders", gin.WrapF(handler.AdminPurchaseOrders))
+	admin.POST("/purchase-orders/:id/review", func(c *gin.Context) { handler.AdminReviewPurchaseOrder(c.Writer, c.Request, c.Param("id")) })
 	admin.GET("/users", gin.WrapF(handler.AdminUsers))
 	admin.POST("/users", gin.WrapF(handler.AdminSaveUser))
 	admin.POST("/users/:id/credits", func(c *gin.Context) {
