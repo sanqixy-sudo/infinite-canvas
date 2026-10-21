@@ -38,108 +38,31 @@ type UserStorageProviders struct {
 	WebDAV *StorageObjectProviderInput `json:"webdav,omitempty"`
 }
 
-type userModelConfigInput struct {
-	LocalChannels       []userLocalModelChannelInput `json:"localChannels"`
-	ChannelTranslations []struct {
-		ChannelID            string `json:"channelId"`
-		ParameterTranslation string `json:"parameterTranslation"`
-	} `json:"channelTranslations"`
-}
+var ErrPersonalModelChannelDisabled = safeMessageError{message: "仅支持平台云端模型"}
 
-type userLocalModelChannelInput struct {
-	ID       string   `json:"id"`
-	Protocol string   `json:"protocol"`
-	Name     string   `json:"name"`
-	BaseURL  string   `json:"baseUrl"`
-	APIKey   string   `json:"apiKey"`
-	Models   []string `json:"models"`
-}
+var privateModelConfigKeys = []string{"localChannels", "workflowChannels", "channelTranslations", "apiKey", "baseUrl", "publicChannels"}
 
 func SelectUserLocalModelChannelForModel(userID string, modelName string, channelID string) (model.ModelChannel, error) {
-	userID = strings.TrimSpace(userID)
-	modelName = strings.TrimSpace(modelName)
-	channelID = strings.TrimSpace(channelID)
-	if userID == "" {
-		return model.ModelChannel{}, errors.New("请先登录")
-	}
-	if modelName == "" {
-		return model.ModelChannel{}, errors.New("缺少模型名称")
-	}
-	if channelID == "" {
-		return model.ModelChannel{}, errors.New("缺少模型渠道")
-	}
-	config, ok, err := repository.GetUserConfig(userID)
-	if err != nil {
-		return model.ModelChannel{}, err
-	}
-	if !ok || strings.TrimSpace(config.ModelConfig) == "" {
-		return model.ModelChannel{}, errors.New("本地渠道不存在")
-	}
-	var modelConfig userModelConfigInput
-	if err := json.Unmarshal([]byte(config.ModelConfig), &modelConfig); err != nil {
-		return model.ModelChannel{}, err
-	}
-	for _, channel := range modelConfig.LocalChannels {
-		if strings.TrimSpace(channel.ID) != channelID {
-			continue
-		}
-		baseURL := strings.TrimSpace(channel.BaseURL)
-		apiKey := strings.TrimSpace(channel.APIKey)
-		if baseURL == "" || apiKey == "" {
-			return model.ModelChannel{}, errors.New("本地渠道配置不完整")
-		}
-		models := userLocalChannelModels(channel.Models)
-		if len(models) > 0 && !userLocalChannelHasModel(models, modelName) {
-			return model.ModelChannel{}, errors.New("本地渠道不支持该模型")
-		}
-		protocol := strings.ToLower(strings.TrimSpace(channel.Protocol))
-		if protocol == "" {
-			protocol = "openai"
-		}
-		parameterTranslation := ""
-		for _, translation := range modelConfig.ChannelTranslations {
-			if translation.ChannelID == channelID {
-				parameterTranslation = translation.ParameterTranslation
-				break
-			}
-		}
-		return model.ModelChannel{
-			ID:                   channelID,
-			Protocol:             protocol,
-			Name:                 firstVideoTaskValue(strings.TrimSpace(channel.Name), "本地直连"),
-			BaseURL:              baseURL,
-			APIKey:               apiKey,
-			Models:               models,
-			Weight:               1,
-			Timeout:              600,
-			Enabled:              true,
-			ParameterTranslation: parameterTranslation,
-		}, nil
-	}
-	return model.ModelChannel{}, errors.New("本地渠道不存在")
+	return model.ModelChannel{}, ErrPersonalModelChannelDisabled
 }
 
-func userLocalChannelModels(models []string) []string {
-	result := make([]string, 0, len(models))
-	seen := map[string]bool{}
-	for _, item := range models {
-		modelName := strings.TrimSpace(item)
-		if modelName == "" || seen[modelName] {
-			continue
-		}
-		result = append(result, modelName)
-		seen[modelName] = true
+func publicUserModelConfig(raw string) json.RawMessage {
+	var config map[string]json.RawMessage
+	if json.Unmarshal([]byte(raw), &config) != nil || config == nil {
+		return nil
 	}
+	for _, key := range privateModelConfigKeys {
+		delete(config, key)
+	}
+	for _, key := range []string{"imageWorkflowRef", "videoWorkflowRef", "audioWorkflowRef"} {
+		var ref WorkflowRef
+		if json.Unmarshal(config[key], &ref) == nil && ref.Scope != "system" {
+			delete(config, key)
+		}
+	}
+	config["channelMode"] = json.RawMessage(`"remote"`)
+	result, _ := json.Marshal(config)
 	return result
-}
-
-func userLocalChannelHasModel(models []string, modelName string) bool {
-	for _, item := range models {
-		if strings.EqualFold(strings.TrimSpace(item), modelName) {
-			return true
-		}
-	}
-	return false
 }
 
 func CurrentUserConfig(ctx context.Context) (UserConfigPayload, error) {
@@ -162,7 +85,7 @@ func CurrentUserConfig(ctx context.Context) (UserConfigPayload, error) {
 		return result, nil
 	}
 	if strings.TrimSpace(config.ModelConfig) != "" {
-		result.ModelConfig = json.RawMessage(config.ModelConfig)
+		result.ModelConfig = publicUserModelConfig(config.ModelConfig)
 	}
 	if strings.TrimSpace(config.StorageProvider) != "" {
 		providers := readUserStorageProviders(config.StorageProvider)
@@ -213,21 +136,26 @@ func SaveCurrentUserModelConfig(ctx context.Context, raw json.RawMessage) (UserC
 		config.CreatedAt = current
 	}
 	var incoming, saved map[string]json.RawMessage
-	if json.Unmarshal(raw, &incoming) == nil && incoming != nil {
-		var input userModelConfigInput
-		if json.Unmarshal(raw, &input) != nil {
-			return UserConfigPayload{}, errors.New("模型配置格式错误")
-		}
-		for _, translation := range input.ChannelTranslations {
-			if _, err := ParameterTranslationModels(translation.ParameterTranslation); err != nil {
-				return UserConfigPayload{}, err
-			}
-		}
-		if _, supplied := incoming["channelTranslations"]; !supplied && json.Unmarshal([]byte(config.ModelConfig), &saved) == nil && saved["channelTranslations"] != nil {
-			incoming["channelTranslations"] = saved["channelTranslations"]
-			raw, _ = json.Marshal(incoming)
+	if json.Unmarshal(raw, &incoming) != nil || incoming == nil {
+		return UserConfigPayload{}, errors.New("模型配置格式错误")
+	}
+	for _, key := range []string{"imageWorkflowRef", "videoWorkflowRef", "audioWorkflowRef"} {
+		var ref WorkflowRef
+		if value, exists := incoming[key]; exists && string(value) != "null" && (json.Unmarshal(value, &ref) != nil || ref.Scope != "system") {
+			return UserConfigPayload{}, ErrPersonalModelChannelDisabled
 		}
 	}
+	_ = json.Unmarshal([]byte(config.ModelConfig), &saved)
+	for _, key := range privateModelConfigKeys {
+		if _, supplied := incoming[key]; supplied {
+			return UserConfigPayload{}, ErrPersonalModelChannelDisabled
+		}
+		if value, exists := saved[key]; exists {
+			incoming[key] = value
+		}
+	}
+	incoming["channelMode"] = json.RawMessage(`"remote"`)
+	raw, _ = json.Marshal(incoming)
 	config.ModelConfig = string(raw)
 	config.UpdatedAt = current
 	if _, err := repository.SaveUserConfig(config); err != nil {

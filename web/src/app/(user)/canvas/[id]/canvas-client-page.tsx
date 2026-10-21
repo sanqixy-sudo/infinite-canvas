@@ -3841,7 +3841,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     const generationConfig = buildGenerationConfig(agentEffectiveConfig, undefined, mode);
                     const agentWorkflowRef = mode === "image" ? agentEffectiveConfig.imageWorkflowRef : mode === "video" ? agentEffectiveConfig.videoWorkflowRef : agentEffectiveConfig.audioWorkflowRef;
                     if (!agentWorkflowRef && (!generationConfig.model || !isAiConfigReady(generationConfig, generationConfig.model))) {
-                        return { ok: false, code: "model_not_configured", message: "请先在全局配置中完成" + (mode === "video" ? "视频" : mode === "audio" ? "音频" : "图片") + "模型配置" };
+                        return { ok: false, code: "model_not_configured", message: "请先在偏好设置中选择平台" + (mode === "video" ? "视频" : mode === "audio" ? "音频" : "图片") + "模型；如列表为空，请联系管理员配置" };
                     }
                     if (agentWorkflowRef && !useUserStore.getState().token) return { ok: false, code: "login_required", message: "工作流生成需要先登录" };
 

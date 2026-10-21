@@ -1,4 +1,5 @@
 import { readFileAsDataUrl } from "@/lib/image-utils";
+import { requireCloudModelAccess } from "./cloud-model-access";
 import { audioMimeType } from "@/lib/audio-generation";
 import { modelChannelAttributionHeaders } from "@/lib/model-channel";
 import { translationPrograms, translationVariableNames, type TranslationVariables } from "@/lib/channel-parameter-translation";
@@ -36,6 +37,7 @@ export function normalizeTranslationAspectRatio(value: string) {
 }
 
 export async function findParameterTranslation(config: AiConfig): Promise<MatchedTranslation | null> {
+    requireCloudModelAccess(config);
     const { user, token } = useUserStore.getState();
     const channelId = config.channelMode === "remote" ? channelIdForActiveModel(config) : localChannelForActiveModel(config)?.id || "";
     if (!channelId) return null;
@@ -49,6 +51,8 @@ export async function findParameterTranslation(config: AiConfig): Promise<Matche
 }
 
 export function translationHeaders(config: AiConfig, match: MatchedTranslation): Record<string, string> {
+    requireCloudModelAccess(config);
+    if (!match.accountProxy) throw new Error("浏览器自定义模型协议已停用，请使用平台云端渠道");
     const token = useUserStore.getState().token;
     if (!token) throw new Error("请先登录后再使用账号渠道");
     return { Authorization: `Bearer ${token}`, "Content-Type": "application/json", [config.channelMode === "remote" ? "X-Model-Channel-ID" : "X-User-Model-Channel-ID"]: match.channelId };
@@ -86,6 +90,8 @@ export class BrowserParameterTranslation {
         private input: TranslationInput,
     ) {}
     static async create(config: AiConfig, match: MatchedTranslation, input: TranslationInput) {
+        requireCloudModelAccess(config);
+        if (config.channelMode === "remote") throw new Error("浏览器自定义模型协议已停用，请使用平台云端渠道");
         const translation = new BrowserParameterTranslation(config, match, input);
         try {
             const code = (await translationPrograms(match.source))[config.model];
@@ -274,6 +280,8 @@ export class BrowserParameterTranslation {
 }
 
 export async function executeParameterTranslation(config: AiConfig, match: MatchedTranslation, input: TranslationInput, signal?: AbortSignal): Promise<TranslationResult> {
+    requireCloudModelAccess(config);
+    if (!match.accountProxy) throw new Error("浏览器自定义模型协议已停用，请使用平台云端渠道");
     if (match.accountProxy) {
         const timeout = AbortSignal.timeout(match.timeout * 1000);
         const endpoint = input.kind === "audio" ? "/audio/speech" : Array.isArray(input.variables.images) && input.variables.images.length ? "/images/edits" : "/images/generations";

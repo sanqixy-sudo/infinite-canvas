@@ -1,4 +1,5 @@
 import { readFileAsDataUrl } from "@/lib/image-utils";
+import { requireCloudModelAccess } from "./cloud-model-access";
 import { apiPost } from "@/services/api/request";
 import { resolveMediaUrl, uploadRemoteMediaToServer } from "@/services/file-storage";
 import { resolveImageUrl } from "@/services/image-storage";
@@ -142,6 +143,8 @@ async function prepareDirectRequest(config: AiConfig, provider: DirectAIProvider
 }
 
 function requireDirectChannel(config: AiConfig) {
+    requireCloudModelAccess(config);
+    if (config.channelMode === "remote") throw new Error("浏览器模型直连已停用，请使用平台云端渠道");
     const channel = localChannelForActiveModel(config);
     if (!channel?.baseUrl.trim() || !channel.apiKey.trim()) throw new Error("本地渠道地址或 API Key 不能为空");
     return channel;

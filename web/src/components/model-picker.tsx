@@ -8,7 +8,7 @@ import { useAutoDLWorkflowNames } from "@/hooks/use-autodl-workflow";
 import { isWorkflowProtocol } from "@/lib/model-channel";
 import { cn } from "@/lib/utils";
 import type { WorkflowRef } from "@/lib/workflow-channel";
-import { filterModelsByCapability, normalizeLocalChannels, useConfigStore, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { filterModelsByCapability, useConfigStore, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 type ModelPickerProps = {
@@ -28,26 +28,26 @@ type ModelPickerProps = {
 type PickerBase = { key: string; channelId?: string; channelName: string; protocol?: string; baseUrl?: string };
 type PickerOption = (PickerBase & { model: string }) | (PickerBase & { model: ""; workflowRef: WorkflowRef; label: string });
 
-export function ModelPicker({ config, value, channelId, capability, onChange, workflowRef, onWorkflowChange, className, fullWidth = false, placeholder = "选择模型", onMissingConfig }: ModelPickerProps) {
+export function ModelPicker({ config, value, channelId, capability, onChange, workflowRef, onWorkflowChange, className, fullWidth = false, placeholder = "选择模型" }: ModelPickerProps) {
     const pickerId = useId();
     const [open, setOpen] = useState(false);
     const token = useUserStore((state) => state.token);
+    const user = useUserStore((state) => state.user);
     const userReady = useUserStore((state) => state.isReady);
     const publicSettings = useConfigStore((state) => state.publicSettings);
+    const settingsLoading = useConfigStore((state) => state.isPublicSettingsLoading);
+    const cloudAvailable = Boolean(token && user && (user.role === "admin" || publicSettings?.modelChannel.allowUserRemoteChannel === true));
     const workflowEnabled = Boolean(onWorkflowChange && capability && capability !== "text");
     const channelOptions = useMemo<PickerOption[]>(() => {
-        const channels =
-            config.channelMode === "remote"
-                ? config.publicChannels.map((channel) => ({ id: channel.id, protocol: channel.protocol, name: channel.name || "云端渠道", baseUrl: channel.baseUrl, models: channel.models, modelCapabilities: channel.modelCapabilities, workflows: channel.workflows || [] }))
-                : normalizeLocalChannels(config).map((channel) => ({ id: channel.id, protocol: channel.protocol, name: channel.name || "本地渠道", baseUrl: channel.baseUrl, models: channel.models, modelCapabilities: channel.modelCapabilities, workflows: channel.workflowSummaries || [] }));
-        const filtered = channels.filter((channel) => !isWorkflowProtocol(channel.protocol || "")).flatMap((channel) => filterModelsByCapability(channel.models ?? [], capability, channel.protocol || "", channel.modelCapabilities).map((model) => ({ key: `${channel.id}::${model}`, channelId: channel.id, channelName: channel.name, protocol: channel.protocol, baseUrl: channel.baseUrl, model })));
+        if (!cloudAvailable || config.channelMode !== "remote") return [];
+        const channels = config.publicChannels.filter((channel) => channel.enabled !== false).map((channel) => ({ id: channel.id, protocol: channel.protocol, name: channel.name || "云端模型", baseUrl: channel.baseUrl, models: channel.models, modelCapabilities: channel.modelCapabilities, workflows: channel.workflows || [] }));
+        const filtered = channels.filter((channel) => !isWorkflowProtocol(channel.protocol || "")).flatMap((channel) => filterModelsByCapability(channel.models ?? [], capability, channel.protocol || "", channel.modelCapabilities).filter((model) => config.models.includes(model)).map((model) => ({ key: `${channel.id}::${model}`, channelId: channel.id, channelName: channel.name, protocol: channel.protocol, baseUrl: channel.baseUrl, model })));
         if (!workflowEnabled || !token) return filtered;
-        const scope = config.channelMode === "remote" ? "system" : "personal";
         return [...filtered, ...channels.flatMap((channel) => isWorkflowProtocol(channel.protocol || "") ? channel.workflows.filter((entry) => entry.enabled && entry.capability === capability && entry.provider === channel.protocol).map((entry) => {
-            const ref: WorkflowRef = { scope, channelId: channel.id || "", kind: entry.kind, workflowId: entry.workflowId };
+            const ref: WorkflowRef = { scope: "system", channelId: channel.id || "", kind: entry.kind, workflowId: entry.workflowId };
             return { key: `workflow:${JSON.stringify([ref.scope, ref.channelId, ref.kind, ref.workflowId])}`, channelId: channel.id, channelName: channel.name, protocol: channel.protocol, baseUrl: channel.baseUrl, model: "", workflowRef: ref, label: entry.title || entry.workflowId };
         }) : [])];
-    }, [capability, config, token, workflowEnabled]);
+    }, [capability, cloudAvailable, config, token, workflowEnabled]);
     const modelLabel = useAutoDLWorkflowNames(channelOptions);
     const currentOption = useMemo<PickerOption | undefined>(() => {
         if (workflowRef && workflowEnabled) return channelOptions.find((item) => "workflowRef" in item && item.key === `workflow:${JSON.stringify([workflowRef.scope, workflowRef.channelId, workflowRef.kind, workflowRef.workflowId])}`);
@@ -55,21 +55,21 @@ export function ModelPicker({ config, value, channelId, capability, onChange, wo
         return channelOptions.find((item) => item.model === value && item.channelId === channelId) || channelOptions.find((item) => item.model === value);
     }, [channelId, channelOptions, value, workflowEnabled, workflowRef]);
     const options = channelOptions;
-    const current = workflowRef && workflowEnabled ? (currentOption && "label" in currentOption ? currentOption.label : "") : value || "";
+    const current = currentOption ? ("label" in currentOption ? currentOption.label : currentOption.model) : "";
     const currentValue = current && currentOption ? currentOption.key : "";
+    const emptyMessage = !userReady ? "正在加载云端模型" : !token || !user ? "登录后使用云端模型" : settingsLoading ? "正在加载云端模型" : !publicSettings ? "云端模型配置不可用，请稍后重试" : !cloudAvailable ? "云端模型暂未开放" : "暂无可用云端模型，请联系管理员";
+    const missingSelection = workflowRef && workflowEnabled ? "工作流不可用，请重新选择云端模型" : value ? "模型不可用，请重新选择" : placeholder;
 
 	useEffect(() => {
 		if (workflowRef && workflowEnabled) {
-			const workflowOptionsReady = workflowRef.scope === "system"
-				? publicSettings !== null
-				: config.workflowSyncTouched === true;
+			const workflowOptionsReady = publicSettings !== null;
 			if (token && userReady && workflowOptionsReady && !currentOption && channelOptions.some((item) => !("workflowRef" in item))) {
 				onWorkflowChange?.(undefined);
             }
             return;
         }
         if (value && currentOption?.channelId && !("workflowRef" in currentOption) && channelId !== currentOption.channelId) onChange(value, currentOption.channelId);
-	}, [channelId, channelOptions, config.workflowSyncTouched, currentOption, onChange, onWorkflowChange, publicSettings, token, userReady, value, workflowEnabled, workflowRef]);
+	}, [channelId, channelOptions, currentOption, onChange, onWorkflowChange, publicSettings, token, userReady, value, workflowEnabled, workflowRef]);
 
     useEffect(() => {
         const closeOtherPicker = (event: Event) => {
@@ -84,10 +84,6 @@ export function ModelPicker({ config, value, channelId, capability, onChange, wo
             open={open}
             value={current ? currentValue : ""}
             onOpenChange={(nextOpen) => {
-                if (nextOpen && !options.length && config.channelMode === "local") {
-                    onMissingConfig?.();
-                    return;
-                }
                 if (nextOpen) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
                 setOpen(nextOpen);
             }}
@@ -107,10 +103,10 @@ export function ModelPicker({ config, value, channelId, capability, onChange, wo
                 )}
                 onMouseDown={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
-                title={workflowRef && workflowEnabled && !currentOption ? "工作流已停用、未公开或删除，请重新选择" : current || placeholder}
+                title={current || (options.length ? missingSelection : emptyMessage)}
             >
                 <ModelIcon model={current} />
-                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{workflowRef && workflowEnabled ? current || "工作流已停用、未公开或删除，请重新选择" : modelLabel(current, currentOption) || placeholder}</span>
+                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{modelLabel(current, currentOption) || (options.length ? missingSelection : emptyMessage)}</span>
             </SelectTrigger>
             <SelectContent
                 data-canvas-no-zoom
@@ -130,7 +126,7 @@ export function ModelPicker({ config, value, channelId, capability, onChange, wo
                     ))
                 ) : (
                     <SelectItem value="__empty__" disabled>
-                        {config.channelMode === "remote" ? "暂无可用模型" : "请先到配置里拉取模型列表"}
+                        {emptyMessage}
                     </SelectItem>
                 )}
             </SelectContent>

@@ -24,10 +24,11 @@ import (
 const userModelChannelHeader = "X-User-Model-Channel-ID"
 
 func selectAIRequestChannel(user model.AuthUser, modelName string, channelID string, userChannelID string, publicOnly bool) (model.ModelChannel, string, error) {
-	userChannelID = strings.TrimSpace(userChannelID)
-	if userChannelID != "" {
-		channel, err := service.SelectUserLocalModelChannelForModel(user.ID, modelName, userChannelID)
-		return channel, userChannelID, err
+	if strings.TrimSpace(user.ID) == "" {
+		return model.ModelChannel{}, "", fmt.Errorf("请先登录")
+	}
+	if strings.TrimSpace(userChannelID) != "" {
+		return model.ModelChannel{}, "", service.ErrPersonalModelChannelDisabled
 	}
 	if !service.UserCanUseRemoteModelChannel(user) {
 		return model.ModelChannel{}, "", fmt.Errorf("当前账号未开放云端渠道")
@@ -39,11 +40,15 @@ func selectAIRequestChannel(user model.AuthUser, modelName string, channelID str
 func failAIChannelSelect(w http.ResponseWriter, err error, fallback string) {
 	message := strings.TrimSpace(err.Error())
 	switch message {
-	case "当前账号未开放云端渠道", "请先登录", "缺少模型名称", "缺少模型渠道", "本地渠道不存在", "本地渠道配置不完整", "本地渠道不支持该模型", "指定模型渠道不可用", "模型未开放":
+	case "当前账号未开放云端渠道", "请先登录", "缺少模型名称", "缺少模型渠道", "仅支持平台云端模型", "指定模型渠道不可用", "模型未开放":
 		Fail(w, message)
 	default:
 		Fail(w, fallback)
 	}
+}
+
+func PersonalModelChannelDisabled(w http.ResponseWriter, r *http.Request) {
+	FailWithStatus(w, http.StatusForbidden, service.ErrPersonalModelChannelDisabled.Error())
 }
 
 func AIImagesGenerations(w http.ResponseWriter, r *http.Request) {

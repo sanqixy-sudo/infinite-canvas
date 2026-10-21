@@ -1,4 +1,5 @@
 import axios from "axios";
+import { requireCloudModelAccess } from "./cloud-model-access";
 import { nanoid } from "nanoid";
 import { WorkflowRequestError } from "./workflow-generation";
 import { BrowserParameterTranslation, findParameterTranslation, normalizeTranslationAspectRatio, translationBody, translationHeaders, translationMediaAddress, type MatchedTranslation, type TranslationInput, type TranslationResult } from "./channel-parameter-translation";
@@ -10,7 +11,7 @@ import { dataUrlToGeminiInlineData, geminiActionUrl, geminiDirectHeaders, gemini
 import { isGeminiVeo31Model, normalizeGeminiVideoDuration, normalizeGeminiVideoRatio, normalizeGeminiVideoResolution } from "@/lib/gemini-video";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio } from "@/lib/seedance-video";
 import { isKIEGrokVideoModel, isKIEKlingV3Config, kieKlingOmniVariant } from "./protocols/kling-models";
-import { autoDLBaseUrl, getAutoDLCapabilities } from "@/lib/autodl";
+import { getAutoDLCapabilities } from "@/lib/autodl";
 import { fetchAutoDLWorkflow } from "./autodl";
 import { isAgnesVideoV25Model, isCogVideoX3Model, modelKey, normalizeCogVideoX3Duration, supportsVideoAudioGeneration } from "@/lib/video-model-capabilities";
 import { resolveMediaUrl, uploadMediaFile, uploadRemoteMediaToServer } from "@/services/file-storage";
@@ -41,6 +42,7 @@ export class VideoRequestError extends Error {
 }
 
 function usesAccountProxy(config: AiConfig) {
+    requireCloudModelAccess(config);
     const token = useUserStore.getState().token;
     return config.channelMode === "remote" || (config.channelMode === "local" && Boolean(token));
 }
@@ -84,6 +86,7 @@ function agnesBaseUrl(baseUrl: string) {
 }
 
 function aiHeaders(config: AiConfig) {
+    requireCloudModelAccess(config);
     const token = useUserStore.getState().token;
     if (config.channelMode === "remote" && !token) throw new Error("请先登录后再使用云端渠道");
     if (config.channelMode === "remote") return { Authorization: `Bearer ${token}`, ...(channelIdForActiveModel(config) ? { "X-Model-Channel-ID": channelIdForActiveModel(config) } : {}) };
@@ -218,6 +221,8 @@ async function createTranslatedVideoTask(config: AiConfig, match: MatchedTransla
 }
 
 async function pollLocalTranslatedVideo(config: AiConfig, task: VideoResponse, signal?: AbortSignal): Promise<VideoResponse> {
+    requireCloudModelAccess(config);
+    if (Boolean(task.translationSnapshot)) throw new VideoRequestError("旧的个人渠道视频任务已停用，请使用平台云端模型重新生成");
     if (isCompletedVideoStatus(task.status) || isFailedVideoStatus(task.status)) return task;
     const snapshot = task.translationSnapshot!;
     const channel = config.localChannels.find((item) => item.id === snapshot.match.channelId);
@@ -394,7 +399,7 @@ async function createAgnesVideoV25RequestBody(config: AiConfig, model: string, p
 
 async function createVideoRequestBody(config: AiConfig, model: string, prompt: string, input: Required<VideoReferenceInput>) {
     if (videoChannelProtocol(config, model) === "autodl") {
-        const capabilities = getAutoDLCapabilities(await fetchAutoDLWorkflow(autoDLBaseUrl(config, model), model));
+        const capabilities = getAutoDLCapabilities(await fetchAutoDLWorkflow(channelIdForActiveModel({ ...config, model }), model));
         if (!capabilities) throw new VideoRequestError("当前 AutoDL 工作流尚未适配");
         const { autoDLReferenceURL } = await import("./direct-ai");
         const [images, videos, audios, firstFrame, lastFrame] = await Promise.all([

@@ -46,7 +46,7 @@ const emptySettings: AdminSettings = {
             defaultTextModel: "",
             systemPrompt: "",
             systemPrompts: { image: "", video: "", text: "", workflow: "", workflowAgent: "" },
-            allowCustomChannel: true,
+            allowCustomChannel: false,
             allowUserRemoteChannel: false,
         },
         auth: { allowRegister: true, linuxDo: { enabled: false } },
@@ -506,12 +506,7 @@ export default function AdminSettingsPage() {
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
-                                        <Form.Item name={["public", "modelChannel", "allowCustomChannel"]} label="是否允许用户自定义渠道" extra="开启后，前端可提供用户自定义 baseUrl 直连模式" valuePropName="checked">
-                                            <Switch />
-                                        </Form.Item>
-                                    </Col>
-                                    <Col span={24}>
-                                        <Form.Item name={["public", "modelChannel", "allowUserRemoteChannel"]} label="是否允许普通用户使用云端渠道" extra="关闭后，普通用户只能使用本地直连；管理员仍可使用云端渠道" valuePropName="checked">
+                                        <Form.Item name={["public", "modelChannel", "allowUserRemoteChannel"]} label="向普通用户开放云端模型" extra="用户统一使用平台云端模型；关闭后普通用户暂停生成，管理员仍可测试平台模型" valuePropName="checked">
                                             <Switch />
                                         </Form.Item>
                                     </Col>
@@ -1116,6 +1111,7 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
         modelChannel: {
             ...emptySettings.public.modelChannel,
             ...(setting.modelChannel || {}),
+            allowCustomChannel: false,
             availableModels: setting.modelChannel?.availableModels || [],
             availableWorkflows: setting.modelChannel?.availableWorkflows || [],
             modelCosts: normalizeModelCosts(setting.modelChannel?.modelCosts || []),

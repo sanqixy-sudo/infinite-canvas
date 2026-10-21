@@ -1,4 +1,5 @@
 import axios from "axios";
+import { requireCloudModelAccess } from "./cloud-model-access";
 import { nanoid } from "nanoid";
 import { executeParameterTranslation, findParameterTranslation, translationBody, translationHeaders, translationMediaAddress, type TranslationInput } from "./channel-parameter-translation";
 
@@ -39,6 +40,7 @@ type GeminiAudioResponse = { candidates?: Array<{ content?: { parts?: Array<{ in
 const grokTtsVoiceRequests = new Map<string, Promise<GrokTtsVoice[]>>();
 
 function usesAccountProxy(config: AiConfig) {
+    requireCloudModelAccess(config);
     const token = useUserStore.getState().token;
     return config.channelMode === "remote" || (config.channelMode === "local" && Boolean(token));
 }
@@ -50,6 +52,7 @@ function aiApiUrl(config: AiConfig, path: string) {
 }
 
 function aiHeaders(config: AiConfig) {
+    requireCloudModelAccess(config);
     const token = useUserStore.getState().token;
     if (config.channelMode === "remote") {
         return {

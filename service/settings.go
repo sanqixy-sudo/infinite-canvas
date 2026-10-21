@@ -31,6 +31,9 @@ func PublicSettings() (model.PublicSetting, error) {
 }
 
 func UserCanUseRemoteModelChannel(user model.AuthUser) bool {
+	if strings.TrimSpace(user.ID) == "" {
+		return false
+	}
 	if user.Role == model.UserRoleAdmin {
 		return true
 	}

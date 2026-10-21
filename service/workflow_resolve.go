@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -22,15 +21,16 @@ func ResolveWorkflowForUser(user model.AuthUser, ref WorkflowRef) (ResolvedWorkf
 }
 
 func resolveWorkflowForUser(user model.AuthUser, ref WorkflowRef, requireEntry bool) (ResolvedWorkflow, error) {
+	if strings.TrimSpace(user.ID) == "" {
+		return ResolvedWorkflow{}, errors.New("请先登录")
+	}
+	if ref.Scope != "system" {
+		return ResolvedWorkflow{}, ErrPersonalModelChannelDisabled
+	}
 	if strings.TrimSpace(ref.ChannelID) == "" || strings.TrimSpace(ref.WorkflowID) == "" {
 		return ResolvedWorkflow{}, errors.New("请选择有效工作流")
 	}
 	var channels []model.ModelChannel
-	var personalWorkflows []struct {
-		ChannelID string                `json:"channelId"`
-		Protocol  string                `json:"protocol"`
-		Workflows []model.WorkflowEntry `json:"workflows"`
-	}
 	ownerScope, ownerID := ref.Scope, user.ID
 	switch ref.Scope {
 	case "system":
@@ -41,31 +41,11 @@ func resolveWorkflowForUser(user model.AuthUser, ref WorkflowRef, requireEntry b
 		if err != nil {
 			return ResolvedWorkflow{}, err
 		}
-		if requireEntry && user.Role != model.UserRoleAdmin && !slices.Contains(settings.Public.ModelChannel.AvailableWorkflows, workflowBillingName(ref)) {
+		if requireEntry && !slices.Contains(settings.Public.ModelChannel.AvailableWorkflows, workflowBillingName(ref)) {
 			return ResolvedWorkflow{}, errors.New("这条工作流未公开")
 		}
 		channels = settings.Private.Channels
 		ownerID = "system"
-	case "personal":
-		stored, exists, err := repository.GetUserConfig(user.ID)
-		if err != nil {
-			return ResolvedWorkflow{}, err
-		}
-		if !exists {
-			return ResolvedWorkflow{}, errors.New("个人工作流配置未保存到账号")
-		}
-		var config struct {
-			LocalChannels    []model.ModelChannel `json:"localChannels"`
-			WorkflowChannels []struct {
-				ChannelID string                `json:"channelId"`
-				Protocol  string                `json:"protocol"`
-				Workflows []model.WorkflowEntry `json:"workflows"`
-			} `json:"workflowChannels"`
-		}
-		if err := json.Unmarshal([]byte(stored.ModelConfig), &config); err != nil {
-			return ResolvedWorkflow{}, errors.New("个人工作流配置格式无效")
-		}
-		channels, personalWorkflows = config.LocalChannels, config.WorkflowChannels
 	default:
 		return ResolvedWorkflow{}, errors.New("工作流归属类型无效")
 	}
@@ -78,14 +58,6 @@ func resolveWorkflowForUser(user model.AuthUser, ref WorkflowRef, requireEntry b
 		}
 		if !isWorkflowChannelProtocol(channel.Protocol) {
 			return ResolvedWorkflow{}, errors.New("目标渠道不是工作流渠道")
-		}
-		if ref.Scope == "personal" {
-			for _, saved := range personalWorkflows {
-				if saved.ChannelID == channel.ID && saved.Protocol == channel.Protocol {
-					channel.Workflows = saved.Workflows
-					break
-				}
-			}
 		}
 		if !requireEntry {
 			return ResolvedWorkflow{Channel: channel, OwnerScope: ownerScope, OwnerID: ownerID}, nil

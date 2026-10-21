@@ -29,7 +29,7 @@ func DraftCreativeWorkflow(ctx context.Context, request WorkflowAgentDraftReques
 	if err != nil {
 		return WorkflowAgentDraftResponse{}, err
 	}
-	if request.ChannelMode != "local" && !UserCanUseRemoteModelChannel(user) {
+	if !UserCanUseRemoteModelChannel(user) {
 		return WorkflowAgentDraftResponse{}, safeMessageError{message: "当前账号未开放云端渠道"}
 	}
 	channel, err := workflowDraftChannel(request, modelName)
@@ -37,22 +37,16 @@ func DraftCreativeWorkflow(ctx context.Context, request WorkflowAgentDraftReques
 		return WorkflowAgentDraftResponse{}, err
 	}
 
-	credits := 0.0
-	chargedCredits := request.ChannelMode != "local"
-	if chargedCredits {
-		credits, err = ModelCost(modelName)
-		if err != nil {
-			return WorkflowAgentDraftResponse{}, err
-		}
-		if err := ConsumeUserCredits(user.ID, modelName, credits, "/workflows/agent-draft"); err != nil {
-			return WorkflowAgentDraftResponse{}, err
-		}
+	credits, err := ModelCost(modelName)
+	if err != nil {
+		return WorkflowAgentDraftResponse{}, err
+	}
+	if err := ConsumeUserCredits(user.ID, modelName, credits, "/workflows/agent-draft"); err != nil {
+		return WorkflowAgentDraftResponse{}, err
 	}
 	refundCredits := func() {
-		if chargedCredits {
-			if err := RefundUserCredits(user.ID, modelName, credits, "/workflows/agent-draft"); err != nil {
-				log.Printf("workflow agent refund credits failed: user=%s model=%s credits=%g err=%v", user.ID, modelName, credits, err)
-			}
+		if err := RefundUserCredits(user.ID, modelName, credits, "/workflows/agent-draft"); err != nil {
+			log.Printf("workflow agent refund credits failed: user=%s model=%s credits=%g err=%v", user.ID, modelName, credits, err)
 		}
 	}
 
@@ -197,23 +191,10 @@ func workflowDraftModel(modelName string) (string, error) {
 }
 
 func workflowDraftChannel(request WorkflowAgentDraftRequest, modelName string) (model.ModelChannel, error) {
-	if request.ChannelMode == "local" {
-		channel := model.ModelChannel{
-			ID:       strings.TrimSpace(request.ChannelID),
-			Name:     "用户本地直连",
-			BaseURL:  strings.TrimSpace(request.BaseURL),
-			APIKey:   strings.TrimSpace(request.APIKey),
-			Models:   []string{modelName},
-			Weight:   1,
-			Timeout:  600,
-			Protocol: strings.TrimSpace(request.Protocol),
-		}
-		if channel.BaseURL == "" || channel.APIKey == "" {
-			return model.ModelChannel{}, safeMessageError{message: "文本模型本地直连渠道配置不完整"}
-		}
-		return channel, nil
+	if request.ChannelMode == "local" || strings.TrimSpace(request.BaseURL) != "" || strings.TrimSpace(request.APIKey) != "" || strings.TrimSpace(request.Protocol) != "" {
+		return model.ModelChannel{}, ErrPersonalModelChannelDisabled
 	}
-	return SelectModelChannel(modelName)
+	return SelectModelChannelForModel(modelName, strings.TrimSpace(request.ChannelID), true)
 }
 
 func workflowAgentMessages(prompt string, references []string) []map[string]any {

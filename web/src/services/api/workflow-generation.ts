@@ -1,4 +1,5 @@
 import { readFileAsDataUrl } from "@/lib/image-utils";
+import { requireCloudWorkflow } from "./cloud-model-access";
 import type { WorkflowCapability, WorkflowRef } from "@/lib/workflow-channel";
 import { useConfigStore } from "@/stores/use-config-store";
 
@@ -88,6 +89,7 @@ async function workflowRequest<T>(path: string, token: string, signal?: AbortSig
 }
 
 export function submitWorkflowTask(token: string, input: WorkflowRunInput, signal?: AbortSignal) {
+    requireCloudWorkflow(input.ref);
     return workflowRequest<WorkflowGenerationTask>("/api/v1/workflow-tasks", token, signal, input);
 }
 
@@ -125,6 +127,7 @@ export async function runWorkflowTask(token: string, input: WorkflowRunInput, si
 }
 
 export async function workflowMediaSource(url: string, ref?: WorkflowRef, provider?: "runninghub" | "comfyui"): Promise<string> {
+    requireCloudWorkflow(ref);
     const { config } = useConfigStore.getState();
     const protocol = provider || (ref?.scope === "system" ? config.publicChannels : config.localChannels).find((channel) => channel.id === ref?.channelId)?.protocol;
     const comfyVideo = Boolean(ref && protocol === "comfyui");
