@@ -20,6 +20,10 @@ export const DEFAULT_CANVAS_AGENT_PANEL: CanvasSidePanelState = { open: false, w
 export type CanvasProject = {
     id: string;
     title: string;
+    /** Child canvases point to the first canvas in their workspace. */
+    workspaceId?: string;
+    /** Independent display name for the workspace's root canvas. */
+    workspaceTitle?: string;
     createdAt: string;
     updatedAt: string;
     nodes: CanvasNodeData[];
@@ -39,10 +43,11 @@ export type CanvasProject = {
 type CanvasStore = {
     hydrated: boolean;
     projects: CanvasProject[];
-    createProject: (title?: string, options?: { agentConfig?: CanvasAgentConfig; pendingAgentRequest?: CanvasPendingAgentRequest }) => string;
-    importProject: (project: Partial<CanvasProject>) => string;
+    createProject: (title?: string, options?: { agentConfig?: CanvasAgentConfig; pendingAgentRequest?: CanvasPendingAgentRequest; workspaceId?: string; workspaceTitle?: string }) => string;
+    importProject: (project: Partial<CanvasProject>, workspaceId?: string) => string;
     openProject: (id: string) => CanvasProject | null;
     renameProject: (id: string, title: string) => void;
+    renameWorkspace: (id: string, title: string) => void;
     deleteProjects: (ids: string[]) => void;
     updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "agentConfig" | "autoTitlePending" | "backgroundMode" | "showImageInfo" | "viewport" | "sidePanel" | "agentPanel" | "pendingAgentRequest">>) => void;
     syncWithRemote: (token: string, syncEnabled: boolean) => Promise<void>;
@@ -257,6 +262,8 @@ export const useCanvasStore = create<CanvasStore>()(
                 const project: CanvasProject = {
                     id,
                     title,
+                    workspaceId: options?.workspaceId,
+                    workspaceTitle: options?.workspaceTitle,
                     createdAt: now,
                     updatedAt: now,
                     nodes: [],
@@ -278,11 +285,13 @@ export const useCanvasStore = create<CanvasStore>()(
                 queueProjectSave(project);
                 return id;
             },
-            importProject: (source) => {
+            importProject: (source, workspaceId) => {
                 const now = new Date().toISOString();
                 const project: CanvasProject = {
                     id: nanoid(),
                     title: source.title || "导入画布",
+                    workspaceId,
+                    workspaceTitle: workspaceId ? undefined : source.workspaceTitle,
                     createdAt: source.createdAt || now,
                     updatedAt: now,
                     nodes: source.nodes || [],
@@ -321,6 +330,13 @@ export const useCanvasStore = create<CanvasStore>()(
                         item.id === id ? nextProject : item,
                     ),
                 }));
+                queueProjectSave(nextProject);
+            },
+            renameWorkspace: (id, title) => {
+                const project = get().projects.find((item) => item.id === id && !item.workspaceId);
+                if (!project || !title.trim()) return;
+                const nextProject = { ...project, workspaceTitle: title.trim(), updatedAt: new Date().toISOString() };
+                set((state) => ({ projects: state.projects.map((item) => item.id === id ? nextProject : item) }));
                 queueProjectSave(nextProject);
             },
             deleteProjects: (ids) => {
@@ -390,6 +406,14 @@ export const useCanvasStore = create<CanvasStore>()(
         },
     ),
 );
+
+export function workspaceRoot(project: CanvasProject) {
+    return !project.workspaceId;
+}
+
+export function workspaceCanvases(projects: CanvasProject[], rootId: string) {
+    return projects.filter((project) => project.id === rootId || project.workspaceId === rootId);
+}
 
 export function mergeCanvasProjects(
     remoteProjects: CanvasProject[],

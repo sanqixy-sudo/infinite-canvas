@@ -3,7 +3,7 @@ import { FileText, ImagePlus, Images, Maximize2, Music2, Video } from "lucide-re
 export const navigationTools = [
     {
         slug: "canvas",
-        label: "我的画布",
+        label: "我的项目",
         icon: Maximize2,
     },
     {

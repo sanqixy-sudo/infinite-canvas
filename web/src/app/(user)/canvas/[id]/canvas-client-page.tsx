@@ -307,7 +307,7 @@ function NodeCreateMenu({
 }
 
 function InfiniteCanvasPage({ projectId }: { projectId: string }) {
-    const { message } = App.useApp();
+    const { message, modal } = App.useApp();
     const router = useRouter();
     const containerRef = useRef<HTMLDivElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -1560,16 +1560,35 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     }, [applyHistory]);
 
     const createAndOpenProject = useCallback(() => {
-        const id = createProject(`小盟画布 ${useCanvasStore.getState().projects.length + 1}`);
+        const workspaceId = currentProject?.workspaceId || currentProject?.id;
+        if (!workspaceId) return;
+        const canvasCount = useCanvasStore.getState().projects.filter((item) => item.id === workspaceId || item.workspaceId === workspaceId).length;
+        const id = createProject(`画布 ${canvasCount + 1}`, { workspaceId });
         router.push(`/canvas/${id}`);
-    }, [createProject, router]);
+    }, [createProject, currentProject?.id, currentProject?.workspaceId, router]);
 
     const deleteCurrentProject = useCallback(() => {
-        void deleteCanvasProjects([projectId]).catch(() => undefined);
-        deleteProjects([projectId]);
-        cleanupAssetImages();
-        router.push("/canvas");
-    }, [cleanupAssetImages, deleteProjects, projectId, router]);
+        const workspaceId = currentProject?.workspaceId || currentProject?.id;
+        if (!currentProject || !workspaceId) return;
+        if (!currentProject.workspaceId && useCanvasStore.getState().projects.some((item) => item.workspaceId === projectId)) {
+            message.info("这张画布是项目的首张画布。请在项目页删除整个项目。");
+            router.push(`/canvas/project/${workspaceId}`);
+            return;
+        }
+        modal.confirm({
+            title: "删除当前画布？",
+            content: "画布中的节点、连线和创作历史会一并移除。",
+            okText: "删除画布",
+            okButtonProps: { danger: true },
+            cancelText: "取消",
+            onOk: async () => {
+                await deleteCanvasProjects([projectId]);
+                deleteProjects([projectId]);
+                cleanupAssetImages();
+                router.push(currentProject.workspaceId ? `/canvas/project/${workspaceId}` : "/canvas");
+            },
+        });
+    }, [cleanupAssetImages, currentProject, deleteProjects, message, modal, projectId, router]);
 
     const handleCanvasMouseDown = useCallback(
         (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -4260,7 +4279,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     canUndo={historyState.canUndo}
                     canRedo={historyState.canRedo}
                     onHome={() => router.push("/")}
-                    onProjects={() => router.push("/canvas")}
+                    onProjects={() => router.push(`/canvas/project/${currentProject?.workspaceId || currentProject?.id || ""}`)}
                     onCreateProject={createAndOpenProject}
                     onDeleteProject={deleteCurrentProject}
                     onImportImage={() => handleUploadRequest()}
@@ -5078,7 +5097,7 @@ function CanvasTopBar({
                         menu={{
                             items: [
                                 { key: "home", icon: <Home className="size-4" />, label: "主页", onClick: onHome },
-                                { key: "projects", icon: <Images className="size-4" />, label: "我的画布", onClick: onProjects },
+                                { key: "projects", icon: <Images className="size-4" />, label: "返回项目", onClick: onProjects },
                                 { type: "divider" },
                                 { key: "new", icon: <Plus className="size-4" />, label: "新建画布", onClick: onCreateProject },
                                 { key: "delete", danger: true, icon: <Trash2 className="size-4" />, label: "删除当前画布", onClick: onDeleteProject },
