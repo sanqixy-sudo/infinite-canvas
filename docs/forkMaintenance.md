@@ -54,11 +54,12 @@ GitHub Fork 关联必须保留。GitHub 写入前核对账号为 `sanqixy-sudo`�
 
 ### 当前测试部署与回滚依据
 
-- 测试站点代码提交：`ba6db967ae6a4a05a62a6657f25e7e103b6c0f31`，镜像 `xiaomeng-video-workbench:ba6db96`；功能分支仍通过草稿 PR #1 等待合入 `my-version`。
+- 测试站点代码提交：`4c69c61d801d39551d3a1985381a46793d7eb5cf`，镜像 `xiaomeng-video-workbench:4c69c61`；独立黑白灰为当前确定配色，功能分支仍通过草稿 PR #1 等待合入 `my-version`。
 - 部署目录 `/opt/xiaomeng-video-workbench-deploy`，应用仅绑定 `127.0.0.1:3001`，原 `data` 挂载保留。只重建该应用容器，未改动 OpenResty。
-- 本轮升级前在线数据库备份：`backups/infinite-canvas-pre-ui-refresh.db`；Compose 备份：`compose.yml.pre-ui-refresh`。数据库备份及升级后完整性均为 `ok`，原用户、画布、流水和文件索引数量一致。上一轮 `pre-8d90e45` 备份继续保留。
+- 本轮升级前在线数据库备份：`backups/infinite-canvas-pre-monochrome.db`；Compose 备份：`compose.yml.pre-monochrome`。数据库备份及升级后完整性均为 `ok`，原用户、画布、流水和文件索引数量一致。上一轮 `pre-ui-refresh`、`pre-8d90e45` 备份继续保留。
 - 如需回滚本轮视觉改版，先盘点升级后的新数据及本地媒体，优先保留数据库并回退至支持本地存储的 `xiaomeng-video-workbench:8d90e45`。更早的 `b5519c0` 不支持新增本地存储链路，不能直接回退后删除本地文件。恢复数据库须用户明确批准，并处理升级后的新增数据。
 - 前一轮通过 Go 全量、6 项 Bun 与本地存储/账户隔离检查；本轮视觉改版通过 Next.js/Docker 构建、浅深色主题、访客多画布、390px 窄屏和长标题浏览器检查，未重复后端测试。真实 R2、供应商调用及账单核对仍待验证。完整检查边界见 `docs/progress/pending-test.md`。
+- 黑白灰修正重新通过 Docker/Next.js 构建及桌面工作台、画布配色检查；前一版 `ba6db96` 镜像继续留存，其青绿主题已被用户弃用，后续开发不能再次沿用。
 
 | 轮次 | 已吸收官方 SHA → 新官方 SHA | A/B/C/D 结论与未吸收内容 | 同步分支 / PR | 数据检查、验证与决定 |
 | --- | --- | --- | --- | --- |
