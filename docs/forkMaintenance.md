@@ -40,7 +40,7 @@ GitHub Fork 关联必须保留。GitHub 写入前核对账号为 `sanqixy-sudo`�
 
 默认 `docker-compose.yml` 指向 `ghcr.io/tigerowo/infinite-canvas:latest` 且设置 `pull_policy: always`，不能用于保证二开代码部署。未来部署使用 `docker-compose.local.yml` 从本地源码构建，或使用经核对的自有镜像及固定版本；先审查 `.env`、端口和 `./data:/app/data` 挂载，不触碰其他容器。不要使用示例管理员密码公开部署。
 
-保留 `LICENSE`、README 中的原项目与前代项目署名及前端原有标识。项目使用 AGPL-3.0；未来公开提供修改后的网络服务前，评估并落实向远程用户提供对应源码、保留许可/版权通知和标识修改等要求。
+保留 `LICENSE`、README 中的原项目与前代项目署名。前端展示改为“小盟视频工作台”，但在商业授权范围得到核实前，保留独立的“许可与源码”入口。项目仓库使用 AGPL-3.0；未来公开提供修改后的网络服务前，核对实际授权及对应源码提供、许可/版权通知、修改标识等要求。
 
 ## 上游同步记录
 
