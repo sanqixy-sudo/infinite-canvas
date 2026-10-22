@@ -38,6 +38,8 @@ GitHub Fork 关联必须保留。GitHub 写入前核对账号为 `sanqixy-sudo`�
 
 ## 部署、许可与安全边界
 
+当前首页展示改进的测试站镜像为 `xiaomeng-video-workbench:4761e59`，源码 `4761e5929ef9ff4c4dfc4f833ca10636bf857111`，继续使用 `127.0.0.1:3001` 与原数据挂载。升级前私有备份位于 `/opt/xiaomeng-video-workbench-deploy/backups/pre-home-8fdde70/`（备份在本轮导航追加前创建），升级前后八表结构和全部行摘要一致。上一镜像 `448df01` 保留；本轮无数据结构变化，应用回退优先换回上一镜像，不能覆盖升级后用户新写入的数据。构建和界面验证的具体范围见 pending-test，本次记录不代表其他部署环境全部验证。
+
 默认 `docker-compose.yml` 指向 `ghcr.io/tigerowo/infinite-canvas:latest` 且设置 `pull_policy: always`，不能用于保证二开代码部署。未来部署使用 `docker-compose.local.yml` 从本地源码构建，或使用经核对的自有镜像及固定版本；先审查 `.env`、端口和 `./data:/app/data` 挂载，不触碰其他容器。不要使用示例管理员密码公开部署。
 
 保留 `LICENSE`、README 中的原项目与前代项目署名。前端展示改为“小盟视频工作台”；根据用户明确要求，网站导航隐藏“许可与源码”入口，`/legal` 页面和仓库许可证继续保留。用户声明持有商业授权，但原始授权材料尚未独立核验；未来公开提供修改后的网络服务前，仍须核对实际授权及对应源码提供、许可/版权通知、修改标识等要求。
