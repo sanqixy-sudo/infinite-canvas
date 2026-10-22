@@ -24,6 +24,7 @@ export default function CreationShowcase() {
     const [playing, setPlaying] = useState(false);
     const [failed, setFailed] = useState(false);
     const [playbackBlocked, setPlaybackBlocked] = useState(false);
+    const [playAttempt, setPlayAttempt] = useState(0);
     const demo = demos[active];
     const wantsPlayback = intent === "play" || intent === "auto" && !reducedMotion;
 
@@ -75,7 +76,7 @@ export default function CreationShowcase() {
             cancelled = true;
             video.pause();
         };
-    }, [active, failed, hasEntered, inView, pageVisible, wantsPlayback]);
+    }, [active, failed, hasEntered, inView, pageVisible, playAttempt, wantsPlayback]);
 
     const selectDemo = (index: number) => {
         const next = (index + demos.length) % demos.length;
@@ -107,10 +108,7 @@ export default function CreationShowcase() {
             setHasEntered(true);
             setPlaybackBlocked(false);
             setIntent("play");
-            // 再次点击也可重试被浏览器拦截的播放请求。
-            if (inView && pageVisible) void videoRef.current?.play().catch((error: unknown) => {
-                if (!(error instanceof DOMException && error.name === "AbortError")) setPlaybackBlocked(true);
-            });
+            setPlayAttempt((attempt) => attempt + 1);
         }
     };
 
