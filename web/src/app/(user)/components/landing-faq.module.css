@@ -3,7 +3,6 @@
     grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr);
     gap: clamp(48px, 7vw, 100px);
     padding-block: 96px;
-    scroll-margin-top: 112px;
 }
 
 .eyebrow {
@@ -146,7 +145,6 @@
         grid-template-columns: minmax(0, 1fr);
         gap: 32px;
         padding-block: 64px;
-        scroll-margin-top: 96px;
     }
 
     .description {

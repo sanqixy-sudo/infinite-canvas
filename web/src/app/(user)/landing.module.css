@@ -1,5 +1,6 @@
 .page {
     height: 100dvh;
+    scroll-padding-top: 104px;
     --muted-foreground: color-mix(in srgb, var(--foreground) 65%, var(--background));
     background-image: radial-gradient(ellipse at 80% 8%, color-mix(in srgb, var(--foreground) 3%, transparent), transparent 40%);
 }
@@ -70,7 +71,6 @@
 }
 
 .capabilities {
-    scroll-margin-top: 104px;
     padding-block: 48px 32px;
     border-top: 1px solid var(--border);
 }
@@ -89,7 +89,7 @@
 
 .eyebrow { margin-bottom: 16px; font-size: 12px; letter-spacing: .08em; color: var(--muted-foreground); }
 .sectionTitle { margin-bottom: 0; font-size: clamp(28px, 3vw, 40px); font-weight: 500; line-height: 1.4; letter-spacing: -.035em; }
-.workflow { padding-block: 64px; scroll-margin-top: 104px; }
+.workflow { padding-block: 64px; }
 .workflowSteps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px; padding: 0; margin: 0; list-style: none; }
 .stepVisual { position: relative; display: flex; align-items: center; justify-content: center; height: 220px; padding: 26px 20px 42px; border: 1px solid var(--border); border-radius: 14px; background: linear-gradient(140deg, var(--card), var(--muted)); }
 .visualCaption { position: absolute; bottom: 17px; font-size: 10px; color: var(--muted-foreground); }

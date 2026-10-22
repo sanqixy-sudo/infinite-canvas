@@ -29,8 +29,8 @@ export default function LandingFaq() {
     };
 
     return (
-        <section id="questions" aria-labelledby={`${id}-title`} className={styles.section}>
-            <div className={styles.intro}>
+        <section aria-labelledby={`${id}-title`} className={styles.section}>
+            <div id="questions" className={styles.intro}>
                 <p className={styles.eyebrow}><span />开始之前</p>
                 <h2 id={`${id}-title`}>你可能想了解</h2>
                 <p className={styles.description}>从第一个项目，到每一次创作。<br />把常见的问题，提前说明白。</p>

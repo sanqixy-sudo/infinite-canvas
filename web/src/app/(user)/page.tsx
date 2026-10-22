@@ -35,7 +35,7 @@ export default function HomePage() {
             </div>
         </header>
 
-        <main id="main-content" className="mx-auto max-w-[1440px] scroll-mt-24 px-5 sm:scroll-mt-28 sm:px-9 lg:px-12">
+        <main id="main-content" className="mx-auto max-w-[1440px] px-5 sm:px-9 lg:px-12">
             <section className={styles.hero} aria-labelledby="home-title">
                 <div className={styles.intro}>
                     <p className="inline-flex items-center gap-2.5 text-xs font-medium tracking-wide text-muted-foreground"><span className="size-1.5 rounded-full bg-foreground" />无限画布 · AI 影像创作空间</p>
@@ -65,8 +65,8 @@ export default function HomePage() {
                 </figure>
             </section>
 
-            <section id="capabilities" aria-labelledby="capabilities-title" className={styles.capabilities}>
-                <div className={styles.capabilitiesHeading}>
+            <section aria-labelledby="capabilities-title" className={styles.capabilities}>
+                <div id="capabilities" className={styles.capabilitiesHeading}>
                     <div><p className={styles.eyebrow}>项目 · 画布 · 素材</p><h2 id="capabilities-title" className={styles.sectionTitle}>核心能力</h2></div>
                     <p>围绕无限画布，把项目组织、模型创作与素材管理连接起来。<br className="hidden sm:block" />从一个想法出发，逐步搭建你的作品。</p>
                 </div>
@@ -85,8 +85,8 @@ export default function HomePage() {
 
             <CreationShowcase />
 
-            <section id="workflow" aria-labelledby="workflow-title" className={styles.workflow}>
-                <div className="mb-9 flex flex-wrap items-end justify-between gap-5 sm:mb-12"><div><p className={styles.eyebrow}>从灵感到作品 · 创作路径</p><h2 id="workflow-title" className={styles.sectionTitle}>创作的每一步，<br className="sm:hidden" />都在同一个空间。</h2></div><Link href={startHref} className="inline-flex min-h-10 items-center gap-3 text-sm font-medium underline decoration-border underline-offset-8 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring">进入工作台<ArrowUpRight className="size-4" /></Link></div>
+            <section aria-labelledby="workflow-title" className={styles.workflow}>
+                <div id="workflow" className="mb-9 flex flex-wrap items-end justify-between gap-5 sm:mb-12"><div><p className={styles.eyebrow}>从灵感到作品 · 创作路径</p><h2 id="workflow-title" className={styles.sectionTitle}>创作的每一步，<br className="sm:hidden" />都在同一个空间。</h2></div><Link href={startHref} className="inline-flex min-h-10 items-center gap-3 text-sm font-medium underline decoration-border underline-offset-8 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring">进入工作台<ArrowUpRight className="size-4" /></Link></div>
                 <ol className={styles.workflowSteps}>
                     <li>
                         <div className={styles.stepVisual} aria-label="一个项目组织多张画布的示意">

@@ -120,8 +120,8 @@ export default function CreationShowcase() {
     };
 
     return (
-        <section id="creation" aria-labelledby="creation-title" className="scroll-mt-24 py-14 sm:scroll-mt-28 sm:py-20">
-            <div className="mb-8 flex flex-wrap items-end justify-between gap-4 sm:mb-10">
+        <section aria-labelledby="creation-title" className="py-14 sm:py-20">
+            <div id="creation" className="mb-8 flex flex-wrap items-end justify-between gap-4 sm:mb-10">
                 <div>
                     <p className="mb-4 flex items-center gap-3 text-xs text-muted-foreground"><span aria-hidden="true" className="h-px w-6 bg-foreground/35" />功能演示</p>
                     <h2 id="creation-title" className="text-[28px] font-medium leading-[1.4] tracking-[-0.01em] sm:text-[36px]">在画布里，完成更多创作</h2>
