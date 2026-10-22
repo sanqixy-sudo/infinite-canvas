@@ -71,6 +71,7 @@
 
 .benefits {
     display: grid;
+    scroll-margin-top: 104px;
     gap: 24px;
     padding-block: 30px 42px;
     border-top: 1px solid var(--border);

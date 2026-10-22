@@ -27,7 +27,7 @@ export default function HomePage() {
                 <BrandMark className="size-8 shrink-0 sm:size-9" />
                 <span><strong className="block whitespace-nowrap text-sm font-semibold tracking-tight sm:text-[15px]">小盟视频工作台</strong><span className="mt-0.5 block text-[8px] tracking-[0.22em] text-muted-foreground">XIAOMENG STUDIO</span></span>
             </a>
-            <nav aria-label="首页导航" className="hidden items-center gap-8 text-[13px] text-muted-foreground md:flex"><a href="#creation" className="py-2 transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">创作方式</a><a href="#workflow" className="py-2 transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">工作流程</a><a href="#questions" className="py-2 transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">常见问题</a></nav>
+            <nav aria-label="首页导航" className="hidden items-center gap-4 whitespace-nowrap text-[13px] text-muted-foreground md:flex xl:gap-8">{[{ href: "#home-top", title: "产品概览" }, { href: "#capabilities", title: "创作空间" }, { href: "#creation", title: "功能演示" }, { href: "#workflow", title: "工作流程" }, { href: "#questions", title: "常见问题" }].map((item) => <a key={item.href} href={item.href} className="py-2 transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">{item.title}</a>)}</nav>
             <div className="flex shrink-0 items-center gap-1 sm:gap-4">
                 <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground [&_svg]:size-4" aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
                 <Link href={startHref} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border px-3 text-xs sm:px-4 font-medium transition hover:border-foreground/40 hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">{ready && user ? "进入工作台" : "登录"}<ArrowUpRight className="hidden size-3.5 sm:block" /></Link>
@@ -65,7 +65,7 @@ export default function HomePage() {
                 </figure>
             </section>
 
-            <section aria-label="你的创作空间" className={styles.benefits}>
+            <section id="capabilities" aria-label="你的创作空间" className={styles.benefits}>
                 {[
                     { Icon: Layers3, title: "让创作，沿着项目展开", text: "一个项目组织多张画布，灵感、分镜与不同版本各有位置。" },
                     { Icon: Sparkles, title: "让模型，融入创作过程", text: "在画布中选用平台开放的模型，连接文字、图像与视频。" },
