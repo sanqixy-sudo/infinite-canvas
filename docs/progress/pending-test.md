@@ -5,6 +5,18 @@ description: 当前版本已实现但仍需人工验证的变更项
 
 # 待测试
 
+## 首页与登录电影工作室视觉
+
+- 本轮范围：`78fcdfa` 将两张 AI 生成图输出为 800 px 静态 WebP，大小分别为 109,166 B、186,956 B，用于替换首页灰色 SVG 示意；`1874b58` 重做首页和登录的黑白电影工作室视觉，`59165a3` 继续调整首屏密度及状态样式，`14b2281` 对齐实际 `ant-input-status-error` 类，`448df01` 完善窄屏导航。最终代码 `448df016c3ec4b954ab9034e4c0ada5f17e0b4f7` 独立 `tsc` 与完整 Docker 均退出0，`image-source.sha`精确匹配；未声称本轮重跑此前Go全量/38项回归，旧检查点仍分别保留。
+- 首页改为原创黑白电影画布舞台，重排主标题和影像构图，以三条能力横带与平面三步流程组织内容；两张生成影像作为产品视觉，不作为已完成用户作品或真实模型调用结果的证明。
+- 登录页改为左侧影像介绍、右侧居中账号表单，移除旧 `ProductSketch`，与首页共用当前黑白视觉方向；保留现有登录、注册条件与安全回跳，错误及禁用状态不因视觉覆盖丢失含义。
+- 最终448浏览器：1280×720 深浅首页/登录、768×1024 首页/登录、390 手机及320×640 首页/注册根容器均等宽；两图 `complete=true`，自然尺寸800×500与800×800。首页首屏仍仅1个video、src为空且暂停；591初轮同页creation锚点实测 `targetTop=112.25/headerHeight=81`，视频实际无error播放，448未改播放器，不冒称448重跑全部四段矩阵。
+- 表单实测：448暗主题登录空提交显示2条中文校验，错误边框 `rgb(220,68,70)`；亮主题320注册空提交显示3条错误，边框 `rgb(255,77,79)`，`mainHeight=640/scrollHeight=754`，滚至114后脚注底部607.66可见，未实际创建账号。448桌面浅色登录提交按钮 `top=524.61/bottom=572.61`，完整可见；这验证错误态和长页可达，不代替真实登录、注册或完整禁用交互。
+- 截图：`studio-home-light.png`、`studio-home-dark.png`、`studio-login-light.png`、`studio-login-dark.png`、`studio-home-mobile.png`、`studio-login-mobile.png`，保存于本任务原visualizations目录。最终视觉和真实设备体验仍等待用户认可。
+- 实际测试站已部署 `xiaomeng-video-workbench:448df01`，源码为上述完整448 SHA；仅更新app，继续 `127.0.0.1:3001` 与原data挂载，OpenResty未改。私有备份 `/opt/xiaomeng-video-workbench-deploy/backups/pre-studio-448df01/` 包含完整性ok的SQLite在线副本、媒体、Compose/环境配置，目录700、文件600，不公开配置内容；备份目录700与数据库600已实查。停前、停后、新启动后及最后再次复核，8表结构和全部行摘要始终一致，`users/canvas_projects/settings`各1，其余5表0。
+- 实际站首页、`/login`、`/workspace`、`/api/health`及两张新WebP均200；匿名GET `/api/assets`、POST `/api/v1/images/generations`均401。旧2d/016部署为阶段历史，当前以448为准；本轮隔离preview的docker stop已正常返回，inspect为`exited`，隔离数据保留。
+- 剩余验收：真实登录、注册/OAuth，完整disabled状态及键盘交互、长期会话/断网场景和用户视觉体验；真实供应商、R2、真实生成及既有数据场景不因视觉检查通过而完成。正式功能说明仍待用户确认。
+
 ## 首页四段功能演示
 
 - 已实现范围：`61997d9` 新增 `web/src/app/(user)/components/creation-showcase.tsx` 与 `web/public/showcase/` 的 4 个 MP4、4 张 JPG 海报，并替换首页原创作方式文字卡；`ad9c43d` 删除 `hasFocus` 限制，最终 `2d9910e075cf36fa2d3d438b984e27493f47dedc` 将播放请求集中到带取消守卫的 effect，旧片段的 Promise 不应覆盖新片段提示。最终2d独立 `tsc` 与完整 Docker 均退出 0，镜像源码记录 `/opt/xiaomeng-landing-image-source.sha` 精确匹配该 SHA，浏览器检查完成且测试站已升级；Go/38项仍为此前功能检查点，未声称媒体提交重新执行。
@@ -13,8 +25,8 @@ description: 当前版本已实现但仍需人工验证的变更项
 - 最终2d浏览器实测：首页初始仅 1 个 video，`src=null/currentSrc=""/paused=true/preload=none`，页面可见；入视口后逐一手动选段并播放，4 段均 `readyState=4/paused=false/720×406`、无媒体错误，时长分别 `14.916667/10.625/10.958333/15.25` 秒。手动暂停后的文案稳定，选段不会自动打破暂停；不手动选片、保持播放时实际观察到片段自动变化，但未截取结束后的精确下一帧，不写“固定16秒转第二段”的断言。
 - 点击品牌回顶部后 `scrollTop=0/videoTop=953/paused=true`，再次进入可继续；手机前后切换实际 `panorama → director → panorama` 闭环通过，End 键选中 panorama 并移动焦点。深浅桌面与390手机实际查看；1440/1024/768/390/320 五档根 `scrollWidth=clientWidth`，始终只有 1 个 video。截图 `home-showcase-desktop-light.png`、`home-showcase-desktop-dark.png`、`home-showcase-mobile-dark.png` 保存在本任务原 visualizations 目录。
 - 资源检查：4 张海报 HEAD 均 200、`image/jpeg`；4 个 MP4 的 Range `bytes=0-1023` 均为 206、`video/mp4`，响应 1024 B 且总长度正确。普通播放无错误；未通过故障注入验证网络失败恢复，不能把错误处理实现视为已测。
-- 实际测试站已部署 `xiaomeng-video-workbench:2d9910e`，完整源码为上述2d SHA；仅更新 app，继续 `127.0.0.1:3001 → 3000` 和 `/opt/xiaomeng-video-workbench-deploy/data:/app/data`，OpenResty 未改。`/opt/xiaomeng-video-workbench-deploy/backups/pre-showcase-2d9910e/` 保存 SQLite 在线备份（完整性 `ok`）、Compose/`.env` 私有副本、媒体归档和原行摘要，目录 700、文件 600，不公开配置内容。
-- 停旧应用后与新启动后，8 表结构和全部行 SHA256 与备份一致、完整性 `ok`：`users/canvas_projects/settings` 各 1，其他 `credit_logs/storage_objects/user_configs/purchase_orders/storage_upload_reservations` 共5表为0。实际站 `/`、`/login`、`/workspace`、`/api/health` 均 200，4 JPG/4 MP4 的 HEAD/Range 结果同上；匿名 GET `/api/assets` 和 POST `/api/v1/images/generations` 均 401。隔离 preview 的 docker stop 已正常返回，当前已停止、隔离数据保留；fca/016阶段曾停后重启用于后续验收，此处为最终停止确认。
+- 2d阶段曾部署 `xiaomeng-video-workbench:2d9910e`，完整源码为上述2d SHA，当前已由448视觉版替代；仅更新 app，继续 `127.0.0.1:3001 → 3000` 和 `/opt/xiaomeng-video-workbench-deploy/data:/app/data`，OpenResty 未改。`/opt/xiaomeng-video-workbench-deploy/backups/pre-showcase-2d9910e/` 保存 SQLite 在线备份（完整性 `ok`）、Compose/`.env` 私有副本、媒体归档和原行摘要，目录 700、文件 600，不公开配置内容。
+- 2d阶段停旧应用后与新启动后，8 表结构和全部行 SHA256 与备份一致、完整性 `ok`：`users/canvas_projects/settings` 各 1，其他 `credit_logs/storage_objects/user_configs/purchase_orders/storage_upload_reservations` 共5表为0。该阶段实际站 `/`、`/login`、`/workspace`、`/api/health` 均 200，4 JPG/4 MP4 的 HEAD/Range 结果同上；匿名 GET `/api/assets` 和 POST `/api/v1/images/generations` 均 401。该轮preview曾正常停止并保留隔离数据，后续为448视觉验收重启；本轮最终状态见上节。
 - 剩余验收：减少动态效果与隐藏标签暂停目前只确认代码实现，未切真实系统偏好/标签实测；播放受限、网络失败重试和快速切段故障竞态仍需专项验证。模型渠道、计费、素材存储、R2、用户数据与登录门禁未改，实际供应商、R2、真实生成及用户对界面体验的认可继续待验收；正式功能说明不提前升级。
 
 ## 首页与登录排版复核

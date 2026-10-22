@@ -118,7 +118,14 @@ GitHub Fork 关联必须保留。GitHub 写入前核对账号为 `sanqixy-sudo`�
 
 ### 当前测试部署与回滚依据
 
-- 当前源码 `2d9910e075cf36fa2d3d438b984e27493f47dedc`，镜像 `xiaomeng-video-workbench:2d9910e`；只更新 app，仍为 `127.0.0.1:3001 → 3000`，挂载 `/opt/xiaomeng-video-workbench-deploy/data:/app/data`，OpenResty 未改。独立类型、完整构建和浏览器媒体结果按各检查点保留，不冒称后端 Go/38 项回归在最终媒体提交重跑。
+- 当前视觉源码为 `448df016c3ec4b954ab9034e4c0ada5f17e0b4f7`，镜像 `xiaomeng-video-workbench:448df01`，独立 TypeScript 与完整 Docker 均退出 0，镜像源码记录与完整 SHA 一致。两张电影影像和首页/登录视觉已部署，检查细节见待测试的“首页与登录电影工作室视觉”；不把历史 Go/38 项回归说成本轮重跑。
+- 只升级 app，保留 `127.0.0.1:3001 → 3000` 与 `/opt/xiaomeng-video-workbench-deploy/data:/app/data`，OpenResty 未动。升级前 `/opt/xiaomeng-video-workbench-deploy/backups/pre-studio-448df01/` 保存 SQLite 在线备份、媒体归档、Compose/`.env` 私有副本和原行摘要；目录 700、文件 600，数据库完整性 `ok`。停前、停后与升级后 8 表结构和全行 SHA256 一致，`users/canvas_projects/settings` 各 1，其余 5 表 0。
+- 实际站 `/`、`/login`、`/workspace`、`/api/health`、两张新 WebP 均 200；匿名素材 GET 与图片生成 POST 均 401。无数据库/API 变更，未添加真实用户或素材；旧 `2d9910e` 镜像与对应备份保留供回退代码时参考，不执行数据回滚。
+- 隔离 preview 停止命令已返回，最终 inspect 为 `exited`，数据目录保留；停止后再次确认实际站 8 表摘要一致。页面截图和完整生成提示词分别保存在本任务 visualizations 目录与二开保护清单，后续替换时保留素材来源记录。
+
+#### 上一轮四段演示部署记录
+
+- 阶段源码 `2d9910e075cf36fa2d3d438b984e27493f47dedc`，镜像 `xiaomeng-video-workbench:2d9910e`；只更新 app，仍为 `127.0.0.1:3001 → 3000`，挂载 `/opt/xiaomeng-video-workbench-deploy/data:/app/data`，OpenResty 未改。独立类型、完整构建和浏览器媒体结果按各检查点保留，不冒称后端 Go/38 项回归在最终媒体提交重跑。
 - 私有备份 `/opt/xiaomeng-video-workbench-deploy/backups/pre-showcase-2d9910e/` 含 SQLite 在线副本（完整性 `ok`）、Compose/`.env` 私有副本、媒体归档和原行摘要，目录700、文件600。停旧应用后与新启动后，8 表结构及全行 SHA256 均与备份相同、完整性 `ok`：`users/canvas_projects/settings` 各1，其他 `credit_logs/storage_objects/user_configs/purchase_orders/storage_upload_reservations` 共5表均0；原数据保留，未执行数据回滚。
 - 实际站点 `/`、`/login`、`/workspace`、`/api/health` 均200，4 JPG HEAD 均200/image/jpeg，4 MP4 Range0-1023 均206/video/mp4/1024 B且总长正确；匿名 GET `/api/assets` 与 POST `/api/v1/images/generations` 均401。页面响应200不等于匿名业务授权。隔离 preview 的 docker stop 已正常返回、当前已停止，隔离数据保留；fca/016阶段曾在停止后重启用于后续验收，此处为最终停止确认。
 

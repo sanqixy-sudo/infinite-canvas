@@ -27,7 +27,53 @@
 | 用户钱包、个人配额与人工套餐 | 部分验证 | `model/commerce.go`、`storage_quota.go`、对应 repository/service/handler、账户与后台套餐页面 | `11c994ca544dadfd58a804de6267cd0e138c32a4` | 订单幂等与审计、跨 Provider 容量、并发事务、数据保留 |
 | 个人存储设置与账号素材库 | 部分验证 | 个人存储页、偏好与素材 store、画布菜单、`account_assets.go`、用户配置补丁事务 | `5022098a1079da1d45a3bfa95cb0d81e6569e5f1` | 浏览器真实文件、账号隔离、单条并发去重、失败重试与引用保留 |
 | 素材多级目录与标签组织 | 部分验证 | `account_asset_folders.go`、素材组织 API/store/工具、素材表单、画布选择器与素材包 | `48f5752110282a6e5806e336506f5ee27a4e0cd7` | Go、独立类型/32 回归、构建、隔离接口/浏览器及测试站升级通过；真实场景待验收 |
-| 公开首页、登录门禁与账号画布保护 | 部分验证 | 用户首页/布局/登录/工作台、鉴权 store/导航/请求、媒体会话、中间件、BrandMark、演示播放器与画布 store | `1141512` | 分检查点自动/类型/构建、权限和界面播放检查通过；当前 `2d9910e` 已部署、原数据一致；用户体验及真实业务仍待验收 |
+| 公开首页、登录门禁与账号画布保护 | 部分验证 | 用户首页/布局/登录/工作台、鉴权 store/导航/请求、媒体会话、中间件、BrandMark、演示播放器与画布 store | `1141512` | 分检查点自动/类型/构建、权限和界面播放检查通过；当前 `448df01` 已部署、原数据一致；用户体验及真实业务仍待验收 |
+
+### 首页首屏电影画面
+
+- 目的：用两张真实生成的电影感城市画面替换首页“分镜参考”和“影像片段”的灰色 SVG 占位图，保持既有卡片、连接线、黑白主题与下方四段演示。
+- 提交：`78fcdfa`；代码为 `web/src/app/(user)/page.tsx`，删除未使用的 `StoryFrame`。
+- 资源：`web/public/showcase/storyboard-city.webp`（800×500，109,166 B）与 `film-city.webp`（800×800，186,956 B），合计 296,122 B。使用内置 `image_gen` 生成，两次独立请求，第二张以第一张为场景参考；原始 PNG 留在本机 Codex 的 generated_images，本项目使用缩小与 WebP 编码后的文件，无外部图片服务依赖。
+- 保护行为：分镜为 8:5；后续电影工作室视觉将影像改为约 0.82/0.86 的竖幅预览容器，用 object-cover 保持原图比例与主体。图片是创作流程示意，不冒充实际生成结果或可播放视频。播放装饰无焦点并对读屏隐藏；图片不按主题反色。登录页复用同一组影像。无数据库、API、用户文件或模型计费变化。
+- 后续验证：浏览器确认两张图片自然尺寸、手机裁切、深浅主题与无横向溢出；测试站确认本地资源均可读取，不把图片生成工具与本产品模型调用联调混为一谈。
+
+<details>
+<summary>完整图像生成提示词（内置工具）</summary>
+
+#### 分镜参考
+
+```text
+Use case: photorealistic-natural.
+Asset type: cinematic storyboard reference image for the homepage of Xiaomeng, an AI video creation canvas.
+Primary request: a beautifully composed real-looking film still illustrating "After sunset, the city begins to tell stories."
+Scene: a modern East Asian riverside city just after sunset, layered towers fading into a misty dusk sky, a quiet wet street leading toward the skyline, a small solitary person viewed from behind in the middle distance.
+Composition: wide landscape frame about 16:10, cinematic establishing shot, elegant architecture and strong leading lines; readable silhouette and depth even as a small thumbnail.
+Style: premium independent cinema, photographic realism, natural surfaces, subtle film grain, restrained charcoal and cool grey with a few warm window lights, realistic reflections, soft atmospheric light. It must feel like an actual captured movie frame, not vector art or a 3D placeholder.
+Constraints: full bleed scene only; no UI, border, collage, text, captions, lettering, logos or watermark. No giant moon, neon overload, or crushed black detail.
+```
+
+#### 影像片段
+
+```text
+Use case: photorealistic-natural.
+Asset type: cinematic image/video preview still for the homepage of Xiaomeng, an AI video creation canvas.
+Input image: reference only for the same fictional riverside city, atmosphere, character and restrained film grading, not an edit target.
+Primary request: create a different second shot in this same cinematic sequence, after sunset the city begins to tell stories.
+Scene and subject: the same dark-haired adult woman in a long charcoal coat, now closer, seen from behind at a quiet riverside overlook after rain; softly glowing skyline and bridge across the water, warm lamps and delicate wet-pavement reflections.
+Composition: near-square frame, cinematic medium-wide shot, woman slightly left of center in the lower half, waterfront and city layered behind her; clear readable subject at thumbnail size, leave the central area calm enough for a small play icon. A new camera angle and composition, not a crop of the reference.
+Style: photographic premium independent cinema, subtle film grain, cool charcoal and grey dusk with restrained amber light, realistic skin/hair/fabric and atmospheric depth, balanced shadows. Beautiful actual movie still, no vector or flat illustration.
+Constraints: one full bleed photograph only; no UI, border, text, signage, captions, logos, watermark, collage, giant moon or neon overload.
+```
+
+</details>
+
+### 首页与登录电影工作室视觉
+
+- 对应提交：`1874b58` 为主体视觉；`59165a3` 收紧首屏并隔离表单状态样式，`14b2281` 按实际 Ant Design `.ant-input-status-error` 类修正错误态，最终 `448df016c3ec4b954ab9034e4c0ada5f17e0b4f7` 为窄屏账号入口留出空间。
+- 仅改用户首页、`landing.module.css`、登录页和 `login.module.css`。首页以原创黑白画布舞台、真实电影影像、脚本与连接端点突出产品；三条能力横带和平面三步流程组织介绍，四段真实演示继续复用原播放器。登录页删除低保真 `ProductSketch`，采用左侧影像与分镜卡、右侧独立居中的账号表单。
+- 必须保护：页面主题继续使用共享变量，不按主题反色照片；桌面表单居中、手机折叠复杂影像，长注册表单允许自然滚动。普通输入样式不能盖掉错误或禁用语义；实际 antd 使用 `.ant-input-status-error`，不能只按旧类名排除。正常文案与错误信息均需保持清晰对比。
+- 首页品牌回顶部、`#creation/#workflow/#questions` 同页滚动与登录后目标回跳保留，不能将演示章节做成独立页面。普通用户仍需登录进入业务工作台；未改鉴权、表单处理、OAuth、数据存储和模型调用。
+- 本轮具体浏览器、构建、资源和测试站记录见 `docs/progress/pending-test.md` 的同名小节；静态视觉改造不代替真实用户业务或 R2 联调验收。
 
 ### 功能名称：公开首页、登录门禁与账号画布保护
 
@@ -46,9 +92,9 @@
 - 排版验证：016 首页/登录在 1920×911、1366×768、1024×768、768×1024、390×844、320×640 均无横向溢出，三卡无交叠；桌面表单与按钮在首屏可见，320 注册空提交的 3 条中文错误后原生滚动可到按钮。深浅主题、手机同页流程固定导航无遮挡、品牌回顶部、登录/返回首页通过，详细数值及截图检查点见待测试。**必须保护**：不要恢复绝对百分比叠放、锁死长表单滚动或把流程链接改成离开首页；布局可达检查不代替实际注册成功。
 - 首页演示后续：`61997d9` 新增 `creation-showcase.tsx` 与 4 个 MP4/4 张 JPG，替换创作方式文字卡；`ad9c43d` 去掉窗口焦点限制，最终 `2d9910e075cf36fa2d3d438b984e27493f47dedc` 集中播放 effect 并防旧 Promise 提示污染。保留用户原 ZIP，Pillow/ffmpeg 将 173,266,848 B WebP 转为 H.264 720×406/24 fps 的 MP4 与海报，总 6,943,929 B（约减 96%）；只有当前 video、入视口才设置 src、preload none、离屏/隐藏暂停、减少动态效果默认停且不自动轮换，支持选段/键盘/重试。**必须保护**：不能改成四段全预载，不以演示文案承诺未开放模型能力。最终2d独立类型与完整构建均退出0，已部署测试站；Go/38项不冒称在媒体提交重跑。
 - 媒体验证：首屏1个video无src/currentSrc空且暂停；滚入后4段实际播放均ready4/720×406且无error，手动暂停选段不打破暂停，不手动选片时观察到自动轮换（不做固定秒数下一帧断言）。回顶部离屏暂停、返回可继续，手机前后闭环及End选段/移焦通过；1440/1024/768/390/320等宽且始终1video，深浅主题和手机已查看。4 JPG HEAD为200/image/jpeg，4 MP4 Range0-1023为206/video/mp4/1024B且总长正确。减少动态效果/隐藏标签暂停尚未真实偏好或切标签实测，故障恢复未注入；完整范围和截图见待测试。
-- 剩余验证：当前媒体版2d已部署且原数据一致，016保留阶段历史，排版体验仍等待用户验收。减少动态效果/隐藏标签、播放受限/故障重试/快速切段竞态，真实注册、注册开关/LinuxDo/OAuth、断网与长期切号、完整键盘焦点，真实旧原档、多画布归属/文件缺失和历史同步仍待验收。真实模型供应商与 R2 仍待资源，不把页面改造视为已联调。
+- 四段演示阶段剩余验证：2d已部署且原数据一致，016保留阶段历史，排版体验仍等待用户验收。减少动态效果/隐藏标签、播放受限/故障重试/快速切段竞态，真实注册、注册开关/LinuxDo/OAuth、断网与长期切号、完整键盘焦点，真实旧原档、多画布归属/文件缺失和历史同步仍待验收。真实模型供应商与 R2 仍待资源，不把页面改造视为已联调。
 - 跨标签退出验证：最终 `fca04ad` 镜像中，第二标签退出后，第一画布标签立即卸载画布并转向携带原 canvas 返回路径的登录页，真实浏览器已通过；上游更新需保留此行为，不只在后续请求时报错。
-- 当前部署与备份：镜像 `xiaomeng-video-workbench:2d9910e`，仅更新 app，继续 `127.0.0.1:3001 → 3000` 及原 data 挂载，OpenResty 未改；`backups/pre-showcase-2d9910e/` 保存完整性 `ok` 的 SQLite 在线副本、Compose/`.env` 私有副本、媒体归档和原行摘要，目录 700/文件600。停旧应用与新启动后8表结构/全行SHA256一致，用户/画布/设置各1、其余5表0；实际页与健康200、展示资源HEAD/Range正确，匿名素材与图片生成401。隔离preview已停止、数据保留；fca和016备份/检查继续保留历史，详见维护手册及待测试。
+- 上一轮四段演示部署与备份：镜像 `xiaomeng-video-workbench:2d9910e`，仅更新 app，继续 `127.0.0.1:3001 → 3000` 及原 data 挂载，OpenResty 未改；`backups/pre-showcase-2d9910e/` 保存完整性 `ok` 的 SQLite 在线副本、Compose/`.env` 私有副本、媒体归档和原行摘要，目录 700/文件600。停旧应用与新启动后8表结构/全行SHA256一致，用户/画布/设置各1、其余5表0；实际页与健康200、展示资源HEAD/Range正确，匿名素材与图片生成401。隔离preview已停止、数据保留；fca和016备份/检查继续保留历史，详见维护手册及待测试。
 - 回滚保护：保留数据库、媒体、配置、原全局画布键与各账号浏览器分桶；回退旧客户端前评估是否重新混用全局缓存和开放访客业务页，不通过清空旧档完成回滚，未执行实际数据回滚。
 
 ### 功能名称：项目内多画布与首页工作台
