@@ -38,7 +38,7 @@ GitHub Fork 关联必须保留。GitHub 写入前核对账号为 `sanqixy-sudo`�
 
 ## 部署、许可与安全边界
 
-当前首页展示改进的测试站镜像为 `xiaomeng-video-workbench:4761e59`，源码 `4761e5929ef9ff4c4dfc4f833ca10636bf857111`，继续使用 `127.0.0.1:3001` 与原数据挂载。升级前私有备份位于 `/opt/xiaomeng-video-workbench-deploy/backups/pre-home-8fdde70/`（备份在本轮导航追加前创建），升级前后八表结构和全部行摘要一致。上一镜像 `448df01` 保留；本轮无数据结构变化，应用回退优先换回上一镜像，不能覆盖升级后用户新写入的数据。构建和界面验证的具体范围见 pending-test，本次记录不代表其他部署环境全部验证。
+当前首页导航修正的测试站镜像为 `xiaomeng-video-workbench:5107492`，源码 `51074922c922351da0edf87de3f55e40136ac44e`，继续使用 `127.0.0.1:3001` 与原数据挂载。独立类型检查与完整 Docker 构建通过，域名浏览器已确认“核心能力”标题和同页落点。升级前私有备份位于 `/opt/xiaomeng-video-workbench-deploy/backups/pre-capabilities-5107492/`（目录700、数据库600），升级前后八表结构和全部行摘要一致。上一镜像 `4761e59` 及原备份 `pre-home-8fdde70` 保留；本轮无数据结构变化，应用回退优先换回上一镜像，不能覆盖升级后用户新写入的数据。具体检查范围见 pending-test 的“首页导航与核心能力”，不代表其他部署环境全部验证。
 
 默认 `docker-compose.yml` 指向 `ghcr.io/tigerowo/infinite-canvas:latest` 且设置 `pull_policy: always`，不能用于保证二开代码部署。未来部署使用 `docker-compose.local.yml` 从本地源码构建，或使用经核对的自有镜像及固定版本；先审查 `.env`、端口和 `./data:/app/data` 挂载，不触碰其他容器。不要使用示例管理员密码公开部署。
 
