@@ -121,12 +121,12 @@ export default function CreationShowcase() {
 
     return (
         <section aria-labelledby="creation-title" className="py-14 sm:py-20">
-            <div id="creation" className="mb-8 flex flex-wrap items-end justify-between gap-4 sm:mb-10">
+            <div id="creation" className="mb-6 flex flex-wrap items-end justify-between gap-4">
                 <div>
                     <p className="mb-4 flex items-center gap-3 text-xs text-muted-foreground"><span aria-hidden="true" className="h-px w-6 bg-foreground/35" />功能演示</p>
-                    <h2 id="creation-title" className="text-[28px] font-medium leading-[1.4] tracking-[-0.01em] sm:text-[36px]">在画布里，完成更多创作</h2>
+                    <h2 id="creation-title" className="!mb-0 text-[28px] font-medium leading-[1.4] tracking-[-0.01em] sm:text-[36px]">在画布里，完成更多创作</h2>
                 </div>
-                <p className="max-w-[310px] text-sm leading-7 text-muted-foreground">从构图、运镜到创作辅助，<br className="hidden sm:block" />看看灵感如何在画布上展开。</p>
+                <p className="!mb-0 max-w-[310px] text-sm leading-7 text-muted-foreground">从构图、运镜到创作辅助，<br className="hidden sm:block" />看看灵感如何在画布上展开。</p>
             </div>
 
             <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] lg:gap-8">
@@ -140,7 +140,7 @@ export default function CreationShowcase() {
                         </div>
                         <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground"><span aria-hidden="true" className={`size-1 rounded-full ${playing ? "bg-foreground" : "bg-muted-foreground/50"}`} />{playing ? "播放中" : "功能演示"}</span>
                     </div>
-                    <div ref={frameRef} className="relative aspect-video overflow-hidden bg-muted/40" id="creation-demo-player">
+                    <div ref={frameRef} className="relative aspect-video overflow-hidden bg-muted/40 lg:max-h-[max(120px,calc(100svh-320px))]" id="creation-demo-player">
                         <video
                             ref={videoRef}
                             src={hasEntered ? `/showcase/${demo.id}.mp4` : undefined}
