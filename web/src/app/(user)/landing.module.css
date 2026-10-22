@@ -13,11 +13,14 @@
 
 .title {
     margin-top: 24px;
+    margin-bottom: 0;
     font-size: clamp(42px, 5vw, 72px);
     font-weight: 600;
     line-height: 1.22;
     letter-spacing: -.045em;
 }
+
+.intro > p { margin-bottom: 0; }
 
 .preview {
     width: 100%;
@@ -82,12 +85,12 @@
 }
 
 @media (min-width: 640px) {
-    .canvas { gap: 38px; padding: 36px 30px 42px; }
+    .canvas { gap: 38px; padding: 26px 24px 28px; }
     .benefits { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
 }
 
 @media (min-width: 1024px) {
-    .hero { grid-template-columns: .85fr 1.15fr; gap: 44px; min-height: 650px; padding-block: 52px 64px; }
+    .hero { grid-template-columns: .85fr 1.15fr; gap: 44px; min-height: 600px; padding-block: 32px 44px; }
 }
 
 @media (max-width: 639px) {

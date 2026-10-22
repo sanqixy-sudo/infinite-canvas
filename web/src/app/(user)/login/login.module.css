@@ -261,21 +261,24 @@
 }
 
 .form :global(.ant-input-affix-wrapper) {
-    border-color: var(--border);
     border-radius: 10px;
+}
+
+.form :global(.ant-input-affix-wrapper:not(.ant-input-affix-wrapper-status-error):not(.ant-input-affix-wrapper-disabled)) {
+    border-color: var(--border);
     background: color-mix(in srgb, var(--foreground) 2%, var(--card));
     box-shadow: none;
 }
 
-.form :global(.ant-input-affix-wrapper .ant-input) {
+.form :global(.ant-input-affix-wrapper:not(.ant-input-affix-wrapper-status-error):not(.ant-input-affix-wrapper-disabled) .ant-input) {
     background: transparent;
 }
 
-.form :global(.ant-input-affix-wrapper:hover) {
+.form :global(.ant-input-affix-wrapper:not(.ant-input-affix-wrapper-status-error):not(.ant-input-affix-wrapper-disabled):hover) {
     border-color: color-mix(in srgb, var(--foreground) 40%, var(--background));
 }
 
-.form :global(.ant-input-affix-wrapper-focused) {
+.form :global(.ant-input-affix-wrapper-focused:not(.ant-input-affix-wrapper-status-error):not(.ant-input-affix-wrapper-disabled)) {
     border-color: var(--foreground);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--foreground) 7%, transparent);
 }
