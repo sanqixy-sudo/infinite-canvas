@@ -1,19 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDown, ArrowRight, ArrowUpRight, Check, ChevronDown, FolderOpen, Layers3, MousePointer2, Play, Plus, ScanLine, Sparkles } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUpRight, Check, ChevronDown, FolderOpen, Layers3, MousePointer2, Play, Plus, Sparkles } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { loginHrefForPath } from "@/lib/auth-navigation";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
+import CreationShowcase from "./components/creation-showcase";
 import styles from "./landing.module.css";
 
-const features = [
-    { no: "01", icon: Layers3, title: "一段故事，多张画布", text: "以项目整理创作，按场景、章节或方向展开画布。灵感可以发散，作品始终有序。" },
-    { no: "02", icon: ScanLine, title: "从文字，走向画面", text: "把脚本、参考图和生成节点放在一起，在上下文中推敲每个镜头，连接你的创作过程。" },
-    { no: "03", icon: FolderOpen, title: "好素材，值得反复使用", text: "用多级文件夹与标签收藏图片、视频、音频和文案，在画布里随时找到并调用。" },
-];
 const questions = [
     { title: "如何开始第一部作品？", text: "登录后进入工作台，新建项目即可打开第一张画布。你可以添加文字、导入参考素材，再选择平台开放的模型开始创作。" },
     { title: "需要自己配置模型密钥吗？", text: "无需在浏览器填写供应商密钥。模型由平台统一配置，可用能力与使用方式以工作台实际开放清单为准。" },
@@ -81,10 +77,7 @@ export default function HomePage() {
                 </figure>
             </section>
 
-            <section id="creation" aria-labelledby="creation-title" className="scroll-mt-24 border-t border-border py-14 sm:scroll-mt-28 sm:py-20">
-                <div className="mb-10 flex flex-wrap items-end justify-between gap-4"><div><p className="mb-4 text-xs text-muted-foreground">为创作而整理</p><h2 id="creation-title" className="text-3xl font-medium leading-tight tracking-[-0.015em] sm:text-[36px]">给灵感自由，<br className="sm:hidden" />也给创作秩序。</h2></div><p className="max-w-[310px] text-sm leading-7 text-muted-foreground">不必在零散窗口之间寻找思路。<br />项目、画布与素材，在这里各就其位。</p></div>
-                <div className="grid gap-9 md:grid-cols-3 md:gap-0">{features.map(({ no, icon: Icon, title, text }) => <article key={no} className="min-w-0 border-t border-border pt-6 md:border-t-0 md:border-r md:px-7 md:pt-0 md:first:pl-0 md:last:border-r-0 md:last:pr-0"><div className="mb-6 flex items-center justify-between"><Icon className="size-6" strokeWidth={1.3} /><span className="font-mono text-xs text-muted-foreground">/{no}</span></div><h3 className="text-base font-medium">{title}</h3><p className="mt-3 text-sm leading-7 text-muted-foreground">{text}</p></article>)}</div>
-            </section>
+            <CreationShowcase />
 
             <section id="workflow" aria-labelledby="workflow-title" className="scroll-mt-24 grid gap-10 rounded-[24px] border border-border bg-card px-6 py-9 sm:scroll-mt-28 sm:px-10 sm:py-12 lg:grid-cols-[0.9fr_1.2fr] lg:gap-20">
                 <div><span className="mb-6 inline-flex size-10 items-center justify-center rounded-xl border border-border"><Sparkles className="size-4" strokeWidth={1.4} /></span><h2 id="workflow-title" className="text-3xl font-medium leading-[1.35] tracking-tight">从第一步开始，<br />进入创作状态。</h2><p className="mt-5 text-sm leading-7 text-muted-foreground">先打开一个项目，再放进一个想法。<br />让画布陪你把它一点点展开。</p><Link href={startHref} className="mt-7 inline-flex min-h-10 items-center gap-7 text-xs font-medium underline decoration-border underline-offset-8 transition hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring">打开我的创作空间<ArrowUpRight className="size-4" /></Link></div>
