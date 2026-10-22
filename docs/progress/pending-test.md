@@ -5,11 +5,21 @@ description: 当前版本已实现但仍需人工验证的变更项
 
 # 待测试
 
+## 素材编辑入口与差量标签
+
+- 已提交推送`6c02d210de7d1dc0a923854aadc4a6e36ee0ab37`：媒体编辑只保留素材文件入口并自动预览原文件，移除单独封面URL和封面上传入口；既有素材/封面数据保留，不批量删除或重写。
+- 标签改为一个输入框，显示已有标签块，支持×删除、回车新增与下拉选择；单份素材回填已有值，多选显示部分`n/N`标记，只按用户操作差量增删，未操作的独有标签不向其他素材传播，避免整份标签并集覆盖。
+- 6c独立`tsc`和完整Docker均退出0，image-source精确匹配上述full SHA；7项Bun回归通过、0失败，构成为新增`bulk-tag-draft`3项＋原`asset-organization`4项，不是新增7项。
+- 隔离6c桌面1280×720实测：单文件入口选择`director.jpg`（27,021 B、720×406）自动预览并保存本地，已存标签可见；回车新增、×移除、下拉已有标签并保存均通过。右键存入账号库后再次编辑、不换文件保存，SQL只读确认该隔离账号仍仅1条文件索引/27,021 B；云端整理移除标签后，SQL确认仅余`['已有标签']`。截图`asset-tags-editor.png`、`asset-single-file-preview.png`在既有artifact目录。
+- 实际站已部署`xiaomeng-video-workbench:6c02d21`，源码为上述完整6c SHA；仅app镜像替换，继续`127.0.0.1:3001`与原data挂载，OpenResty不变。`/opt/xiaomeng-video-workbench-deploy/backups/pre-assets-6c02d21/`目录700、DB600；停止后与启动后8表结构/全部行digest均与本轮新备份一致、完整性ok：`users=2/canvas_projects=1/credit_logs=0/storage_objects=1/user_configs=1/purchase_orders=0/storage_upload_reservations=0/settings=1`。数量虽与旧备份相同，用户数据内容为最新独立快照，不复用旧摘要。
+- 实际首页、登录、健康200，匿名`/api/assets`401。视频/音频实际上传、手机、真实R2及用户验收仍待，不能把隔离图片流程通过扩大为所有媒体或实际站所有业务通过。
+
 ## 首页锚点统一定位
 
 - 已复现：1604×884点击“看看如何创作”到`#creation`后，`headerBottom=81/sectionTop=111.5`，区块另有80px顶部留白，标题top223.5、播放器top331.89/bottom925.75，底部控件出屏。
-- 已实现：5个前端文件将`creation/capabilities/workflow/questions`的id移至各自标题组div，真实滚动容器`.page`统一`scroll-padding-top:104px`，移除main/section重复滚动偏移；原URL、正常区块留白、FAQ与播放器逻辑不变，无业务数据变动。**保护规则**：滚动定位只由真实容器统一管理，不能再在目标叠加同类偏移；导航高度变化时调整统一入口。
-- 本轮提交、构建、预览和部署结果待补，不提前称通过；需检查四锚点标题与控件位置、回顶部和桌面手机主题。线上已新增普通用户，下方历史`users=1`仅为当时备份快照，不代表当前数据，升级必须依据新盘点与备份。
+- 已实现并推送`ccf972690ed4b531b007154b94ec896b4620556b`：5个前端文件将`creation/capabilities/workflow/questions`的id移至各自标题组div，真实滚动容器`.page`统一`scroll-padding-top:104px`，移除重复偏移；原URL、正常留白、FAQ及播放器逻辑不变。独立`tsc`和Docker构建均退出0。**保护规则**：只由真实滚动容器管理定位，不再向目标叠加同类偏移。
+- 预览1280×720点击及冷打开`/#creation`通过：锚点103.92、标题135.92、控件底部713.30，核心能力/流程/FAQ约104；线上旧ccf点击/冷开结果保留历史。6c初始hash恢复后，隔离1280刷新为锚点103.921875/标题135.921875，实际站1604×884刷新为锚点103.5/标题135.5/控件底部803.75，完整可见，截图`home-creation-anchor-live.png`已更新。**最终6c全新冷开未重跑，不宣称全部路径重测**；移动端、完整业务及用户验收仍待。
+- 实际站已部署`xiaomeng-video-workbench:ccf9726`；`/opt/xiaomeng-video-workbench-deploy/backups/pre-anchor-ccf9726/`的8表字段/全行digest切换前后相同、完整性ok：`users=2/canvas_projects=1/credit_logs=0/storage_objects=1/user_configs=1/purchase_orders=0/storage_upload_reservations=0/settings=1`。首页、登录和健康200，匿名`/api/assets`401。旧`users=1`仅历史快照，不能作为当前数据盘点。
 
 ## 首页导航与核心能力
 

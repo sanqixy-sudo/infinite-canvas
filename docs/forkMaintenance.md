@@ -38,7 +38,9 @@ GitHub Fork 关联必须保留。GitHub 写入前核对账号为 `sanqixy-sudo`�
 
 ## 部署、许可与安全边界
 
-当前首页导航修正的测试站镜像为 `xiaomeng-video-workbench:5107492`，源码 `51074922c922351da0edf87de3f55e40136ac44e`，继续使用 `127.0.0.1:3001` 与原数据挂载。独立类型检查与完整 Docker 构建通过，域名浏览器已确认“核心能力”标题和同页落点。升级前私有备份位于 `/opt/xiaomeng-video-workbench-deploy/backups/pre-capabilities-5107492/`（目录700、数据库600），升级前后八表结构和全部行摘要一致。上一镜像 `4761e59` 及原备份 `pre-home-8fdde70` 保留；本轮无数据结构变化，应用回退优先换回上一镜像，不能覆盖升级后用户新写入的数据。具体检查范围见 pending-test 的“首页导航与核心能力”，不代表其他部署环境全部验证。
+当前测试站镜像为 `xiaomeng-video-workbench:6c02d21`，源码 `6c02d210de7d1dc0a923854aadc4a6e36ee0ab37`，包含素材单文件入口、标签差量编辑及首页锚点刷新定位修复。独立类型检查、完整 Docker 构建及7项标签组织回归通过；隔离浏览器验证了图片预览/本地保存/账号入库、已有标签展示与增删、编辑原文件不重复占额。线上已验证刷新 `/#creation` 定位，首页、登录、健康接口200，匿名素材API401。视频/音频实际上传、移动端及真实R2未在本轮验收，不能据此声称全部业务通过。
+
+继续使用 `127.0.0.1:3001` 与原数据挂载，OpenResty未改。本轮私有备份位于 `/opt/xiaomeng-video-workbench-deploy/backups/pre-assets-6c02d21/`（目录700、数据库600），包含数据库、媒体及部署配置；停旧应用后和新应用启动后8表结构与全部行摘要一致，完整性ok：用户2、画布1、文件索引1、用户配置1、设置1，账务流水/订单/上传预留均0。上一镜像 `ccf9726` 与 `pre-anchor-ccf9726` 备份保留；旧 `users=1` 等数值仅代表历史快照。没有表结构变化，应用回退优先换回上一镜像，不能覆盖升级后新增的用户或素材数据。详细检查范围见 `docs/progress/pending-test.md`。
 
 默认 `docker-compose.yml` 指向 `ghcr.io/tigerowo/infinite-canvas:latest` 且设置 `pull_policy: always`，不能用于保证二开代码部署。未来部署使用 `docker-compose.local.yml` 从本地源码构建，或使用经核对的自有镜像及固定版本；先审查 `.env`、端口和 `./data:/app/data` 挂载，不触碰其他容器。不要使用示例管理员密码公开部署。
 
