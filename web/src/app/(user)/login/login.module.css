@@ -76,6 +76,11 @@
     margin-bottom: 20px;
 }
 
+.form :global(.ant-form-item-label > label) {
+    height: auto;
+    min-height: 22px;
+}
+
 @media (max-width: 1023px) {
     .header {
         padding: 16px 24px;
