@@ -1,21 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight, ChevronDown, FolderOpen, Layers3, MousePointer2, Play, Plus, Sparkles } from "lucide-react";
+import { ArrowRight, ArrowUpRight, FolderOpen, ImageIcon, Layers3, MousePointer2, Play, Plus, Sparkles, Tag } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { loginHrefForPath } from "@/lib/auth-navigation";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import CreationShowcase from "./components/creation-showcase";
+import LandingFaq from "./components/landing-faq";
 import styles from "./landing.module.css";
-
-const questions = [
-    { title: "如何开始第一部作品？", text: "登录后进入工作台，新建项目即可打开第一张画布。你可以添加文字、导入参考素材，再选择平台开放的模型开始创作。" },
-    { title: "需要自己配置模型密钥吗？", text: "无需在浏览器填写供应商密钥。模型由平台统一配置，可用能力与使用方式以工作台实际开放清单为准。" },
-    { title: "我的素材保存在哪里？", text: "在个人中心的“存储设置”选择默认保存位置：当前浏览器，或账号素材库。保存在当前浏览器的文件只在该浏览器可用；账号素材库使用平台配置的存储空间。" },
-    { title: "创作和存储如何查看用量？", text: "登录后可在工作台查看算力余额与个人空间，在钱包查看记录、申请充值或扩容。实际套餐和模型计费以平台开放配置为准。" },
-];
 
 export default function HomePage() {
     const user = useUserStore((state) => state.user);
@@ -81,14 +75,44 @@ export default function HomePage() {
 
             <CreationShowcase />
 
-            <section id="workflow" aria-labelledby="workflow-title" className="scroll-mt-24 border-y border-border py-12 sm:scroll-mt-28 sm:py-16">
-                <div className="mb-10 flex flex-wrap items-end justify-between gap-5"><div><p className="mb-4 text-xs text-muted-foreground">创作，不必在不同工具间来回</p><h2 id="workflow-title" className="text-[28px] font-medium leading-[1.4] tracking-tight sm:text-[36px]">从一个想法，到你的下一部作品。</h2></div><Link href={startHref} className="inline-flex min-h-10 items-center gap-3 text-xs font-medium underline decoration-border underline-offset-8 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring">开始第一张画布<ArrowUpRight className="size-3.5" /></Link></div>
-                <ol className="grid gap-7 sm:grid-cols-3 sm:gap-9">{[{ title: "先给灵感一个位置", text: "建立项目，用多张画布展开场景、章节和创作分支。", detail: "项目 / 画布" }, { title: "再把画面连接起来", text: "添加文字与参考素材，在节点间组织思路、推敲画面。", detail: "节点 / 生成" }, { title: "留下每一次好结果", text: "将常用素材归入目录、打上标签，随时带回新的创作。", detail: "素材 / 积累" }].map(({ title, text, detail }, index) => <li key={title} className="border-t border-border pt-5"><div className="mb-5 flex items-center justify-between text-muted-foreground"><span className="font-mono text-xs">0{index + 1}</span><span className="text-[10px]">{detail}</span></div><h3 className="text-base font-medium">{title}</h3><p className="mt-3 max-w-[320px] text-sm leading-7 text-muted-foreground">{text}</p></li>)}</ol>
+            <section id="workflow" aria-labelledby="workflow-title" className={styles.workflow}>
+                <div className="mb-9 flex flex-wrap items-end justify-between gap-5 sm:mb-12"><div><p className={styles.eyebrow}>从灵感到作品 · 创作路径</p><h2 id="workflow-title" className={styles.sectionTitle}>创作的每一步，<br className="sm:hidden" />都在同一个空间。</h2></div><Link href={startHref} className="inline-flex min-h-10 items-center gap-3 text-sm font-medium underline decoration-border underline-offset-8 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring">开始第一张画布<ArrowUpRight className="size-4" /></Link></div>
+                <ol className={styles.workflowSteps}>
+                    <li>
+                        <div className={styles.stepVisual} aria-label="一个项目组织多张画布的示意">
+                            <div className={styles.projectStack}>
+                                <div className={styles.projectName}><FolderOpen size={18} strokeWidth={1.5} /><span>我的第一部作品</span><span className="ml-auto font-mono text-[10px] text-muted-foreground">PROJECT</span></div>
+                                <div className={styles.canvasBranch}><span><Layers3 size={15} />灵感与脚本</span><span><Layers3 size={15} />分镜与画面</span></div>
+                            </div>
+                            <span className={styles.visualCaption}>一个项目，多张画布</span>
+                        </div>
+                        <div className={styles.stepCopy}><span>01</span><div><h3>给灵感一个位置</h3><p>用项目收拢想法，用多张画布展开场景、章节和不同的创作方向。</p></div></div>
+                    </li>
+                    <li>
+                        <div className={styles.stepVisual} aria-label="文字和图像节点相连的示意">
+                            <div className={styles.nodePath}><span className={styles.textTile}><span className="font-serif text-lg italic">T</span><span>日落之后，<br />故事才刚刚开始。</span></span><span className={styles.pathLine} aria-hidden="true"><ArrowRight size={13} /></span><div className={styles.imageTile}><img src="/showcase/storyboard-city.webp" width={800} height={500} alt="" loading="lazy" /><span><ImageIcon size={12} />城市分镜</span></div></div>
+                            <span className={styles.visualCaption}>文字、图像、视频在此相连</span>
+                        </div>
+                        <div className={styles.stepCopy}><span>02</span><div><h3>把想法连接成画面</h3><p>添加文字与参考素材，选择平台开放的模型，在画布里推敲每个镜头。</p></div></div>
+                    </li>
+                    <li>
+                        <div className={styles.stepVisual} aria-label="素材目录与标签的示意">
+                            <div className={styles.libraryPreview}><div className="flex items-center gap-2 text-xs"><FolderOpen size={14} />城市影像<span className="ml-auto text-muted-foreground">素材收藏</span></div><div className={styles.libraryImages}><img src="/showcase/storyboard-city.webp" width={800} height={500} alt="" loading="lazy" /><img src="/showcase/film-city.webp" width={800} height={800} alt="" loading="lazy" /></div><span className="flex items-center gap-2 text-[10px] text-muted-foreground"><Tag size={11} />城市 / 暮色 / 故事</span></div>
+                            <span className={styles.visualCaption}>好素材，带进下一次创作</span>
+                        </div>
+                        <div className={styles.stepCopy}><span>03</span><div><h3>让好结果积累下来</h3><p>用文件夹与标签整理素材，按偏好保存在当前浏览器或账号素材库。</p></div></div>
+                    </li>
+                </ol>
+                <p className="!mb-0 mt-5 text-right text-[11px] text-muted-foreground">创作结构示意 · 影像用于展示</p>
             </section>
 
-            <section id="questions" aria-labelledby="questions-title" className="grid scroll-mt-24 gap-8 py-16 sm:scroll-mt-28 sm:py-24 lg:grid-cols-[0.7fr_1fr] lg:gap-24"><div><p className="mb-4 text-xs text-muted-foreground">开始之前</p><h2 id="questions-title" className="text-3xl font-medium tracking-tight">你可能想了解</h2></div><div className="divide-y divide-border border-y border-border">{questions.map((question) => <details key={question.title} className="group"><summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-6 py-4 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">{question.title}<ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none" /></summary><p className="max-w-xl pb-6 pr-8 text-sm leading-7 text-muted-foreground">{question.text}</p></details>)}</div></section>
+            <LandingFaq />
 
-            <section className="flex flex-col items-start justify-between gap-7 border-t border-border py-12 sm:flex-row sm:items-center sm:py-16"><div><p className="mb-3 text-xs text-muted-foreground">留白，是为了下一次创作。</p><h2 className="text-[27px] font-medium tracking-tight sm:text-[32px]">你的下一部作品，从这里开始。</h2></div><Link href={startHref} className="inline-flex min-h-12 shrink-0 items-center gap-8 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">开始使用<ArrowRight className="size-4" /></Link></section>
+            <section className={styles.closing} aria-labelledby="closing-title">
+                <img src="/showcase/storyboard-city.webp" width={800} height={500} alt="" loading="lazy" className={styles.closingImage} />
+                <div className={styles.closingCopy}><span className="mb-7 flex items-center gap-3 text-[10px] tracking-[.18em] text-white/70"><BrandMark className="size-6" />XIAOMENG STUDIO</span><h2 id="closing-title">故事还未开始。<br />画布，已经准备好了。</h2><p>给下一次灵感，留一个可以展开的空间。</p><Link href={startHref} className="group mt-7 inline-flex min-h-12 items-center gap-8 rounded-xl bg-white px-6 text-sm font-medium text-neutral-950 transition hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">开始创作<ArrowRight className="size-4 transition-transform group-hover:translate-x-1 motion-reduce:transition-none" /></Link></div>
+                <div className={styles.closingFootnote}><span>项目 · 画布 · 素材</span><span>为你的下一部作品而来</span></div>
+            </section>
         </main>
         <footer className="border-t border-border"><div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-7 text-[10px] text-muted-foreground sm:px-9 lg:px-12"><span className="flex items-center gap-2"><BrandMark className="size-4" />小盟视频工作台</span><span className="text-[8px] tracking-[0.16em]">XIAOMENG STUDIO · MADE FOR YOUR NEXT IDEA</span></div></footer>
     </div>;

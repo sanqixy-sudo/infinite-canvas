@@ -120,17 +120,26 @@ export default function CreationShowcase() {
     };
 
     return (
-        <section id="creation" aria-labelledby="creation-title" className="scroll-mt-24 border-t border-border py-14 sm:scroll-mt-28 sm:py-20">
+        <section id="creation" aria-labelledby="creation-title" className="scroll-mt-24 py-14 sm:scroll-mt-28 sm:py-20">
             <div className="mb-8 flex flex-wrap items-end justify-between gap-4 sm:mb-10">
                 <div>
-                    <p className="mb-4 text-xs text-muted-foreground">功能演示</p>
+                    <p className="mb-4 flex items-center gap-3 text-xs text-muted-foreground"><span aria-hidden="true" className="h-px w-6 bg-foreground/35" />功能演示</p>
                     <h2 id="creation-title" className="text-[28px] font-medium leading-[1.4] tracking-[-0.01em] sm:text-[36px]">在画布里，完成更多创作</h2>
                 </div>
                 <p className="max-w-[310px] text-sm leading-7 text-muted-foreground">从构图、运镜到创作辅助，<br className="hidden sm:block" />看看灵感如何在画布上展开。</p>
             </div>
 
-            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)] lg:gap-6">
-                <figure className="min-w-0 overflow-hidden rounded-[20px] border border-border bg-card">
+            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] lg:gap-8">
+                <figure className="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
+                    <div className="flex min-h-11 items-center justify-between gap-3 border-b border-border/60 px-3 sm:px-4">
+                        <div className="flex min-w-0 items-center gap-2.5 text-[11px] sm:text-xs">
+                            <span aria-hidden="true" className="grid size-5 shrink-0 place-items-center rounded bg-muted"><span className="size-2.5 rounded-[2px] border border-foreground/50" /></span>
+                            <span className="shrink-0 text-muted-foreground">小盟创作画布</span>
+                            <span aria-hidden="true" className="text-muted-foreground/50">/</span>
+                            <span className="truncate font-medium">{demo.title}</span>
+                        </div>
+                        <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground"><span aria-hidden="true" className={`size-1 rounded-full ${playing ? "bg-foreground" : "bg-muted-foreground/50"}`} />{playing ? "播放中" : "功能演示"}</span>
+                    </div>
                     <div ref={frameRef} className="relative aspect-video overflow-hidden bg-muted/40" id="creation-demo-player">
                         <video
                             ref={videoRef}
@@ -157,7 +166,7 @@ export default function CreationShowcase() {
                             </div>
                         ) : null}
                     </div>
-                    <figcaption className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2.5 sm:px-4">
+                    <figcaption className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 px-2 py-2 sm:px-3">
                         <button type="button" onClick={togglePlayback} disabled={failed} aria-label={playing ? "暂停功能演示" : "播放功能演示"} className="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-[13px] font-medium outline-none transition hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none">
                             {playing ? <Pause className="size-4" aria-hidden="true" /> : <Play className="size-4" aria-hidden="true" />}{playing ? "暂停演示" : "播放演示"}
                         </button>
@@ -169,7 +178,9 @@ export default function CreationShowcase() {
                     </figcaption>
                 </figure>
 
-                <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-1 lg:gap-2" role="group" aria-label="选择功能演示">
+                <div className="min-w-0">
+                    <div className="mb-3 flex items-center justify-between px-1 text-[11px] text-muted-foreground"><span>选择创作方式</span><span className="tabular-nums">{demos.length} 段演示</span></div>
+                    <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-1 lg:gap-2" role="group" aria-label="选择功能演示">
                     {demos.map((item, index) => (
                         <button
                             key={item.id}
@@ -179,13 +190,17 @@ export default function CreationShowcase() {
                             aria-controls="creation-demo-player"
                             onClick={() => selectDemo(index)}
                             onKeyDown={(event) => selectWithKeyboard(event, index)}
-                            className={`group flex min-w-0 items-start gap-3 rounded-xl border p-4 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none lg:px-5 lg:py-[18px] ${active === index ? "border-foreground/30 bg-muted/70" : "border-border/60 bg-transparent hover:border-foreground/20 hover:bg-muted/40"}`}
+                            className={`group relative grid min-w-0 items-center gap-3 overflow-hidden rounded-lg border p-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none lg:grid-cols-[96px_minmax(0,1fr)] lg:p-3 ${active === index ? "border-foreground/20 bg-muted/60" : "border-transparent bg-transparent hover:border-border/70 hover:bg-muted/35"}`}
                         >
-                            <span className="pt-0.5 font-mono text-xs text-muted-foreground" aria-hidden="true">0{index + 1}</span>
-                            <span className="min-w-0"><span className="block text-sm font-medium">{item.title}</span><span className="mt-1.5 block text-xs leading-5 text-muted-foreground">{item.text}</span></span>
-                            <span className={`ml-auto mt-1 size-1.5 shrink-0 rounded-full ${active === index ? "bg-foreground" : "bg-transparent"}`} aria-hidden="true" />
+                            <span aria-hidden="true" className={`absolute inset-y-3 left-0 w-0.5 rounded-full bg-foreground transition-opacity motion-reduce:transition-none ${active === index ? "opacity-100" : "opacity-0"}`} />
+                            <span aria-hidden="true" className="relative block aspect-video w-full overflow-hidden rounded-[5px] bg-muted lg:h-[54px] lg:w-24">
+                                <img src={`/showcase/${item.id}.jpg`} width={160} height={90} loading="lazy" decoding="async" alt="" className={`size-full object-cover transition-opacity motion-reduce:transition-none ${active === index ? "opacity-100" : "opacity-75 group-hover:opacity-100"}`} />
+                                <span className="absolute bottom-1 right-1 rounded-sm bg-background/85 px-1 font-mono text-[9px] leading-4 text-foreground">0{index + 1}</span>
+                            </span>
+                            <span className="min-w-0"><span className="flex items-center justify-between gap-2 text-[13px] font-medium sm:text-sm">{item.title}<ArrowRight aria-hidden="true" className={`size-3.5 shrink-0 text-muted-foreground transition-opacity motion-reduce:transition-none ${active === index ? "opacity-100" : "opacity-0 group-hover:opacity-70"}`} /></span><span className="mt-1 block text-[11px] leading-5 text-muted-foreground sm:text-xs">{item.text}</span></span>
                         </button>
                     ))}
+                    </div>
                 </div>
             </div>
             <div className="mt-4 flex flex-wrap justify-between gap-x-6 gap-y-1 text-xs leading-6 text-muted-foreground">

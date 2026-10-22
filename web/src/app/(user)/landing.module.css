@@ -76,6 +76,39 @@
     border-top: 1px solid var(--border);
 }
 
+.eyebrow { margin-bottom: 16px; font-size: 12px; letter-spacing: .08em; color: var(--muted-foreground); }
+.sectionTitle { margin-bottom: 0; font-size: clamp(28px, 3vw, 40px); font-weight: 500; line-height: 1.4; letter-spacing: -.035em; }
+.workflow { padding-block: 64px; scroll-margin-top: 104px; }
+.workflowSteps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px; padding: 0; margin: 0; list-style: none; }
+.stepVisual { position: relative; display: flex; align-items: center; justify-content: center; height: 220px; padding: 26px 20px 42px; border: 1px solid var(--border); border-radius: 14px; background: linear-gradient(140deg, var(--card), var(--muted)); }
+.visualCaption { position: absolute; bottom: 17px; font-size: 10px; color: var(--muted-foreground); }
+.projectStack { width: 100%; max-width: 280px; }
+.projectName { display: flex; align-items: center; gap: 10px; padding: 14px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font-size: 12px; box-shadow: 0 8px 20px -18px var(--foreground); }
+.canvasBranch { display: grid; gap: 10px; margin: 0 0 0 22px; padding: 13px 0 0 18px; border-left: 1px solid color-mix(in srgb, var(--foreground) 25%, transparent); }
+.canvasBranch > span { position: relative; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted-foreground); }
+.canvasBranch > span::before { content: ""; position: absolute; left: -18px; width: 10px; height: 1px; background: var(--border); }
+.nodePath { display: flex; align-items: center; width: 100%; max-width: 300px; }
+.textTile { display: flex; flex-direction: column; flex: 1; gap: 9px; padding: 14px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--card); font-size: 10px; line-height: 1.7; }
+.pathLine { display: flex; width: 28px; align-items: center; justify-content: flex-end; border-bottom: 1px solid var(--muted-foreground); color: var(--muted-foreground); }
+.pathLine > svg { margin-right: -3px; margin-bottom: -7px; }
+.imageTile { width: 45%; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--card); box-shadow: 0 8px 20px -18px var(--foreground); }
+.imageTile img { display: block; width: 100%; aspect-ratio: 1.3; object-fit: cover; }
+.imageTile > span { display: flex; align-items: center; gap: 5px; padding: 7px 9px; font-size: 9px; }
+.libraryPreview { width: 100%; max-width: 270px; }
+.libraryImages { display: grid; grid-template-columns: 1.4fr 1fr; gap: 8px; margin-block: 9px; }
+.libraryImages img { width: 100%; height: 80px; object-fit: cover; border-radius: 6px; }
+.stepCopy { display: flex; align-items: flex-start; gap: 14px; padding-top: 24px; }
+.stepCopy > span { margin-top: 3px; font: 12px ui-monospace, monospace; color: var(--muted-foreground); }
+.stepCopy h3 { margin-bottom: 9px; font-size: 17px; font-weight: 500; }
+.stepCopy p { margin-bottom: 0; max-width: 320px; font-size: 13px; line-height: 1.9; color: var(--muted-foreground); }
+.closing { position: relative; isolation: isolate; overflow: hidden; margin-bottom: 52px; border-radius: 20px; background: #101315; color: white; }
+.closingImage { position: absolute; z-index: -2; inset: 0 0 0 auto; width: 66%; height: 100%; object-fit: cover; object-position: 50% 55%; }
+.closing::before { position: absolute; z-index: -1; inset: 0; content: ""; background: linear-gradient(90deg, #101315 8%, rgba(16,19,21,.94) 30%, rgba(16,19,21,.5) 65%, rgba(16,19,21,.12)), linear-gradient(0deg, rgba(16,19,21,.65), transparent 40%); }
+.closingCopy { padding: 44px 48px 32px; }
+.closingCopy h2 { margin-bottom: 16px; font-size: clamp(28px, 3vw, 42px); font-weight: 500; line-height: 1.4; letter-spacing: -.035em; }
+.closingCopy p { margin-bottom: 0; color: rgba(255,255,255,.65); font-size: 13px; line-height: 1.8; }
+.closingFootnote { display: flex; justify-content: space-between; gap: 16px; padding: 16px 48px; border-top: 1px solid rgba(255,255,255,.12); color: rgba(255,255,255,.6); font-size: 10px; letter-spacing: .08em; }
+
 .intro, .preview { animation: enter .65s both; }
 .preview { animation-delay: .08s; }
 
@@ -99,6 +132,26 @@
     .canvas { gap: 18px; padding: 20px 14px 24px; }
     .frame { border-radius: 16px; }
     .node { border-radius: 9px; }
+    .workflow { padding-block: 40px; }
+    .workflowSteps { grid-template-columns: 1fr; gap: 28px; }
+    .stepVisual { height: 210px; }
+    .stepCopy { padding-top: 18px; }
+    .closing { margin-bottom: 28px; border-radius: 14px; }
+    .closingCopy { padding: 30px 24px; }
+    .closingImage { width: 100%; }
+    .closing::before { background: linear-gradient(90deg, rgba(16,19,21,.95), rgba(16,19,21,.7)); }
+    .closingFootnote { padding: 16px 24px; flex-wrap: wrap; }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+    .workflowSteps { gap: 14px; }
+    .stepVisual { padding-inline: 12px; height: 200px; }
+    .projectName { gap: 5px; padding-inline: 8px; font-size: 10px; }
+    .projectName > span:last-child { display: none; }
+    .textTile { font-size: 9px; padding-inline: 6px; }
+    .pathLine { width: 15px; }
+    .stepCopy { gap: 8px; }
+    .stepCopy h3 { font-size: 15px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
