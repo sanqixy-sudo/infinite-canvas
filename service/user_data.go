@@ -191,10 +191,12 @@ func CurrentUserAssetData(ctx context.Context) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(config.AssetData) == "" {
-		return json.RawMessage(`{"assets":[]}`), nil
-	}
-	return json.RawMessage(config.AssetData), nil
+	values, assets, err := accountAssetEnvelope(config.AssetData)
+	if err != nil { return nil, err }
+	if _, err := accountAssetFolders(values); err != nil { return nil, err }
+	values["assets"], _ = json.Marshal(assets)
+	if _, exists := values["folders"]; !exists { values["folders"] = json.RawMessage(`[]`) }
+	return json.Marshal(values)
 }
 
 func SaveCurrentUserAssetData(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {

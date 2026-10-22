@@ -1,5 +1,6 @@
 import { apiDelete, apiGet, apiPost } from "@/services/api/request";
 import type { Asset } from "@/stores/use-asset-store";
+import type { AssetOrganizationSnapshot } from "./asset-organization";
 import type { AiConfig } from "@/stores/use-config-store";
 import type { WorkflowChannelData, WorkflowRef } from "@/lib/workflow-channel";
 import type { ChannelTranslation } from "@/lib/channel-parameter-translation";
@@ -98,11 +99,11 @@ export async function syncUserAssetData<T>(token: string, data: T) {
 }
 
 export function saveUserAssetItem(token: string, asset: Asset) {
-    return apiPost<{ assets: Asset[] }>("/api/v1/user-data/assets/item", { asset }, token);
+    return apiPost<AssetOrganizationSnapshot>("/api/v1/user-data/assets/item", { asset }, token);
 }
 
 export function deleteUserAssetItem(token: string, id: string) {
-    return apiDelete<{ assets: Asset[] }>(`/api/v1/user-data/assets/item/${encodeURIComponent(id)}`, token);
+    return apiDelete<AssetOrganizationSnapshot>(`/api/v1/user-data/assets/item/${encodeURIComponent(id)}`, token);
 }
 
 export type CreativeWorkflowRecord<T = unknown> = {

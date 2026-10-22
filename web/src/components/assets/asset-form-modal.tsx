@@ -2,7 +2,7 @@
 
 import { ChevronDown, Upload } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { App, AutoComplete, Button, Form, Input, Modal, Select, Space, Tag, Typography } from "antd";
+import { App, AutoComplete, Button, Form, Input, Modal, Select, Space, Tag, TreeSelect, Typography } from "antd";
 
 import { formatBytes, readFileAsDataUrl } from "@/lib/image-utils";
 import { uploadMediaFile } from "@/services/file-storage";
@@ -11,12 +11,14 @@ import { saveAssetToAccountLibrary } from "@/services/account-asset-save";
 import { useAssetStore, type Asset, type AssetInput, type AssetKind, type AudioAsset, type ImageAsset, type VideoAsset } from "@/stores/use-asset-store";
 import { useStoragePreferencesStore } from "@/stores/use-storage-preferences-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { folderTreeOptions, normalizeAssetFolderIds, normalizeAssetTags, type AssetScope } from "@/lib/asset-organization";
 
 type AssetFormValues = {
     kind: AssetKind;
     title: string;
     coverUrl: string;
     tags: string[];
+    folderIds: string[];
     category?: string;
     source?: string;
     content?: string;
@@ -28,10 +30,12 @@ type MediaDraft = VideoAsset["data"] | AudioAsset["data"] | null;
 type AssetFormModalProps = {
     open: boolean;
     asset?: Asset | null;
+    scope?: AssetScope;
+    defaultFolderIds?: string[];
     onClose: () => void;
 };
 
-export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalProps) {
+export function AssetFormModal({ open, asset = null, scope: requestedScope, defaultFolderIds, onClose }: AssetFormModalProps) {
     const { message } = App.useApp();
     const [form] = Form.useForm<AssetFormValues>();
     const coverInputRef = useRef<HTMLInputElement>(null);
@@ -40,6 +44,17 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
     const sessionRef = useRef({ version: 0, token: "", userId: "" });
     const busyRef = useRef(false);
     const assets = useAssetStore((state) => state.assets);
+    const cloudAssets = useAssetStore((state) => state.cloudAssets);
+    const localFolders = useAssetStore((state) => state.localFolders);
+    const cloudFolders = useAssetStore((state) => state.cloudFolders);
+    const token = useUserStore((state) => state.token);
+    const preferences = useStoragePreferencesStore();
+    const preferredScope: AssetScope = token && preferences.token === token && preferences.ready && preferences.autoSaveAssetsToCloud ? "cloud" : "local";
+    const targetScope: AssetScope = asset ? cloudAssets.some((item) => item.id === asset.id) ? "cloud" : "local" : requestedScope ?? preferredScope;
+    const folders = targetScope === "cloud" ? cloudFolders : localFolders;
+    const initialFolderIds = (defaultFolderIds || []).filter((id) => folders.some((folder) => folder.id === id));
+    const loginRequired = targetScope === "cloud" && !token;
+    const scopeRef = useRef(targetScope);
     const addAsset = useAssetStore((state) => state.addAsset);
     const updateAsset = useAssetStore((state) => state.updateAsset);
     const [formKind, setFormKind] = useState<AssetKind>("text");
@@ -67,12 +82,18 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
             title: asset.title,
             coverUrl: asset.coverUrl,
             tags: asset.tags || [],
+            folderIds: asset.folderIds || [],
             category: asset.category,
             source: asset.source,
             content: asset.kind === "text" ? asset.data.content : asset.kind === "image" ? asset.data.dataUrl : asset.data.url,
-        } : { kind: "text", title: "", coverUrl: "", tags: [], category: "", source: "手动添加", content: "" });
+        } : { kind: "text", title: "", coverUrl: "", tags: [], folderIds: initialFolderIds, category: "", source: "手动添加", content: "" });
         return () => { sessionRef.current.version++; };
     }, [asset, form, open]);
+
+    useLayoutEffect(() => {
+        if (open && scopeRef.current !== targetScope) form.setFieldValue("folderIds", asset?.folderIds || initialFolderIds);
+        scopeRef.current = targetScope;
+    }, [asset, form, open, targetScope]);
 
     const currentSession = (session: typeof sessionRef.current) => {
         const { token, user } = useUserStore.getState();
@@ -86,16 +107,19 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
     const saveAsset = async () => {
         if (busyRef.current) return;
         const session = { ...sessionRef.current };
+        const scope = targetScope;
         busyRef.current = true;
         setSaving(true);
         try {
         assertSession(session);
+        if (scope === "cloud" && !session.token) throw new Error("请先登录后再保存到账号素材库");
         const values = await form.validateFields();
         assertSession(session);
         const base = {
             title: values.title.trim(),
             coverUrl: values.coverUrl?.trim() || (values.kind === "image" && imageDraft ? imageDraft.dataUrl : ""),
-            tags: values.tags || [],
+            tags: normalizeAssetTags(values.tags || []),
+            folderIds: normalizeAssetFolderIds(values.folderIds || [], folders),
             category: values.category?.trim(),
             source: values.source?.trim(),
             metadata: asset?.metadata || { source: "manual" },
@@ -131,12 +155,21 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
             nextAsset = values.kind === "video" ? { ...base, kind: "video", data: data as VideoAsset["data"] } : { ...base, kind: "audio", data };
         }
         assertSession(session);
-        const preferences = useStoragePreferencesStore.getState();
-        const isCloud = asset && useAssetStore.getState().cloudAssets.some((item) => item.id === asset.id);
-        const serverMedia = nextAsset.kind !== "text" && /^server:[^:]+$/.test(nextAsset.data.storageKey || "");
-        const autoCloud = !asset && session.token && preferences.token === session.token && preferences.ready && preferences.autoSaveAssetsToCloud;
-        if (isCloud || serverMedia || autoCloud) await saveAssetToAccountLibrary({ ...nextAsset, ...(asset ? { id: asset.id } : {}) }, session.token);
-        else if (asset) await updateAsset(asset.id, nextAsset);
+        if (asset) {
+            const tagsChanged = JSON.stringify([...(asset.tags || [])].sort()) !== JSON.stringify([...nextAsset.tags].sort());
+            const foldersChanged = JSON.stringify([...(asset.folderIds || [])].sort()) !== JSON.stringify([...(nextAsset.folderIds || [])].sort());
+            const organization = { ...(tagsChanged ? { tags: nextAsset.tags } : {}), ...(foldersChanged ? { folderIds: nextAsset.folderIds } : {}) };
+            const originalKey = asset.kind === "text" ? "" : asset.data.storageKey;
+            const nextKey = nextAsset.kind === "text" ? "" : nextAsset.data.storageKey;
+            if (scope === "cloud" && (asset.kind !== nextAsset.kind || originalKey !== nextKey)) {
+                const saved = await saveAssetToAccountLibrary({ ...nextAsset, id: asset.id }, session.token);
+                assertSession(session);
+                if (tagsChanged || foldersChanged) await useAssetStore.getState().updateCloudAsset(saved.id, organization, session.token);
+            } else {
+                const { tags: _tags, folderIds: _folderIds, ...details } = nextAsset;
+                await updateAsset(asset.id, { ...details, ...organization });
+            }
+        } else if (scope === "cloud") await saveAssetToAccountLibrary(nextAsset, session.token);
         else addAsset(nextAsset);
         assertSession(session);
         message.success(asset ? "素材已更新" : "素材已保存");
@@ -200,9 +233,11 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
     };
 
     return (
-            <Modal title={asset ? "编辑素材" : "新增素材"} open={open} width={980} onCancel={() => { if (!busyRef.current) onClose(); }} onOk={() => void saveAsset()} confirmLoading={saving} okButtonProps={{ disabled: uploading }} cancelButtonProps={{ disabled: saving || uploading }} closable={!saving && !uploading} maskClosable={!saving && !uploading} keyboard={!saving && !uploading} okText="保存" cancelText="取消" destroyOnHidden>
+            <Modal title={asset ? "编辑素材" : "新增素材"} open={open} width={980} onCancel={() => { if (!busyRef.current) onClose(); }} onOk={() => void saveAsset()} confirmLoading={saving} okButtonProps={{ disabled: uploading || loginRequired }} cancelButtonProps={{ disabled: saving || uploading }} closable={!saving && !uploading} maskClosable={!saving && !uploading} keyboard={!saving && !uploading} okText="保存" cancelText="取消" destroyOnHidden>
                 <div className="grid gap-6 pt-1 lg:grid-cols-[minmax(0,1fr)_320px]">
-                    <Form form={form} layout="vertical" disabled={saving || uploading} requiredMark={false} initialValues={{ kind: "text", tags: [] }}>
+                    <Form form={form} layout="vertical" disabled={saving || uploading || loginRequired} requiredMark={false} initialValues={{ kind: "text", tags: [] }}>
+                        <Typography.Paragraph type="secondary">保存位置：{targetScope === "cloud" ? "账号素材库" : "当前浏览器"}</Typography.Paragraph>
+                        {loginRequired ? <Typography.Paragraph type="warning">请先登录后再将素材保存到账号素材库。</Typography.Paragraph> : null}
                         <Form.Item name="kind" label="类型">
                             <Select
                                 options={[
@@ -231,7 +266,10 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
                             </Space.Compact>
                         </Form.Item>
                         <Form.Item name="tags" label="标签">
-                            <Select mode="tags" tokenSeparators={[",", "，"]} placeholder="输入标签后回车" />
+                            <Select mode="tags" maxCount={50} tokenSeparators={[",", "，"]} options={Array.from(new Set(assets.flatMap((item) => item.tags || []))).sort().map((value) => ({ value }))} placeholder="输入标签后回车" />
+                        </Form.Item>
+                        <Form.Item name="folderIds" label="所属目录" extra={folders.length ? "可归入多个目录，不会复制素材文件" : "尚无目录，可先在“我的素材”中创建"}>
+                            <TreeSelect multiple allowClear showSearch treeNodeFilterProp="title" maxCount={32} maxTagCount={3} treeData={folderTreeOptions(folders)} placeholder={targetScope === "cloud" ? "选择账号目录" : "选择浏览器目录"} />
                         </Form.Item>
                         <div className="grid gap-4 sm:grid-cols-2">
                             <Form.Item name="category" label="分类">

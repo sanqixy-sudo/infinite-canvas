@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/tigerowo/infinite-canvas/model"
 	"github.com/tigerowo/infinite-canvas/service"
 )
 
@@ -145,6 +146,31 @@ func DeleteUserAssetItem(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
+	OK(w, result)
+}
+
+func SaveUserAssetFolder(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	var request model.AssetFolderInput
+	if !decodeUserDataBody(w, r, &request, 4096) { return }
+	result, err := service.SaveCurrentUserAssetFolder(r.Context(), request)
+	if err != nil { FailError(w, err); return }
+	OK(w, result)
+}
+
+func DeleteUserAssetFolder(w http.ResponseWriter, r *http.Request, id string) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	result, err := service.DeleteCurrentUserAssetFolder(r.Context(), id)
+	if err != nil { FailError(w, err); return }
+	OK(w, result)
+}
+
+func OrganizeUserAssets(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	var request model.AssetOrganizationInput
+	if !decodeUserDataBody(w, r, &request, 1<<20) { return }
+	result, err := service.OrganizeCurrentUserAssets(r.Context(), request)
+	if err != nil { FailError(w, err); return }
 	OK(w, result)
 }
 

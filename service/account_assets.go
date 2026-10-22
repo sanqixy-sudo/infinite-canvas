@@ -16,6 +16,7 @@ import (
 
 type AccountAssetData struct {
 	Assets []json.RawMessage `json:"assets"`
+	Folders []model.AssetFolder `json:"folders"`
 }
 
 type accountAssetIdentity struct {
@@ -33,6 +34,7 @@ type accountAsset struct {
 	Title     string                     `json:"title"`
 	CoverURL  string                     `json:"coverUrl"`
 	Tags      []string                   `json:"tags"`
+	FolderIDs []string                   `json:"folderIds"`
 	Category  string                     `json:"category,omitempty"`
 	Source    string                     `json:"source,omitempty"`
 	CreatedAt string                     `json:"createdAt"`
@@ -63,13 +65,8 @@ func SaveCurrentUserAssetItem(ctx context.Context, raw json.RawMessage) (Account
 		return AccountAssetData{}, safeMessageError{message: "素材格式无效"}
 	}
 	asset.ID, asset.Title = strings.TrimSpace(asset.ID), strings.TrimSpace(asset.Title)
-	if asset.ID == "" || len(asset.ID) > 128 || asset.Title == "" || utf8.RuneCountInString(asset.Title) > 200 || len(asset.Tags) > 50 {
+	if asset.ID == "" || len(asset.ID) > 128 || asset.Title == "" || utf8.RuneCountInString(asset.Title) > 200 {
 		return AccountAssetData{}, safeMessageError{message: "素材 ID、名称或标签无效"}
-	}
-	for _, tag := range asset.Tags {
-		if utf8.RuneCountInString(tag) > 80 {
-			return AccountAssetData{}, safeMessageError{message: "素材标签最多 80 字"}
-		}
 	}
 	storageID := ""
 	if asset.Kind == "text" {
@@ -98,11 +95,14 @@ func SaveCurrentUserAssetItem(ctx context.Context, raw json.RawMessage) (Account
 		if err != nil {
 			return err
 		}
+		folders, err := accountAssetFolders(values)
+		if err != nil { return err }
 		if asset.Data.StorageKey != "" {
 			for _, savedRaw := range assets {
 				var saved accountAssetIdentity
 				if json.Unmarshal(savedRaw, &saved) == nil && saved.ID != asset.ID && saved.Data.StorageKey == asset.Data.StorageKey {
 					result.Assets = assets
+					result.Folders = folders
 					return nil
 				}
 			}
@@ -115,6 +115,12 @@ func SaveCurrentUserAssetItem(ctx context.Context, raw json.RawMessage) (Account
 			if saved.ID != asset.ID {
 				continue
 			}
+			// 已有素材的组织字段以最新数据库为准，只由 organize 修改。
+			var organization struct { Tags []string `json:"tags"`; FolderIDs []string `json:"folderIds"` }
+			if json.Unmarshal(savedRaw, &organization) != nil { return safeMessageError{message: "账号素材组织数据无效，未修改原数据"} }
+			asset.Tags, asset.FolderIDs = organization.Tags, organization.FolderIDs
+			if asset.Tags == nil { asset.Tags = []string{} }
+			if asset.FolderIDs == nil { asset.FolderIDs = []string{} }
 			if saved.CreatedAt != "" {
 				asset.CreatedAt = saved.CreatedAt
 			}
@@ -133,6 +139,11 @@ func SaveCurrentUserAssetItem(ctx context.Context, raw json.RawMessage) (Account
 			assets[i] = encoded
 			return saveAccountAssetEnvelope(config, values, assets, &result)
 		}
+		asset.Tags, err = normalizeAssetTags(asset.Tags)
+		if err != nil { return err }
+		asset.FolderIDs, err = normalizeAssetIDs(asset.FolderIDs, 32)
+		if err != nil { return err }
+		if err := requireAssetFolders(asset.FolderIDs, folders); err != nil { return err }
 		encoded, err := json.Marshal(asset)
 		if err != nil {
 			return err
@@ -232,11 +243,15 @@ func accountAssetEnvelope(raw string) (map[string]json.RawMessage, []json.RawMes
 }
 
 func saveAccountAssetEnvelope(config *model.UserConfig, values map[string]json.RawMessage, assets []json.RawMessage, result *AccountAssetData) error {
+	folders, err := accountAssetFolders(values)
+	if err != nil { return err }
 	values["assets"], _ = json.Marshal(assets)
+	if _, exists := values["folders"]; !exists { values["folders"] = json.RawMessage(`[]`) }
 	raw, err := json.Marshal(values)
 	if err == nil {
 		config.AssetData = string(raw)
 		result.Assets = assets
+		result.Folders = folders
 	}
 	return err
 }
