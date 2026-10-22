@@ -104,7 +104,7 @@ export default function CommercePage() {
             setSubmittingReview(true);
             await reviewPurchaseOrder(token, reviewing.order.id, reviewing.action, remark.trim());
             if (useUserStore.getState().token !== requestToken) return;
-            await Promise.all([queryClient.invalidateQueries({ queryKey: ["admin-purchase-orders"] }), queryClient.invalidateQueries({ queryKey: ["account-wallet"] }), queryClient.invalidateQueries({ queryKey: ["purchase-orders"] })]);
+            await Promise.all([queryClient.invalidateQueries({ queryKey: ["admin-purchase-orders"] }), queryClient.invalidateQueries({ queryKey: ["account-wallet"] }), queryClient.invalidateQueries({ queryKey: ["purchase-orders"] }), queryClient.invalidateQueries({ queryKey: ["account", "credits"] })]);
             setReviewing(null);
             message.success(reviewing.action === "complete" ? "已确认并发放权益" : "申请已拒绝");
         } catch (error) { if (useUserStore.getState().token === requestToken && !(error && typeof error === "object" && "errorFields" in error)) message.error(error instanceof Error ? error.message : "审核失败"); }
@@ -115,7 +115,7 @@ export default function CommercePage() {
         { title: "套餐", dataIndex: "name", render: (value, item) => <div><Typography.Text strong>{value}</Typography.Text><div><Typography.Text type="secondary">{kindNames[item.kind]} · {benefit(item)}</Typography.Text></div></div> },
         { title: "售价", render: (_, item) => money(item.priceCents), width: 120 },
         { title: "状态", dataIndex: "enabled", render: (value) => <Tag>{value ? "已上架" : "未上架"}</Tag>, width: 100 },
-        { title: "操作", width: 150, render: (_, item) => <Space><Button size="small" onClick={() => editPlan(item)}>编辑</Button><Popconfirm title="移除这个套餐？" description="保存设置后停止新购，已有申请及权益保留。" onConfirm={() => { setPlans((current) => current.filter((plan) => plan.id !== item.id)); setDirty(true); }}><Button size="small" danger>移除</Button></Popconfirm></Space> },
+        { title: "操作", width: 150, render: (_, item) => <Space><Button size="small" disabled={saving} onClick={() => editPlan(item)}>编辑</Button><Popconfirm disabled={saving} title="移除这个套餐？" description="保存设置后停止新购，已有申请及权益保留。" onConfirm={() => { setPlans((current) => current.filter((plan) => plan.id !== item.id)); setDirty(true); }}><Button size="small" disabled={saving} danger>移除</Button></Popconfirm></Space> },
     ];
     const orderColumns: ColumnsType<PurchaseOrder> = [
         { title: "申请用户", dataIndex: "userId", width: 190, render: (value, item) => <div><Typography.Text>{item.userDisplayName || "用户"}</Typography.Text><div><Typography.Text copyable ellipsis type="secondary" style={{ maxWidth: 160, fontSize: 11 }}>{value}</Typography.Text></div></div> },
@@ -133,13 +133,13 @@ export default function CommercePage() {
             { key: "settings", label: "空间与套餐", children: <Space direction="vertical" size={20} style={{ width: "100%" }}>
                 {settings.error ? <Card><Typography.Text type="danger">配置加载失败，请重试。</Typography.Text><Button onClick={() => void settings.refetch()}>重新加载</Button></Card> : null}
                 <Card title="默认空间与充值说明" loading={settings.isLoading}>
-                    <Form form={form} layout="vertical" onValuesChange={() => setDirty(true)}>
+                    <Form form={form} layout="vertical" disabled={saving} onValuesChange={() => setDirty(true)}>
                         <Form.Item name="defaultStorageGB" label="每位用户的默认空间（GB）" rules={[{ required: true, message: "请输入默认空间" }]} extra="适用于全部账号。调低额度不删除文件，超额账号需清理文件或扩容后才能继续上传。"><InputNumber min={0} max={1000000} precision={3} step={1} style={{ width: 240 }} /></Form.Item>
                         <Form.Item name="contactText" label="充值联系信息"><Input maxLength={500} placeholder="例如客服微信、邮箱或处理说明" /></Form.Item>
                         <Form.Item name="instructions" label="人工充值说明" extra="展示给用户；请说明如何联系、核实收款及预计处理方式。"><Input.TextArea rows={3} maxLength={2000} showCount placeholder="用户提交申请后，管理员核实收款并发放算力点或存储空间。" /></Form.Item>
                     </Form>
                 </Card>
-                <Card title="购买套餐" extra={<Button onClick={() => editPlan()} disabled={!settings.data}>新增套餐</Button>}>
+                <Card title="购买套餐" extra={<Button onClick={() => editPlan()} disabled={!settings.data || saving}>新增套餐</Button>}>
                     <Typography.Paragraph type="secondary">存储套餐为一次性长期扩容，算力套餐到账后增加点数。售价由你设置；修改套餐不会改变已有申请的金额与权益。套餐增加用户使用额度，请同时确保平台存储容量充足。</Typography.Paragraph>
                     <Table rowKey="id" columns={planColumns} dataSource={plans} pagination={false} scroll={{ x: 650 }} locale={{ emptyText: "尚无套餐，请新增并保存后上架" }} />
                 </Card>
@@ -156,7 +156,7 @@ export default function CommercePage() {
                 <Table rowKey="id" columns={orderColumns} dataSource={orders.data?.items || []} loading={orders.isLoading} scroll={{ x: 1050 }} pagination={{ current: page, pageSize: 20, total: orders.data?.total || 0, showSizeChanger: false, onChange: setPage }} />
             </Card> },
         ]} />
-        <Modal title="编辑购买套餐" open={editingPlan !== null} onCancel={() => setEditingPlan(null)} onOk={() => void finishPlan()} okText="完成编辑" destroyOnHidden>
+        <Modal title="编辑购买套餐" forceRender open={editingPlan !== null} onCancel={() => setEditingPlan(null)} onOk={() => void finishPlan()} okText="完成编辑">
             <Form form={planForm} layout="vertical" preserve={false}>
                 <Form.Item name="name" label="套餐名称" rules={[{ required: true, whitespace: true, message: "请输入套餐名称" }]}><Input maxLength={80} /></Form.Item>
                 <Form.Item name="kind" label="类型" rules={[{ required: true }]}><Select options={[{ value: "credits", label: "算力充值" }, { value: "storage", label: "存储扩容" }]} /></Form.Item>
