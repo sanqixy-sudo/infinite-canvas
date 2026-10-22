@@ -12,7 +12,7 @@ export default function LegalPage() {
                     <a className="underline underline-offset-4" href="https://github.com/sanqixy-sudo/infinite-canvas/blob/my-version/LICENSE" target="_blank" rel="noopener noreferrer">查看 AGPL-3.0 许可</a>
                     <a className="underline underline-offset-4" href="https://github.com/tigerowo/infinite-canvas" target="_blank" rel="noopener noreferrer">原项目与作者</a>
                 </div>
-                <p><Link className="underline underline-offset-4" href="/">返回工作台</Link></p>
+                <p><Link className="underline underline-offset-4" href="/">返回首页</Link></p>
             </article>
         </main>
     );

@@ -90,6 +90,7 @@ func AdminLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func CurrentUser(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
 	if user, ok := service.UserFromContext(r.Context()); ok {
 		OK(w, user)
 		return

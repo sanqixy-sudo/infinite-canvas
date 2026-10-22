@@ -9,6 +9,8 @@ import { cloudModelPreferences, fetchUserConfig } from "@/services/api/user-conf
 import { STORAGE_SYNC_FAILED_EVENT, defaultUserStorageProvider, defaultUserWebDAVStorageProvider, saveUserStorageProvider, saveUserWebDAVStorageProvider } from "@/services/image-storage";
 import { defaultConfig, useConfigStore, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { observeAuthenticatedFetch } from "@/lib/auth-session";
+import { AUTH_TOKEN_KEY } from "@/services/api/auth";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
@@ -19,9 +21,24 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const loadPublicSettings = useConfigStore((state) => state.loadPublicSettings);
     const channelMode = useConfigStore((state) => state.config.channelMode);
     const updateConfig = useConfigStore((state) => state.updateConfig);
-    const isLoginPage = pathname === "/login" || pathname === "/admin/login";
     const isTokenDanceCallback = pathname === "/tokendance/callback";
     const accountSessionRef = useRef({ token, userId: user?.id || "" });
+
+    useEffect(observeAuthenticatedFetch, []);
+
+    useEffect(() => {
+        const onStorage = (event: StorageEvent) => {
+            if (event.key !== AUTH_TOKEN_KEY || event.storageArea !== window.localStorage) return;
+            try {
+                const raw = window.localStorage.getItem(AUTH_TOKEN_KEY);
+                const value = raw ? JSON.parse(raw) as { state?: { token?: unknown } } : null;
+                const nextToken = typeof value?.state?.token === "string" ? value.state.token : "";
+                useUserStore.getState().adoptStoredToken(nextToken);
+            } catch { /* 损坏的浏览器配置不作为已验证身份。 */ }
+        };
+        window.addEventListener("storage", onStorage);
+        return () => window.removeEventListener("storage", onStorage);
+    }, []);
 
     useEffect(() => {
         const onSyncFailed = (event: Event) => {
@@ -37,8 +54,12 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     }, [loadPublicSettings]);
 
     useEffect(() => {
-        if (!isLoginPage) void hydrateUser();
-    }, [hydrateUser, isLoginPage]);
+        const refresh = () => { void hydrateUser(); };
+        const unsubscribe = useUserStore.persist.hasHydrated() ? undefined : useUserStore.persist.onFinishHydration(refresh);
+        if (useUserStore.persist.hasHydrated()) refresh();
+        window.addEventListener("focus", refresh);
+        return () => { unsubscribe?.(); window.removeEventListener("focus", refresh); };
+    }, [hydrateUser]);
 
 	useEffect(() => {
 		if (channelMode !== "remote") updateConfig("channelMode", "remote");

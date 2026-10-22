@@ -8,6 +8,7 @@ import { ArrowLeft, Check, Download, Layers3, MoreHorizontal, Pencil, Plus, Sear
 
 import { CanvasDeleteProjectsDialog } from "../../components/canvas-delete-projects-dialog";
 import { CanvasProjectCard } from "../../components/canvas-project-card";
+import { CanvasLoadError } from "../../components/canvas-load-error";
 import { useCanvasStore, workspaceCanvases } from "../../stores/use-canvas-store";
 import { useCanvasUiStore } from "../../stores/use-canvas-ui-store";
 import { useCanvasExport } from "../../hooks/use-canvas-export";
@@ -17,6 +18,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     const router = useRouter();
     const exportProjects = useCanvasExport();
     const hydrated = useCanvasStore((state) => state.hydrated);
+    const loadError = useCanvasStore((state) => state.loadError);
     const projects = useCanvasStore((state) => state.projects);
     const createCanvas = useCanvasStore((state) => state.createProject);
     const renameWorkspace = useCanvasStore((state) => state.renameWorkspace);
@@ -43,6 +45,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     };
     const saveTitle = () => { renameWorkspace(id, draft); setEditing(false); };
 
+    if (loadError) return <CanvasLoadError />;
     return <>
         <main className="h-full overflow-y-auto">
         <div className="mx-auto max-w-[1320px] px-5 py-8 sm:px-8 lg:px-10">

@@ -33,9 +33,10 @@ func New() *gin.Engine {
 		handler.FileContent(c.Writer, c.Request, c.Param("id"))
 	})
 	api.DELETE("/files/session", gin.WrapF(handler.ClearStorageSession))
+	api.POST("/files/session", middleware.UserAuth, gin.WrapF(handler.SetStorageSession))
 	api.POST("/ai/direct-request", gin.WrapF(handler.PersonalModelChannelDisabled))
 	api.POST("/ai/autodl/workflows", middleware.UserAuth, gin.WrapF(handler.AutoDLWorkflows))
-	anonymousFiles := api.Group("/anonymous/files", middleware.AnonymousStorage)
+	anonymousFiles := api.Group("/anonymous/files", middleware.UserAuth)
 	anonymousFiles.POST("/session", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 	anonymousFiles.POST("", gin.WrapF(handler.UploadFile))
 	anonymousFiles.DELETE("/:id", func(c *gin.Context) {
@@ -136,14 +137,14 @@ func New() *gin.Engine {
 	v1.POST("/user-data/asset-folders", gin.WrapF(handler.SaveUserAssetFolder))
 	v1.DELETE("/user-data/asset-folders/:id", func(c *gin.Context) { handler.DeleteUserAssetFolder(c.Writer, c.Request, c.Param("id")) })
 	v1.POST("/user-data/assets/organize", gin.WrapF(handler.OrganizeUserAssets))
-	api.GET("/proxy-image", gin.WrapF(handler.ProxyImage))
-	api.GET("/prompts", middleware.OptionalAuth, gin.WrapF(handler.Prompts))
-	api.GET("/agent-skills", gin.WrapF(handler.AgentSkills))
-	api.GET("/agent-skills/:id/file", func(c *gin.Context) {
+	api.GET("/proxy-image", middleware.ReadUserAuth, gin.WrapF(handler.ProxyImage))
+	api.GET("/prompts", middleware.ReadUserAuth, gin.WrapF(handler.Prompts))
+	api.GET("/agent-skills", middleware.ReadUserAuth, gin.WrapF(handler.AgentSkills))
+	api.GET("/agent-skills/:id/file", middleware.ReadUserAuth, func(c *gin.Context) {
 		handler.AgentSkillFile(c.Writer, c.Request, c.Param("id"))
 	})
-	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
-	api.GET("/assets/:id", func(c *gin.Context) {
+	api.GET("/assets", middleware.ReadUserAuth, gin.WrapF(handler.Assets))
+	api.GET("/assets/:id", middleware.ReadUserAuth, func(c *gin.Context) {
 		handler.PublicAsset(c.Writer, c.Request, c.Param("id"))
 	})
 	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))

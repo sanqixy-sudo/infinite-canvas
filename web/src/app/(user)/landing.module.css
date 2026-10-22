@@ -1,0 +1,19 @@
+.canvas {
+    background-image: radial-gradient(color-mix(in srgb, var(--foreground) 13%, transparent) .65px, transparent .65px);
+    background-size: 18px 18px;
+}
+
+.intro, .preview, .node {
+    animation: enter .65s both;
+}
+
+.preview { animation-delay: .08s; }
+
+@keyframes enter {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .intro, .preview, .node { animation: none; }
+}

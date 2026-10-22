@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/tigerowo/infinite-canvas/config"
 	"github.com/tigerowo/infinite-canvas/service"
 )
 
@@ -91,7 +91,6 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 		FailError(w, err)
 		return
 	}
-	setStorageReadSession(w, r)
 	OK(w, object)
 }
 
@@ -182,22 +181,41 @@ func FileInfo(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	setStorageReadSession(w, r)
 	w.Header().Set("Cache-Control", "private, no-store")
 	OK(w, object)
 }
 
 func setStorageReadSession(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	setStorageReadToken(w, r, token)
+}
+
+func setStorageReadToken(w http.ResponseWriter, r *http.Request, token string) {
 	if token == "" {
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: "xiaomeng_storage_viewer", Value: token, Path: "/api/files", MaxAge: config.Cfg.JWTExpireHours * 3600, HttpOnly: true, Secure: r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"), SameSite: http.SameSiteLaxMode})
+	claims, err := service.ParseToken(token)
+	if err != nil || claims.ExpiresAt == nil { return }
+	maxAge := int(time.Until(claims.ExpiresAt.Time).Seconds())
+	if maxAge <= 0 { return }
+	storageReadCookie(w, r, "", "/api/files", -1)
+	storageReadCookie(w, r, token, "/api", maxAge)
 }
 
 func ClearStorageSession(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: "xiaomeng_storage_viewer", Value: "", Path: "/api/files", MaxAge: -1, HttpOnly: true, Secure: r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"), SameSite: http.SameSiteLaxMode})
+	storageReadCookie(w, r, "", "/api/files", -1)
+	storageReadCookie(w, r, "", "/api", -1)
 	OK(w, true)
+}
+
+func SetStorageSession(w http.ResponseWriter, r *http.Request) {
+	setStorageReadSession(w, r)
+	w.Header().Set("Cache-Control", "private, no-store")
+	OK(w, true)
+}
+
+func storageReadCookie(w http.ResponseWriter, r *http.Request, value, path string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{Name: "xiaomeng_storage_viewer", Value: value, Path: path, MaxAge: maxAge, HttpOnly: true, Secure: r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"), SameSite: http.SameSiteLaxMode})
 }
 
 // AdminMeasureStorageProvider 管理员统计存储容量。
@@ -265,7 +283,7 @@ func ProxyImage(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.WriteHeader(resp.StatusCode)
 	if isImage {
 		_, _ = w.Write(data)

@@ -8,6 +8,10 @@ import React from "react";
 export const metadata: Metadata = {
     title: "小盟视频工作台",
     description: "小盟视频工作台，管理画布、素材与 AI 创作任务。",
+    icons: {
+        icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/favicon.ico", sizes: "16x16 32x32 48x48" }],
+        shortcut: "/favicon.ico",
+    },
 };
 
 export default function RootLayout({

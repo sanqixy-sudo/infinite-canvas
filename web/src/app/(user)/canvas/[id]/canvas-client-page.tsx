@@ -6,6 +6,8 @@ import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Download, Globe2, Home, ImageIcon, Images, Layers3, List, Maximize, Menu, Bot, Music2, PanelLeftClose, PanelLeftOpen, Pause, Play, Plus, Redo2, Settings2, Trash2, Undo2, Upload, Video, Volume2, VolumeX, X } from "lucide-react";
 import { saveAs } from "file-saver";
+import { BrandMark } from "@/components/brand/brand-mark";
+import { CanvasLoadError } from "../components/canvas-load-error";
 
 import { deleteCanvasProjects, stopCanvasTask } from "@/services/api/canvas-tasks";
 import { createCanvasImageTask, pollCanvasImageTaskStatus, requestImageQuestion, type CanvasImageTask } from "@/services/api/image";
@@ -182,6 +184,8 @@ export default function CanvasPage() {
 }
 
 function CanvasRefreshShell() {
+    const loadError = useCanvasStore((state) => state.loadError);
+    if (loadError) return <CanvasLoadError />;
     return (
         <main className="relative h-full min-h-0 overflow-hidden bg-background text-foreground">
             <div
@@ -191,6 +195,11 @@ function CanvasRefreshShell() {
                     backgroundSize: "28px 28px",
                 }}
             />
+
+            <div role="status" className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-muted-foreground">
+                <BrandMark className="size-12 text-foreground motion-safe:animate-pulse" />
+                <span className="text-xs tracking-wider">正在打开画布</span>
+            </div>
 
             <div className="absolute bottom-5 left-1/2 z-50 flex h-14 -translate-x-1/2 items-center gap-1 rounded-xl border px-2 shadow-lg backdrop-blur" style={{ background: "var(--background)", borderColor: "var(--border)" }} aria-hidden="true">
                 {Array.from({ length: 7 }).map((_, index) => (
@@ -4202,7 +4211,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     onCancelTitleEditing={() => setTitleEditing(false)}
                     canUndo={historyState.canUndo}
                     canRedo={historyState.canRedo}
-                    onHome={() => router.push("/")}
+                    onHome={() => router.push("/workspace")}
                     onProjects={() => router.push(`/canvas/project/${currentProject?.workspaceId || currentProject?.id || ""}`)}
                     onCreateProject={createAndOpenProject}
                     onDeleteProject={deleteCurrentProject}

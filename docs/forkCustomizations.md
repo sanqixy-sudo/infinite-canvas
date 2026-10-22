@@ -13,6 +13,8 @@
 
 ## 功能索引
 
+当前访问策略为公开产品首页、登录后进入业务工作空间；下方历史记录中的访客直接编辑和首页工作台路径，已由“公开首页、登录门禁与账号画布保护”替代。历史原档与浏览器真实文件仍保留，登录后依然可选当前浏览器存储。各历史提交的验证范围不自动覆盖本轮改造。
+
 | 功能 | 状态 | 主要代码位置 | 首次提交 | 更新验证 |
 | --- | --- | --- | --- | --- |
 | 小盟视频工作台品牌与入口 | 部分验证 | `web/src/app/`、`web/src/components/layout/` | `2f23672bbbde1a0aba00ac903bd13a97443ccf36` | 页面品牌、宣传轮播、版本与入口、许可页面 |
@@ -20,22 +22,38 @@
 | 内置模型价格显式配置 | 待验证 | `service/settings.go`、`service/workflow_agent.go`、管理后台设置页 | `2f23672bbbde1a0aba00ac903bd13a97443ccf36` | 未配置拒绝、显式零价可用 |
 | 模型清单与扣返保护 | 部分验证 | `service/settings.go`、`handler/ai.go`、`handler/video_task.go`、`repository/user.go` | `09d3959` | 模型开放清单、视频时长、失败返还 |
 | R2 配置防误用 | 待真实存储桶验证 | `service/storage.go`、管理后台设置页 | `09d3959` | 配置身份、Endpoint、已保存配置容量统计 |
-| 项目内多画布与首页工作台 | 部分验证 | `web/src/app/(user)/canvas/`、`web/src/app/(user)/page.tsx` | `b5519c011988ea62894883a71518f04526ac7449` | 旧画布、项目归属、同步与删除 |
+| 项目内多画布与工作台 | 部分验证 | `web/src/app/(user)/canvas/`、`web/src/app/(user)/workspace/page.tsx` | `b5519c011988ea62894883a71518f04526ac7449` | 旧画布、项目归属、同步与删除 |
 | 平台云端唯一模型来源 | 部分验证 | 模型配置 store/弹窗、模型选择器、API 调用保护、后端渠道解析 | `22a106cd78ae772b59623890788b67075cccac43` | 禁止个人渠道回退、管理员平台配置、旧数据保留 |
 | 用户钱包、个人配额与人工套餐 | 部分验证 | `model/commerce.go`、`storage_quota.go`、对应 repository/service/handler、账户与后台套餐页面 | `11c994ca544dadfd58a804de6267cd0e138c32a4` | 订单幂等与审计、跨 Provider 容量、并发事务、数据保留 |
 | 个人存储设置与账号素材库 | 部分验证 | 个人存储页、偏好与素材 store、画布菜单、`account_assets.go`、用户配置补丁事务 | `5022098a1079da1d45a3bfa95cb0d81e6569e5f1` | 浏览器真实文件、账号隔离、单条并发去重、失败重试与引用保留 |
 | 素材多级目录与标签组织 | 部分验证 | `account_asset_folders.go`、素材组织 API/store/工具、素材表单、画布选择器与素材包 | `48f5752110282a6e5806e336506f5ee27a4e0cd7` | Go、独立类型/32 回归、构建、隔离接口/浏览器及测试站升级通过；真实场景待验收 |
+| 公开首页、登录门禁与账号画布保护 | 待验证 | 用户首页/布局/登录/工作台、鉴权 store/导航/请求、媒体会话、中间件、BrandMark 与画布 store | 待补 | 公开白名单、安全回跳、401/403、切号竞态、旧档副本恢复与媒体权限；本轮尚未检查或部署 |
+
+### 功能名称：公开首页、登录门禁与账号画布保护
+
+- 状态与目的：实现已落盘、待验证；公开 `/` 用于介绍产品，原工作台移至登录后的 `/workspace`，业务操作统一先确认真实会话。以独立黑白灰视觉重做公开页和登录页，并使用原创几何 SVG 品牌标识。
+- 对应文件：`web/src/app/(user)/page.tsx`、`landing.module.css`、`layout.tsx`、`login/page.tsx`、`workspace/page.tsx`、`canvas/stores/use-canvas-store.ts`、`web/src/stores/use-user-store.ts`、`web/src/lib/auth-navigation.ts`、`auth-session.ts`、`web/src/services/api/request.ts`、`web/src/components/layout/client-root-init.tsx`、`web/src/components/brand/brand-mark.tsx`、品牌展示与图标文件、`router/router.go`、鉴权/存储中间件及 `handler/storage.go`。
+- 原版与二开差异：用户布局仅 `/`、`/login`、`/legal` 公开，其余用户业务页校验登录后展示；私人工作台不嵌入公开页。登录页保留真实注册开关与 LinuxDo 条件入口，无虚构找回密码等功能；手机保留完整操作。原有项目多画布、素材目录和浏览器保存能力不取消。
+- 关键依赖：共享 `safeLoginRedirect` 与 `loginHrefForPath`、用户 store 的 `loginWithToken/authError/sessionVersion`、现有 Bearer 鉴权及 localforage；回跳默认 `/workspace`，只允许安全站内路径，不由普通用户逻辑覆盖目标。OAuth Token 验证成功才接收，敏感回调参数清出地址栏，错误可读。
+- 会话与 API：无新业务响应格式；401 仅清理与请求 Token 和会话版本仍匹配的当前登录，403 不自动退出，网络校验错误显示重试。直接 fetch 的统一观察仅作用同源 `/api/`。`POST /api/files/session` 需 Bearer 并建立 `/api` 范围只读 HttpOnly Cookie；DELETE 清理，前端串行同步防旧响应覆写。普通登录、`/me`、文件元数据不再隐式设置 Cookie；只读素材/提示词/技能和图片代理可用阅读会话，写入仍用 Bearer。
+- 画布数据：原 `infinite-canvas:canvas_store` 原文只读保留，新缓存用 `infinite-canvas:canvas_store:user:<userId>`，含 `ownerId/restoredLegacyRootIds`。远端已确认为本人的同 ID 旧项目可合并，未知归属项目不自动上传；控制台通过 `readLegacyCanvasProjects()` 和 `restoreLegacyCanvasProjects(rootIds)` 让用户明确选择，以全新 ID 恢复选定项目及全部画布、重映射 `workspaceId`、清除旧 Codex 线程引用，原档保留且已恢复根按账号记录。无新增后端恢复接口，沿用现有保存/同步。
+- 数据库变化：无新表、字段或迁移；浏览器账号分桶不迁移服务器文件归属。恢复本地引用仍需要原文件，恢复他人 `server:` 引用不授予访问权；不删除历史访客档案、素材、任务或真实数据。
+- Git 提交：待主代理补实际 SHA；本轮尚未执行测试、类型检查、构建、浏览器检查或部署，历史 `86b07b0` 通过记录不覆盖本轮。
+- **必须保护的行为**：公开页不展示私人项目；未验证会话不进入业务页；合法目标回跳、OAuth 失败可见；退出/切号后旧响应不污染新账号；阅读 Cookie 不提供写权限；旧全局档案不改写/删除，未知归属不静默上传，副本恢复不转移别账号文件权；登录后仍可用当前浏览器保存，模型仍只走平台云端。
+- 品牌保护：共享 `BrandMark` 与浏览器图标保持原创 SVG，随深浅主题显示；不恢复官方轮播、推广、GitHub 或版本入口，不因此删除 LICENSE、作者署名或 `/legal`。
+- 更新后验证：验收公开/受保护路径、登录注册开关与 OAuth、恶意回跳、401/403/断网、切号旧响应、媒体读取及写入权限，旧档多画布副本恢复/重复恢复/浏览器文件缺失，以及桌面手机深浅主题、滚动与焦点。真实模型供应商与 R2 仍待资源，不把本轮页面改造视为已联调。
+- 备份与回滚：部署前保留数据库、媒体、配置、原全局画布键与各账号浏览器分桶；回退旧客户端前评估是否重新混用全局缓存和开放访客业务页，不通过清空旧档完成回滚。
 
 ### 功能名称：项目内多画布与首页工作台
 
-- 状态与目的：部分验证；首页改为项目优先的工作台，一个项目包含多张可独立编辑的画布。视觉参考用户提供的层级示意，未照搬布局、素材或内容。
-- 对应代码位置及涉及文件：`web/src/app/(user)/page.tsx`、`web/src/app/(user)/canvas/page.tsx`、`web/src/app/(user)/canvas/project/[id]/page.tsx`、`web/src/app/(user)/canvas/stores/use-canvas-store.ts`、`web/src/app/(user)/canvas/[id]/canvas-client-page.tsx`、`web/src/app/(user)/canvas/components/`、`web/src/components/layout/app-top-nav.tsx`。
+- 状态与目的：部分验证；项目优先工作台现位于 `/workspace`，一个项目包含多张可独立编辑的画布。首次实现位于首页，已由本轮公开首页与登录策略替代；项目层级不变。
+- 对应代码位置及涉及文件：`web/src/app/(user)/workspace/page.tsx`、`web/src/app/(user)/canvas/page.tsx`、`web/src/app/(user)/canvas/project/[id]/page.tsx`、`web/src/app/(user)/canvas/stores/use-canvas-store.ts`、`web/src/app/(user)/canvas/[id]/canvas-client-page.tsx`、`web/src/app/(user)/canvas/components/`、`web/src/components/layout/app-top-nav.tsx`。
 - 官方原版行为与二开差异：原版画布列表为平铺单层；二开版以现有画布作为项目首张画布，通过 `workspaceId` 将新增画布归到同项目，并用 `workspaceTitle` 独立记录项目名称。旧画布没有这些字段时仍作为单画布项目显示。
-- 关键依赖：Zustand 画布 store、localforage、现有画布同步 API 与压缩包导入导出。沿用 `infinite-canvas:canvas_store` 键和原画布 ID。
+- 关键依赖：Zustand 画布 store、localforage、现有画布同步 API 与压缩包导入导出。旧全局键只读保留，当前写入按账号分桶；已确认归属的原 ID 保留，未知归属的显式恢复使用新 ID，详见上节。
 - 数据库变化：无；附加字段保存在既有画布 JSON 中，不执行表迁移或历史数据搬移。
 - API 变化：无；现有画布保存、同步和删除接口继续传完整 JSON。
 - Git 提交与关联 PR：`b5519c011988ea62894883a71518f04526ac7449`；草稿 PR [#1](https://github.com/sanqixy-sudo/infinite-canvas/pull/1)。
-- **必须保护的行为**：旧画布可见可编辑；同项目新增画布继承归属；项目重命名不改画布内容；导出项目包含全部画布，导入时恢复归属；删除项目明确告知画布数量并一次删除同项目画布；前端与账号同步保留画布新增字段。
+- **必须保护的行为**：登录后本人旧画布可读取，未知归属原档可明确选择恢复副本；同项目新增画布继承归属；项目重命名不改画布内容；导出项目包含全部画布，导入时恢复归属；删除项目明确告知画布数量并一次删除同项目画布；前端与账号同步保留画布新增字段。
 - 上游同文件或同链路改动的兼容要求：检查 `CanvasProject` 序列化、导入导出、远程同步、编辑器新建和删除入口；不得把 `workspaceId` 或 `workspaceTitle` 静默丢弃。
 - 更新后验证方法与最近验证结果：提交 `b5519c0` 的 Docker 构建和 Next.js/TypeScript 检查通过；隔离预览中实测新建项目、添加第二张画布、打开编辑器，项目列表仍显示 2 张画布。测试服务器更新后数据库完整性为 `ok`，原有 1 张无 `workspaceId` 的画布记录仍在。含旧画布的实际账号界面、跨设备同步、导入导出和删除仍需人工确认。
 - 数据备份或回滚要求：部署前保留服务器数据库和浏览器数据备份；回滚代码时旧画布字段仍可被原实现作为额外 JSON 字段保留，不清理画布数据。
@@ -49,7 +67,7 @@
 - 数据库变化：无。
 - API 变化：无。
 - Git 提交与关联 PR：`2f23672bbbde1a0aba00ac903bd13a97443ccf36`、`24f4b288cc77acb180a93eb50346678e75cae97f`、`dfc6ac6109b4486fb2c3d1460f0ebd22d13499dc`、`fd4db1668bc16eb3ccb1da83f42349ea008434a2`、`fc4c355bb024b0373474646a63f7ff1462c833e5`、`9dbdeabbc26e245fb68f38511a0d331f2435097e`；草稿 PR [#1](https://github.com/sanqixy-sudo/infinite-canvas/pull/1)。
-- **必须保护的行为**：登录页、用户页、画布列表、管理后台和浏览器标题显示小盟品牌；首页展示指定的中英文标题；原有画布仍能读取；顶栏不展示 GitHub 图标、官方版本号、官方公告或许可与源码入口；首页不加载官方宣传轮播及外部推广链接；404 页面不展示 TokenDance 等推广公告；登录页不展示登录方式说明文字。
+- **必须保护的行为**：登录页、用户页、画布列表、管理后台和浏览器标题显示小盟品牌；当前首页文案与原创 Logo 按上节的新公开页设计保护，不再要求保留早期创作输入区标题；原有画布原档保留；顶栏不展示 GitHub 图标、官方版本号、官方公告或许可与源码入口；首页不加载官方宣传轮播及外部推广链接；404 页面不展示 TokenDance 等推广公告；登录页不展示原冗余登录方式说明。
 - 上游同文件或同链路改动的兼容要求：检查导航、账户操作区、首页、登录页、404 页面、画布工具栏及本地存储键；不要重新引入官方版本检查入口、宣传轮播、推广公告、外部推广链接或已移除的文案。
 - 更新后验证方法与最近验证结果：测试服务器提交 `9dbdeab` 的 Docker 构建成功；首页返回 200，创作输入区和中英文标题存在；不存在的路径返回 404，页面内容不含 TokenDance 等推广公告；登录页、后台入口、许可页和健康接口均可访问。浏览器旧数据及完整交互仍待人工验证。
 - 数据备份或回滚要求：无数据库迁移；回滚前保留浏览器画布与素材数据。
@@ -150,7 +168,7 @@
 
 - 状态与目的：部分验证；所有用户创作及画布助手统一使用平台商业云端模型，普通用户不再配置自己的模型渠道。
 - 对应文件：`web/src/components/layout/app-config-modal.tsx`、`client-root-init.tsx`、`web/src/components/model-picker.tsx`、`web/src/stores/use-config-store.ts`、`web/src/services/api/cloud-model-access.ts` 及图片/视频/音频/助手/工作流/转译/直连调用、画布助手与 Codex hook、TokenDance 回调；`handler/ai.go`、`router/router.go`、`service/settings.go`、`service/user_data.go`、`service/workflow_agent.go`、`service/workflow_resolve.go` 与平台 AutoDL 元数据链路。
-- 原版与二开差异：隐藏并拒绝个人渠道、用户填入的地址/密钥及浏览器协议；模型清单和工作流只取管理员开放的平台配置；访客保留本地画布编辑，生成前须登录。旧本地模型配置、URL 注入、个人工作流引用和视频转译快照不能恢复原调用路径。
+- 原版与二开差异：隐藏并拒绝个人渠道、用户填入的地址/密钥及浏览器协议；模型清单和工作流只取管理员开放的平台配置。新访问策略要求登录后使用画布；历史访客档案保留，登录后仍可选浏览器存储。旧本地模型配置、URL 注入、个人工作流引用和视频转译快照不能恢复原调用路径。
 - 关键依赖：现有账号鉴权、平台公开模型设置、服务端协议适配和任务管理；管理员后台仍可维护平台渠道并完成 TokenDance 授权。该限制与服务器本地、R2 或浏览器素材存储无关。
 - 数据库变化：无新增表和迁移；已有个人配置不主动删除，不恢复到创作配置。用户、余额、任务、项目和素材保持原数据。
 - API 变化：AI 调用拒绝 `X-User-Model-Channel-ID`；工作流仅接受 `scope=system`；直连计划和个人工作流/Bridge 配置入口停用；用户模型配置仅保存普通偏好和系统工作流引用，拒绝个人渠道及密钥字段；AutoDL 元数据按登录用户的平台渠道 ID 解析，不接受自定义 Base URL。详细响应见 `docs/backend/api-response.md`。

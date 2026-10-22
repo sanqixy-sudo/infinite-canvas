@@ -12,8 +12,13 @@ import (
 
 func AdminAuth(c *gin.Context) {
 	user, ok := authUser(c)
-	if !ok || user.Role != model.UserRoleAdmin {
-		handler.FailWithStatus(c.Writer, http.StatusUnauthorized, "未登录或权限不足")
+	if !ok || user.Role == model.UserRoleGuest {
+		handler.FailWithStatus(c.Writer, http.StatusUnauthorized, "未登录或登录已失效")
+		c.Abort()
+		return
+	}
+	if user.Role != model.UserRoleAdmin {
+		handler.FailWithStatus(c.Writer, http.StatusForbidden, "权限不足")
 		c.Abort()
 		return
 	}

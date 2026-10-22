@@ -12,6 +12,7 @@ import { setMediaBlob } from "@/services/file-storage";
 import { setImageBlob } from "@/services/image-storage";
 import { CanvasDeleteProjectsDialog } from "./components/canvas-delete-projects-dialog";
 import { CanvasProjectPreview } from "./components/canvas-project-preview";
+import { CanvasLoadError } from "./components/canvas-load-error";
 import type { CanvasExportFile } from "./export-types";
 import { useCanvasStore, workspaceCanvases, workspaceRoot } from "./stores/use-canvas-store";
 import { importCanvasProjectGroups, prepareCanvasImport } from "./utils/canvas-transfer";
@@ -21,6 +22,7 @@ export default function CanvasPage() {
     const router = useRouter();
     const inputRef = useRef<HTMLInputElement>(null);
     const hydrated = useCanvasStore((state) => state.hydrated);
+    const loadError = useCanvasStore((state) => state.loadError);
     const canvases = useCanvasStore((state) => state.projects);
     const createCanvas = useCanvasStore((state) => state.createProject);
     const importCanvas = useCanvasStore((state) => state.importProject);
@@ -68,6 +70,7 @@ export default function CanvasPage() {
         }
     };
 
+    if (loadError) return <CanvasLoadError />;
     return <>
         <main className="h-full overflow-y-auto">
         <div className="mx-auto max-w-[1320px] px-5 py-8 sm:px-8 lg:px-10">
