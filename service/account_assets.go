@@ -15,7 +15,7 @@ import (
 )
 
 type AccountAssetData struct {
-	Assets []json.RawMessage `json:"assets"`
+	Assets  []json.RawMessage   `json:"assets"`
 	Folders []model.AssetFolder `json:"folders"`
 }
 
@@ -96,7 +96,9 @@ func SaveCurrentUserAssetItem(ctx context.Context, raw json.RawMessage) (Account
 			return err
 		}
 		folders, err := accountAssetFolders(values)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		if asset.Data.StorageKey != "" {
 			for _, savedRaw := range assets {
 				var saved accountAssetIdentity
@@ -116,11 +118,20 @@ func SaveCurrentUserAssetItem(ctx context.Context, raw json.RawMessage) (Account
 				continue
 			}
 			// 已有素材的组织字段以最新数据库为准，只由 organize 修改。
-			var organization struct { Tags []string `json:"tags"`; FolderIDs []string `json:"folderIds"` }
-			if json.Unmarshal(savedRaw, &organization) != nil { return safeMessageError{message: "账号素材组织数据无效，未修改原数据"} }
+			var organization struct {
+				Tags      []string `json:"tags"`
+				FolderIDs []string `json:"folderIds"`
+			}
+			if json.Unmarshal(savedRaw, &organization) != nil {
+				return safeMessageError{message: "账号素材组织数据无效，未修改原数据"}
+			}
 			asset.Tags, asset.FolderIDs = organization.Tags, organization.FolderIDs
-			if asset.Tags == nil { asset.Tags = []string{} }
-			if asset.FolderIDs == nil { asset.FolderIDs = []string{} }
+			if asset.Tags == nil {
+				asset.Tags = []string{}
+			}
+			if asset.FolderIDs == nil {
+				asset.FolderIDs = []string{}
+			}
 			if saved.CreatedAt != "" {
 				asset.CreatedAt = saved.CreatedAt
 			}
@@ -140,10 +151,16 @@ func SaveCurrentUserAssetItem(ctx context.Context, raw json.RawMessage) (Account
 			return saveAccountAssetEnvelope(config, values, assets, &result)
 		}
 		asset.Tags, err = normalizeAssetTags(asset.Tags)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		asset.FolderIDs, err = normalizeAssetIDs(asset.FolderIDs, 32)
-		if err != nil { return err }
-		if err := requireAssetFolders(asset.FolderIDs, folders); err != nil { return err }
+		if err != nil {
+			return err
+		}
+		if err := requireAssetFolders(asset.FolderIDs, folders); err != nil {
+			return err
+		}
 		encoded, err := json.Marshal(asset)
 		if err != nil {
 			return err
@@ -244,9 +261,13 @@ func accountAssetEnvelope(raw string) (map[string]json.RawMessage, []json.RawMes
 
 func saveAccountAssetEnvelope(config *model.UserConfig, values map[string]json.RawMessage, assets []json.RawMessage, result *AccountAssetData) error {
 	folders, err := accountAssetFolders(values)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	values["assets"], _ = json.Marshal(assets)
-	if _, exists := values["folders"]; !exists { values["folders"] = json.RawMessage(`[]`) }
+	if _, exists := values["folders"]; !exists {
+		values["folders"] = json.RawMessage(`[]`)
+	}
 	raw, err := json.Marshal(values)
 	if err == nil {
 		config.AssetData = string(raw)

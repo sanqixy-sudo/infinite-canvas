@@ -192,10 +192,16 @@ func CurrentUserAssetData(ctx context.Context) (json.RawMessage, error) {
 		return nil, err
 	}
 	values, assets, err := accountAssetEnvelope(config.AssetData)
-	if err != nil { return nil, err }
-	if _, err := accountAssetFolders(values); err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
+	if _, err := accountAssetFolders(values); err != nil {
+		return nil, err
+	}
 	values["assets"], _ = json.Marshal(assets)
-	if _, exists := values["folders"]; !exists { values["folders"] = json.RawMessage(`[]`) }
+	if _, exists := values["folders"]; !exists {
+		values["folders"] = json.RawMessage(`[]`)
+	}
 	return json.Marshal(values)
 }
 
