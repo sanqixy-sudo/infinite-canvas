@@ -7,11 +7,13 @@ import { useAssetStore, type AssetInput } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 const uploadedFiles = new Map<string, SavedAutomaticMedia>();
+const unavailableFiles = new Set<string>();
 const saving = new Map<string, Promise<AssetInput & { id: string }>>();
 let ownerToken = "";
 
 function resetSession(token: string) {
     uploadedFiles.clear();
+    unavailableFiles.clear();
     saving.clear();
     ownerToken = token;
 }
@@ -32,14 +34,19 @@ export function saveAssetToAccountLibrary(asset: AssetInput, token = useUserStor
     if (!token || useUserStore.getState().token !== token) return Promise.reject(new Error("请先登录后再存入账号素材库"));
     if (ownerToken !== token) resetSession(token);
     const source = asset.kind === "text" ? asset.id || asset.data.content : asset.data.storageKey || (asset.kind === "image" ? asset.data.dataUrl : asset.data.url);
+    const browserSourceId = asset.kind !== "text" && /^(?:image|file|video|audio|(?:generated|workflow|asset)-(?:image|video|audio)|(?:video|audio)-reference):[A-Za-z0-9_-]{1,128}$/.test(source) ? encodeURIComponent(source) : "";
     const key = `${asset.kind}:${source}`;
     const previous = saving.get(key);
     if (previous) return previous.then(() => saveAssetToAccountLibrary(asset, token));
     const request = (async () => {
         const assertSession = () => { if (useUserStore.getState().token !== token) throw new Error("登录状态已变化，请重试"); };
-        let next = asset;
+        let next = browserSourceId ? { ...asset, metadata: { ...asset.metadata, browserSourceId } } : asset;
         if (next.kind !== "text" && !next.data.storageKey?.startsWith("server:")) {
             let uploaded = uploadedFiles.get(key) || getPendingAutomaticCloudCopy(source);
+            if (!uploaded && browserSourceId) {
+                const saved = useAssetStore.getState().cloudAssets.find((item) => item.kind !== "text" && item.metadata?.browserSourceId === browserSourceId && /^server:[^:/\s]+$/.test(item.data.storageKey || "") && !unavailableFiles.has(item.data.storageKey!));
+                if (saved && saved.kind !== "text") uploaded = { url: saved.kind === "image" ? saved.data.dataUrl : saved.data.url, storageKey: saved.data.storageKey!, bytes: saved.data.bytes || 0, mimeType: saved.data.mimeType, ...("width" in saved.data ? { width: saved.data.width, height: saved.data.height } : {}) };
+            }
             if (next.kind === "image") {
                 if (!uploaded) {
                     const url = await resolveImageUrl(next.data.storageKey, next.data.dataUrl);
@@ -68,7 +75,11 @@ export function saveAssetToAccountLibrary(asset: AssetInput, token = useUserStor
                 const fileKey = uploadedFiles.get(key)?.storageKey || (asset.kind === "text" ? "" : asset.data.storageKey);
                 for (const [sourceKey, saved] of uploadedFiles) if (sourceKey === key || fileKey && saved.storageKey === fileKey) uploadedFiles.delete(sourceKey);
                 clearAutomaticMediaCache(source);
-                if (fileKey) clearAutomaticMediaCache(fileKey);
+                if (fileKey) {
+                    clearAutomaticMediaCache(fileKey);
+                    unavailableFiles.add(fileKey);
+                    while (unavailableFiles.size > 200) unavailableFiles.delete(unavailableFiles.values().next().value!);
+                }
             }
             throw error;
         }

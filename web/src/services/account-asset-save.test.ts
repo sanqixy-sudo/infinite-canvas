@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test, { afterEach } from "node:test";
 const { spyOn, jest } = require("bun:test");
 
-import { useAssetStore, type AssetInput } from "@/stores/use-asset-store";
+import { useAssetStore, type Asset, type AssetInput } from "@/stores/use-asset-store";
 import { useStoragePreferencesStore } from "@/stores/use-storage-preferences-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { clearAutomaticMediaCache, saveAutomaticMedia, type SavedAutomaticMedia } from "./automatic-media-save";
@@ -53,7 +53,7 @@ test("manual retry keeps current edits and sequential copies reuse the archived 
     assert.equal(saved.kind === "image" ? saved.data.storageKey : "", file.storageKey);
     assert.equal(entries.at(-1)?.title, edited.title);
     assert.deepEqual(entries.at(-1)?.tags, edited.tags);
-    assert.deepEqual(entries.at(-1)?.metadata, edited.metadata);
+    assert.deepEqual(entries.at(-1)?.metadata, { ...edited.metadata, browserSourceId: encodeURIComponent(key) });
     const second = await saveAssetToAccountLibrary({ ...edited, id: "second-node", title: "第二个节点" }, token);
     assert.equal(second.kind === "image" ? second.data.storageKey : "", file.storageKey, "a second node with the same browser file must not upload again");
     assert.equal(entries.at(-1)?.title, "第二个节点");
@@ -88,4 +88,31 @@ test("only a confirmed missing archive or token change invalidates the source ma
     await saveAssetToAccountLibrary(sourceAsset(key, "重新登录"), token);
     const last = entries.at(-1);
     assert.equal(last?.kind === "image" ? last.data.storageKey : "", afterLogin.storageKey, "logout/login must clear even a cache belonging to the same reused token");
+});
+
+test("a restored cloud entry reuses the same browser file after memory caches are cleared", async () => {
+    const token = "manual-restored-owner";
+    const key = "image:restored-browser-file";
+    session(token);
+    const state = useAssetStore.getState();
+    let failure = "登记失败";
+    let cloudAssets: Asset[] = [];
+    const entries: AssetInput[] = [];
+    spyOn(useAssetStore, "getState").mockImplementation(() => ({ ...state, cloudAssets, saveCloudAsset: async (asset: AssetInput) => {
+        entries.push(asset);
+        if (failure) throw new Error(failure);
+        return "restored-entry";
+    } }));
+    const file = await seedArchivedCopy(token, key, "restored-server-file");
+    failure = "";
+    const original = await saveAssetToAccountLibrary(sourceAsset(key, "首次入库"), token);
+    assert.equal(original.metadata?.browserSourceId, encodeURIComponent(key));
+    assert.doesNotMatch(String(original.metadata?.browserSourceId), /blob:|data:|https?:|manual-restored-owner/);
+    cloudAssets = [{ ...original, createdAt: "", updatedAt: "" } as Asset];
+    session("other-restored-owner");
+    session(token);
+    const restored = await saveAssetToAccountLibrary({ ...sourceAsset(key, "复制节点的新标题"), id: "second-node", metadata: { note: "本次编辑" } }, token);
+    assert.equal(restored.kind === "image" ? restored.data.storageKey : "", file.storageKey);
+    assert.equal(entries.at(-1)?.title, "复制节点的新标题");
+    assert.deepEqual(entries.at(-1)?.metadata, { note: "本次编辑", browserSourceId: encodeURIComponent(key) });
 });
