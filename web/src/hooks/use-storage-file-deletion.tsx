@@ -125,7 +125,7 @@ export function useStorageFileDeletion() {
     const blockers = [...(report?.blockers || []), ...localReferences.filter((local) => !report?.blockers?.some((remote) => local.type === "browserCanvas" && remote.type === "canvas" && remote.id === local.id))];
     const canDelete = Boolean(report?.canDelete && !blockers.length);
     const previewFailed = () => { if (target && current(target)) { setPreviewUrl(""); setPreviewError("文件预览不可用，不影响引用检查结果。"); } };
-    const dialog = <Modal title="删除文件并释放空间" open={open} onCancel={close} onOk={() => void remove()} okText="永久删除文件" cancelText="取消" okButtonProps={{ danger: true, disabled: loading || !canDelete || hasLinkedRecords && !confirmed }} confirmLoading={busy} cancelButtonProps={{ disabled: busy }} closable={!busy} mask={{ closable: !busy }} keyboard={!busy} destroyOnHidden>
+    const dialog = <Modal title="删除文件并释放空间" open={open} centered styles={{ body: { maxHeight: "calc(100dvh - 180px)", overflowY: "auto", scrollbarGutter: "stable" } }} onCancel={close} onOk={() => void remove()} okText="永久删除文件" cancelText="取消" okButtonProps={{ danger: true, disabled: loading || !canDelete || hasLinkedRecords && !confirmed }} confirmLoading={busy} cancelButtonProps={{ disabled: busy }} closable={!busy} mask={{ closable: !busy }} keyboard={!busy} destroyOnHidden>
         {open ? <div className="space-y-4 py-3">
             {loading ? <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />正在检查文件及引用…</p> : null}
             {report ? <>
