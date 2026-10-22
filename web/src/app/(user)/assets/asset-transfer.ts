@@ -113,7 +113,9 @@ export async function readAssetPackage(file: File): Promise<AssetCollection> {
                 copy = { storageKey, url, bytes: blob.size, mimeType: item.mimeType };
                 copies.set(copyKey, copy);
             }
-            next = next.kind === "image" ? { ...next, data: { ...next.data, ...copy, dataUrl: copy.url } } : { ...next, data: { ...next.data, ...copy } };
+            if (next.kind === "image") next = { ...next, data: { ...next.data, ...copy, dataUrl: copy.url } };
+            else if (next.kind === "video") next = { ...next, data: { ...next.data, ...copy } };
+            else next = { ...next, data: { ...next.data, ...copy } };
         }
         if (asset.coverUrl?.startsWith("package:")) {
             const item = fileMap.get(asset.coverUrl.slice(8))!;
