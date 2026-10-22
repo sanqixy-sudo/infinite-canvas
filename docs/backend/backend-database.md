@@ -7,6 +7,8 @@ description: 当前后端主要数据表与字段说明
 
 本文档只记录后端当前已经使用的主要数据表。
 
+钱包相关表和字段已在数据库副本中验证并部署测试站点，原数据保留；自动测试、隔离 HTTP 与浏览器结果见 [待测试](../progress/pending-test.md#用户钱包个人存储额度与人工套餐确认)。真实收款和 R2 仍待资源联调。
+
 ## 数据库
 
 后端使用 GORM 管理数据库连接和表结构迁移。
@@ -21,6 +23,7 @@ description: 当前后端主要数据表与字段说明
 
 - `users`
 - `credit_logs`
+- `purchase_orders`
 - `prompts`
 - `agent_skills`
 - `agent_skill_files`
@@ -36,6 +39,7 @@ description: 当前后端主要数据表与字段说明
 - `canvas_projects`
 - `user_configs`
 - `storage_objects`
+- `storage_upload_reservations`
 
 后续新增表时再同步补充本文档，未实际使用的规划表不提前写入。
 
@@ -53,6 +57,7 @@ description: 当前后端主要数据表与字段说明
 | `avatar_url` | string | 头像地址 |
 | `role` | string | 角色：`user`、`admin` |
 | `credits` | decimal(20,2) | 算力点余额 |
+| `storage_extra_bytes` | int64 | 已确认购买的个人额外存储字节数，默认 `0`；与后台配置的免费基础额度相加 |
 | `aff_code` | string | 用户自己的邀请码，唯一索引 |
 | `aff_count` | number | 已邀请用户数量，冗余统计字段 |
 | `inviter_id` | string | 邀请人用户 ID |
@@ -65,6 +70,33 @@ description: 当前后端主要数据表与字段说明
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
+后台编辑用户基础资料时保留 `storage_extra_bytes`。存储套餐由订单审核事务原子累加，不通过普通用户资料接口改写；降低免费基础额度不删除已有文件，超过新额度后阻止新增上传。
+
+### purchase_orders
+
+人工充值与永久存储扩容申请表。创建时保存套餐权益和金额快照；没有在线支付渠道，创建申请不会付款或发放权益。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键，订单编号 |
+| `user_id` | string | 申请人，与 `request_id` 组成唯一索引 |
+| `request_id` | string | 客户端请求幂等编号，最多 64 字节，同一用户重试返回原订单 |
+| `plan_id` / `plan_name` | string | 创建时的套餐 ID 和名称快照 |
+| `kind` | string | `credits` 算力或 `storage` 存储 |
+| `price_cents` | int64 | 创建时的人民币整数分金额快照 |
+| `credits` | decimal(20,2) | 算力套餐点数快照；存储套餐为 `0` |
+| `storage_bytes` | int64 | 存储套餐增加的字节数快照；算力套餐为 `0` |
+| `payment_method` | string | 当前固定 `manual`，表示人工确认 |
+| `status` | string | `pending`、`completed`、`rejected`、`canceled` |
+| `reviewer_id` | string | 确认或拒绝的管理员 ID |
+| `review_remark` | string | 必填的审核备注 |
+| `reviewed_at` | string | 管理员审核时间；用户取消不填写 |
+| `created_at` / `updated_at` | string | 创建及最近状态更新时间 |
+
+索引：`idx_purchase_orders_user_request (user_id, request_id)` 唯一；`user_id`、`status` 和 `created_at` 普通索引。列表响应中的 `userDisplayName` 来自关联用户查询，不建列。
+
+用户仅能取消自己的待审申请；管理员确认前须核实已收到款项。审核锁定申请人用户行，通过待审状态条件更新及同一事务发放权益；重复相同审核不重复发放，改变终态会被拒绝。算力发放同时新增 `recharge` 流水，`related_id` 指向订单；存储发放只增加 `storage_extra_bytes`。套餐后续改价或停用不改变已创建订单。每人最多保留 20 笔待审申请，幂等重试不占新名额，取消或审核后释放名额。
+
 ### user_configs
 
 用户级配置和同步数据表。每个用户一行，模型配置、用户存储配置及其他同步数据继续保存在原有 text 字段中。
@@ -72,7 +104,7 @@ description: 当前后端主要数据表与字段说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `user_id` | string | 用户 ID，主键 |
-| `model_config` | 大文本 | 模型与偏好配置 JSON，个人工作流的 `workflowChannels` 完整条目也暂存在这里；S3/R2 和 WebDAV 的自动同步开关分别为 `syncStorageConfig`、`syncWebDAVStorageConfig` |
+| `model_config` | 大文本 | 云端模型选择与创作偏好 JSON；旧个人渠道/工作流配置可保留在原数据中，但不向前端恢复或参与调用。S3/R2 和 WebDAV 自动同步开关为 `syncStorageConfig`、`syncWebDAVStorageConfig` |
 | `storage_provider` | text | 用户存储配置 JSON，内部结构为 `{ "s3": {...}, "webdav": {...} }`，两类配置可保留但不能同时启用 |
 | `image_history` | text | 用户图片历史同步数据 |
 | `asset_data` | text | 用户素材同步数据 |
@@ -101,6 +133,21 @@ description: 当前后端主要数据表与字段说明
 | `created_by` | string | 创建用户 ID |
 | `created_at` | string | 创建时间 |
 | `deleted_at` | string | 预留字段；当前删除链路直接删除索引记录 |
+
+个人占用按 `created_by` 汇总本表中的有效字节数，合并服务器本地、R2 和其他已有 Provider，不按当前默认模式分开计数；同一个实际对象保存为不同用户副本时分别计入各自额度。未建立索引的外部桶对象和浏览器本地素材不包含在此统计中。平台存储总容量上限仍是另一层约束，不能把默认 9 GiB 的平台上限当作每人的免费额度。
+
+### storage_upload_reservations
+
+并发上传的临时容量预留表，不保存媒体内容或凭据。上传前在用户行锁内检查“已用 + 未过期预留 + 本次大小”，完成后在同一事务写入文件索引并移除预留；失败时释放预留。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 预留 ID，主键 |
+| `user_id` | string | 归属用户 |
+| `bytes` | int64 | 本次预留的文件字节数 |
+| `expires_at` | int64 | Unix 秒，到期后不再占用上传额度；当前有效期 30 分钟 |
+
+索引：`idx_storage_reservation_user_expiry (user_id, expires_at)`。后续上传会清理该用户已到期预留；终结上传时再次校验预留、大小和最新个人额度。预留不计入钱包展示的 `usedBytes`，但会参与上传可用量校验。
 
 ### prompts
 
@@ -369,20 +416,31 @@ Bridge 持久化请求队列表。普通执行请求由服务端按设备分配�
 
 ### settings
 
-系统配置表。`public` 放前端可读取的公开配置，`private` 放仅后端和管理员可读取的私有配置；`agent-skills-initialized` 是默认 Skill 首次初始化标记，避免管理员删除后被启动流程重新创建。配置值都用 JSON。
+系统配置表。`public` 放前端可读取的公开配置，`private` 放仅后端和管理员可读取的私有配置；`commerce` 独立保存免费存储额度、人工联系说明与套餐；`agent-skills-initialized` 是默认 Skill 首次初始化标记。配置值都用 JSON。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `key` | string | 主键：`public`、`private`、`agent-skills-initialized` |
+| `key` | string | 主键：`public`、`private`、`commerce`、`agent-skills-initialized` |
 | `value` | json | 配置内容 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
 `public.value` 常放前端展示和可公开读取的配置，例如模型列表、登录开关等。  
 `private.value` 常放渠道密钥、登录密钥、后台内部开关等。
-`private.value.storage.mode` 为 `local`（默认服务器本地）或 `r2`。新默认配置开启登录用户使用平台存储及新增媒体自动转存；匿名用户仍使用浏览器本地保存。`autoSyncAllAssets` 控制自动转存，`capacityLimitBytes` 控制总容量，默认 9 GB。配置保存在现有 JSON 中，不增加数据表；切换模式只影响新上传，旧渠道存在文件引用时必须保留原配置。
+`private.value.storage.mode` 为 `local`（默认服务器本地）或 `r2`。新默认配置开启登录用户使用平台存储及新增媒体自动转存；匿名用户仍使用浏览器本地保存。`autoSyncAllAssets` 控制自动转存，`capacityLimitBytes` 控制平台总容量，默认 9 GiB。该平台配置保存在现有 JSON 中；切换模式只影响新上传，旧渠道存在文件引用时必须保留原配置，个人额度另由 `commerce` 管理。
 
 当前系统设置接口会按后端结构体序列化和反序列化已知字段；数据库 JSON 中额外存在的旧字段会被忽略。
+
+`commerce.value` 通过独立套餐设置接口保存，普通系统设置保存只更新 `public`、`private`，不会覆盖它。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `defaultStorageBytes` | int64 | 每人免费基础字节数；未配置默认 `1073741824`（1 GiB），允许后台调整为 `0` 至 1 PiB |
+| `contactText` | string | 人工联系说明，最多 2000 字 |
+| `instructions` | string | 申请及确认说明，最多 6000 字 |
+| `plans` | object[] | 套餐定义，默认空，不预置价格；最多 100 项 |
+
+套餐字段为 `id`、`name`、`kind`、`priceCents`、`credits`、`storageBytes`、`description`、`enabled`。金额为正整数分；算力套餐只增加最多两位小数的点数，存储套餐只增加永久字节额度，不提供期限或自动续费。钱包只返回已启用套餐。完整限制及接口见 [接口响应约定](api-response.md#钱包个人配额与人工套餐申请)。
 
 `public.value` 当前字段：
 
@@ -403,7 +461,8 @@ Bridge 持久化请求队列表。普通执行请求由服务端按设备分配�
 | `defaultVideoModel` | string | 默认视频模型 |
 | `defaultTextModel` | string | 默认文本模型 |
 | `systemPrompt` | string | 系统提示词 |
-| `allowCustomChannel` | bool | 是否允许用户自定义渠道，默认允许，关闭后前端只提供走后端渠道的模式 |
+| `allowCustomChannel` | bool | 当前二开固定关闭；个人模型渠道已停用 |
+| `allowUserRemoteChannel` | bool | 是否向普通用户开放平台模型；关闭后普通用户不能生成，管理员可继续测试平台渠道 |
 
 `modelCosts` 每项字段：
 
@@ -435,7 +494,7 @@ Bridge 持久化请求队列表。普通执行请求由服务端按设备分配�
 | `baseUrl` | string | 渠道接口地址 |
 | `apiKey` | string | 渠道密钥 |
 | `models` | string[] | 渠道可用模型列表 |
-| `modelCapabilities` | object | 当前渠道手动修改过的模型分类，键为模型名称，值为 `image`、`video`、`text`、`audio`；未设置的模型沿用系统识别。公开渠道同时下发可用模型的分类，个人渠道随用户模型配置保存 |
+| `modelCapabilities` | object | 平台渠道手动设置的模型分类，键为模型名称，值为 `image`、`video`、`text`、`audio`；未设置的模型沿用系统识别。公开渠道只下发可用模型的分类 |
 | `weight` | number | 渠道权重，同一模型命中多个渠道时按权重随机 |
 | `enabled` | bool | 是否启用 |
 | `remark` | string | 备注 |
@@ -461,17 +520,17 @@ Bridge 持久化请求队列表。普通执行请求由服务端按设备分配�
 
 后端请求模型时，先按模型名筛选启用且包含该模型的渠道，再按 `weight` 加权随机选择一个渠道。
 
-RunningHub/ComfyUI 不加入上述普通模型筛选：系统工作流公开列表为空时下发全部已启用条目，非空时只下发已启用且已勾选条目的名称、ID 和用途；不会公开密钥、Bridge Token、字段映射或完整工作流 JSON。个人工作流在 `user_configs.model_config.workflowChannels` 中按账号隔离。
+RunningHub/ComfyUI 不加入上述普通模型筛选：系统工作流只下发已启用且已勾选条目的名称、ID 和用途；不会公开密钥、Bridge Token、字段映射或完整工作流 JSON。历史个人工作流配置可能仍保留在 `user_configs.model_config.workflowChannels`，当前调用入口已拒绝个人来源。
 
 ### credit_logs
 
-用户算力点变更流水表。当前记录后台手动调整、模型调用预扣和模型调用失败返还。流水作为只读审计记录，由对应余额事务生成；后台不能独立新增、编辑或删除流水，用户仅能通过本人接口读取自己的记录。
+用户算力点变更流水表。当前记录人工充值到账、后台手动调整、模型调用预扣和模型调用失败返还。流水作为只读审计记录，由对应余额事务生成；后台不能独立新增、编辑或删除流水，用户仅能通过本人接口读取自己的记录。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 主键 |
 | `user_id` | string | 关联用户 ID |
-| `type` | string | 类型：`admin_adjust`、`ai_consume`、`ai_refund` |
+| `type` | string | 类型：`recharge`、`admin_adjust`、`ai_consume`、`ai_refund` |
 | `amount` | decimal(20,2) | 本次变动数量，增加为正，扣减为负 |
 | `balance` | decimal(20,2) | 变动后的用户算力点余额 |
 | `related_id` | string | 关联业务 ID，可为空 |
@@ -483,6 +542,7 @@ RunningHub/ComfyUI 不加入上述普通模型筛选：系统工作流公开列�
 
 | 值 | 说明 |
 | --- | --- |
+| `recharge` | 管理员确认收到套餐款项后的算力到账；关联订单 ID |
 | `admin_adjust` | 后台手动调整 |
 | `ai_consume` | 调用后端模型接口消费 |
 | `ai_refund` | 后端模型接口调用失败返还 |

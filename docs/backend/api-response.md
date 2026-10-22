@@ -40,6 +40,76 @@ description: 业务接口统一响应结构与前端处理约定
 - 文件上传和元数据成功响应会设置仅 `/api/files` 使用的 HttpOnly 阅读会话；该 Cookie 不用于写入鉴权，退出时通过 `DELETE /api/files/session` 清理。
 - `GET /api/assets/:id` 仅返回当前已发布的公共条目并刷新媒体链接；已撤下返回 404。前端插入或收藏时重新读取条目并保存独立副本，不将公共临时链接作为永久作品地址。
 
+## 钱包、个人配额与人工套餐申请
+
+接口已部署测试站点，构建、自动测试、隔离 HTTP 与浏览器结果见 [待测试](../progress/pending-test.md#用户钱包个人存储额度与人工套餐确认)。以下描述接口契约，不代表真实支付或 R2 联调已通过。
+
+### 用户接口
+
+所有接口需要 Bearer 登录鉴权，身份固定取会话，不接受客户端指定其他 `userId`。
+
+| 接口 | 请求 | 成功时的 `data` |
+| --- | --- | --- |
+| `GET /api/v1/wallet` | 无业务参数 | `{ credits, storage, commerce }` |
+| `GET /api/v1/purchase-orders` | `page`、`pageSize`、`status`、`kind`、`keyword`、`date` 可选 | `{ items: PurchaseOrder[], total }`，仅本人订单 |
+| `POST /api/v1/purchase-orders` | `{ "planId": "套餐ID", "requestId": "本次申请的唯一编号" }` | `PurchaseOrder`；同账号相同请求编号重试返回原单 |
+| `POST /api/v1/purchase-orders/:id/cancel` | 空对象 | 取消后的 `PurchaseOrder`；只能取消本人的待审订单 |
+
+`requestId` 必填，最多 64 字节，仅允许 ASCII 字母、数字、`-`、`_`；前端为一次确认操作生成编号，网络失败重试沿用编号。相同编号不能用于另一套餐。创建请求仅接受 `planId`、`requestId`，拒绝传入价格、点数、容量、用户身份等未知字段；权益以服务端套餐快照为准。
+
+钱包字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `credits` | number | 当前账号真实算力余额 |
+| `storage.usedBytes` | integer | 当前用户文件索引记录的总字节数，跨本地与 R2 等已有 Provider 汇总 |
+| `storage.baseBytes` | integer | 当前后台设置的每人免费基础额度；未配置为 1 GiB |
+| `storage.extraBytes` | integer | 已确认购买的永久额外额度 |
+| `storage.limitBytes` | integer | 基础额度与额外额度之和 |
+| `storage.remainingBytes` | integer | 剩余字节数，最低为 `0` |
+| `storage.overLimit` | boolean | 已用量是否超过个人额度 |
+| `commerce` | object | 免费额度、联系说明和已启用套餐，不返回停用套餐 |
+
+个人配额在本系统保存或登记的账号媒体上传中统一校验。本地与 R2 切换不重置占用，钱包不计算浏览器本地素材或没有文件索引的外部桶对象；并发上传还会计算未过期预留，因此展示剩余量不能代替服务端上传检查。删除实际文件及索引后释放对应占用；降低免费额度不清空旧素材，超额后阻止新增上传。平台总容量限制继续单独生效。
+
+### 管理员接口
+
+以下接口需要管理员鉴权，不从用户提交的身份字段判断权限。
+
+| 接口 | 请求 | 成功时的 `data` |
+| --- | --- | --- |
+| `GET /api/admin/commerce/settings` | 无业务参数 | 完整 `CommerceSetting`，包含停用套餐 |
+| `POST /api/admin/commerce/settings` | 完整 `CommerceSetting` | 保存后的设置；独立于普通系统配置 |
+| `GET /api/admin/purchase-orders` | `page`、`pageSize`、`status`、`kind`、`keyword`、`date` 可选 | `{ items: PurchaseOrder[], total }`，含申请人显示名 |
+| `POST /api/admin/purchase-orders/:id/review` | `{ "action": "complete", "remark": "实际收款核实说明" }`，或 `action="reject"` | 审核后的 `PurchaseOrder` |
+
+`CommerceSetting` 包含 `defaultStorageBytes`、`contactText`、`instructions`、`plans`。未配置时免费额度为 `1073741824` 字节（1 GiB），套餐列表为空。管理员可调整免费基础额度，允许 `0` 至 1 PiB；没有默认价格或默认充值商品。
+
+| 套餐字段 | 类型 | 校验 |
+| --- | --- | --- |
+| `id` | string | 套餐唯一标识；留空由服务端生成，否则最多 80 字节，只允许字母、数字、`-`、`_` |
+| `name` | string | 非空，最多 80 字 |
+| `kind` | string | `credits` 或 `storage` |
+| `priceCents` | integer | 人民币整数分，大于 `0` 且不超过 `100000000` |
+| `credits` | number | 算力套餐为正数、最多两位小数且不超过 `1000000000`；存储套餐为 `0` |
+| `storageBytes` | integer | 存储套餐为正整数字节且不超过 1 PiB；算力套餐为 `0` |
+| `description` | string | 最多 1000 字 |
+| `enabled` | boolean | 停用后不接受新订单，不修改已有订单快照 |
+
+`plans` 最多 100 项；联系说明最多 2000 字，申请说明最多 6000 字。配置写入独立 `settings.commerce`，不会因保存模型或存储系统配置而丢失。本轮不修改供应商调用计价公式或 `modelCosts`。
+
+### 订单状态与发放
+
+`PurchaseOrder` 包含 `id`、`userId`、`requestId`、`planId`、`planName`、`kind`、`priceCents`、`credits`、`storageBytes`、`paymentMethod`、`status`、`reviewerId`、`reviewRemark`、`reviewedAt`、`createdAt`、`updatedAt`；列表另有查询字段 `userDisplayName`。
+
+- 当前 `paymentMethod` 固定 `manual`。创建后为 `pending`，只记录申请，不自动付款、不立即发放。
+- 管理员核实实际收到款项后选择 `complete`，填写非空审核备注（最多 1000 字）；状态变为 `completed`，事务内增加算力或永久存储额度。算力同时产生 `recharge` 流水，`relatedId` 为订单 ID。
+- 拒绝后为 `rejected`，本人取消后为 `canceled`，两者不发放权益。管理员和用户只能改变待审状态；重复相同终态操作返回原记录，不能把已完成、已拒绝或已取消订单改成另一终态。
+- 创建与审核锁同一申请人用户行，审核还使用状态条件更新；余额、流水和状态任一步失败则全部回滚。重复点击确认不重复入账；修改或禁用套餐不改订单金额和权益快照。
+- 每人最多 20 笔待审订单。已有请求的幂等重试先返回，取消或审核后可继续申请。算力总余额上限为 `1000000000000`，累计额外存储上限为 1 PiB，超限不发放。
+
+在线支付收银台、支付回调、自动到账、订阅续费和订单自动退款尚未接入，不能把“提交申请成功”展示为“支付成功”。
+
 ## AutoDL 渠道
 
 - `POST /api/ai/autodl/workflows` 使用上述业务响应结构并要求 Bearer 登录。请求为 `{ channelId, workflowId? }`，渠道 ID 必须指向用户可用的平台 AutoDL 渠道；地址由服务端读取，不接受个人 `baseUrl` 或供应商 API Key。不带工作流 ID 返回平台开放的列表，带 ID 返回对应详情；元数据包含 `uuid`、`name`、`kind` 和详情的 `input_rules`，不返回上游内部节点映射。此项平台链路仍待真实供应商验证，原个人地址查询方式已停用。
