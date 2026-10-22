@@ -1,21 +1,22 @@
 import assert from "node:assert/strict";
-import test, { afterEach, mock } from "node:test";
+import test, { afterEach } from "node:test";
+const { spyOn, jest } = require("bun:test");
 
 import { useAssetStore, type AssetInput } from "@/stores/use-asset-store";
 import { useStoragePreferencesStore } from "@/stores/use-storage-preferences-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { getPendingAutomaticCloudCopy, saveAutomaticMedia, type SavedAutomaticMedia } from "./automatic-media-save";
 
-afterEach(() => mock.restoreAll());
+afterEach(() => jest.restoreAllMocks());
 
 function session(token: string, enabled: boolean, saveCloudAsset: (asset: AssetInput) => Promise<string> = async () => "cloud-file") {
     const user = useUserStore.getState();
     const preferences = useStoragePreferencesStore.getState();
     const assets = useAssetStore.getState();
     let current = token;
-    mock.method(useUserStore, "getState", () => ({ ...user, token: current }));
-    mock.method(useStoragePreferencesStore, "getState", () => ({ ...preferences, token, ready: true, autoSaveAssetsToCloud: enabled }));
-    mock.method(useAssetStore, "getState", () => ({ ...assets, saveCloudAsset }));
+    spyOn(useUserStore, "getState").mockImplementation(() => ({ ...user, token: current }));
+    spyOn(useStoragePreferencesStore, "getState").mockImplementation(() => ({ ...preferences, token, ready: true, autoSaveAssetsToCloud: enabled }));
+    spyOn(useAssetStore, "getState").mockImplementation(() => ({ ...assets, saveCloudAsset }));
     return (next: string) => { current = next; };
 }
 

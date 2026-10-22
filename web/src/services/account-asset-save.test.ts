@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import test, { afterEach, mock } from "node:test";
+import test, { afterEach } from "node:test";
+const { spyOn, jest } = require("bun:test");
 
 import { useAssetStore, type AssetInput } from "@/stores/use-asset-store";
 import { useStoragePreferencesStore } from "@/stores/use-storage-preferences-store";
@@ -8,7 +9,7 @@ import { clearAutomaticMediaCache, saveAutomaticMedia, type SavedAutomaticMedia 
 import { saveAssetToAccountLibrary } from "./account-asset-save";
 
 afterEach(() => {
-    mock.restoreAll();
+    jest.restoreAllMocks();
     useUserStore.setState({ token: "", user: null });
     useStoragePreferencesStore.getState().reset();
 });
@@ -37,7 +38,7 @@ test("manual retry keeps current edits and sequential copies reuse the archived 
     const state = useAssetStore.getState();
     const entries: AssetInput[] = [];
     let failure = "登记失败";
-    mock.method(useAssetStore, "getState", () => ({ ...state, saveCloudAsset: async (asset: AssetInput) => {
+    spyOn(useAssetStore, "getState").mockImplementation(() => ({ ...state, saveCloudAsset: async (asset: AssetInput) => {
         entries.push(asset);
         if (failure) throw new Error(failure);
         return "saved-entry";
@@ -65,7 +66,7 @@ test("only a confirmed missing archive or token change invalidates the source ma
     const state = useAssetStore.getState();
     let failure = "登记失败";
     const entries: AssetInput[] = [];
-    mock.method(useAssetStore, "getState", () => ({ ...state, saveCloudAsset: async (asset: AssetInput) => {
+    spyOn(useAssetStore, "getState").mockImplementation(() => ({ ...state, saveCloudAsset: async (asset: AssetInput) => {
         entries.push(asset);
         if (failure) throw new Error(failure);
         return "saved-entry";
