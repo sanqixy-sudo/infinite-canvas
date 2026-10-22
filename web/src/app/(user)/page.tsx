@@ -27,7 +27,7 @@ export default function HomePage() {
                 <BrandMark className="size-8 shrink-0 sm:size-9" />
                 <span><strong className="block whitespace-nowrap text-sm font-semibold tracking-tight sm:text-[15px]">小盟视频工作台</strong><span className="mt-0.5 block text-[8px] tracking-[0.22em] text-muted-foreground">XIAOMENG STUDIO</span></span>
             </a>
-            <nav aria-label="首页导航" className="hidden items-center gap-4 whitespace-nowrap text-[13px] text-muted-foreground md:flex xl:gap-8">{[{ href: "#home-top", title: "产品概览" }, { href: "#capabilities", title: "创作空间" }, { href: "#creation", title: "功能演示" }, { href: "#workflow", title: "工作流程" }, { href: "#questions", title: "常见问题" }].map((item) => <a key={item.href} href={item.href} className="py-2 transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">{item.title}</a>)}</nav>
+            <nav aria-label="首页导航" className="hidden items-center gap-4 whitespace-nowrap text-[13px] text-muted-foreground md:flex xl:gap-8">{[{ href: "#home-top", title: "产品概览" }, { href: "#capabilities", title: "核心能力" }, { href: "#creation", title: "功能演示" }, { href: "#workflow", title: "工作流程" }, { href: "#questions", title: "常见问题" }].map((item) => <a key={item.href} href={item.href} className="py-2 transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">{item.title}</a>)}</nav>
             <div className="flex shrink-0 items-center gap-1 sm:gap-4">
                 <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground [&_svg]:size-4" aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
                 <Link href={startHref} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border px-3 text-xs sm:px-4 font-medium transition hover:border-foreground/40 hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">{ready && user ? "进入工作台" : "登录"}<ArrowUpRight className="hidden size-3.5 sm:block" /></Link>
@@ -42,7 +42,7 @@ export default function HomePage() {
                     <h1 id="home-title" className={styles.title}>让灵感相连，<br /><span className="text-muted-foreground">让故事成片。</span></h1>
                     <p className="mt-6 max-w-[360px] text-[15px] leading-[1.9] text-muted-foreground sm:mt-7 sm:text-base">从一句想法到一组镜头，<br />把文字、画面与视频连接在同一张画布。<br />让每次创作，都有迹可循。</p>
                     <div className="mt-8 flex flex-wrap items-center gap-5 sm:mt-9">
-                        <Link href={startHref} className="group inline-flex min-h-12 items-center gap-8 rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground transition hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">进入创作空间<ArrowRight className="size-4 transition-transform group-hover:translate-x-1 motion-reduce:transition-none" /></Link>
+                        <Link href={startHref} className="group inline-flex min-h-12 items-center gap-8 rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground transition hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">进入工作台<ArrowRight className="size-4 transition-transform group-hover:translate-x-1 motion-reduce:transition-none" /></Link>
                         <a href="#creation" className="inline-flex min-h-12 items-center gap-2 text-[13px] text-muted-foreground transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><span className="flex size-7 items-center justify-center rounded-full border border-border"><Play className="ml-0.5 size-3" /></span>看看如何创作</a>
                     </div>
                     <div className="mt-9 flex items-center gap-3 text-xs text-muted-foreground"><span className="flex size-8 items-center justify-center rounded-lg border border-border"><Layers3 className="size-4" strokeWidth={1.4} /></span><span>一个项目，多张画布。<br /><span className="mt-1 block text-[11px] opacity-80">属于你的创作工作室</span></span></div>
@@ -65,18 +65,28 @@ export default function HomePage() {
                 </figure>
             </section>
 
-            <section id="capabilities" aria-label="你的创作空间" className={styles.benefits}>
-                {[
-                    { Icon: Layers3, title: "让创作，沿着项目展开", text: "一个项目组织多张画布，灵感、分镜与不同版本各有位置。" },
-                    { Icon: Sparkles, title: "让模型，融入创作过程", text: "在画布中选用平台开放的模型，连接文字、图像与视频。" },
-                    { Icon: FolderOpen, title: "让素材，成为下一次起点", text: "多级目录与标签整理素材，按你的偏好保存在浏览器或账号素材库。" },
-                ].map(({ Icon, title, text }) => <div key={title} className="flex items-start gap-4"><Icon className="mt-1 size-[18px] shrink-0 text-muted-foreground" strokeWidth={1.4} /><div><h2 className="text-sm font-medium sm:text-[15px]">{title}</h2><p className="mt-2 max-w-[310px] text-xs leading-[1.9] text-muted-foreground">{text}</p></div></div>)}
+            <section id="capabilities" aria-labelledby="capabilities-title" className={styles.capabilities}>
+                <div className={styles.capabilitiesHeading}>
+                    <div><p className={styles.eyebrow}>项目 · 画布 · 素材</p><h2 id="capabilities-title" className={styles.sectionTitle}>核心能力</h2></div>
+                    <p>围绕无限画布，把项目组织、模型创作与素材管理连接起来。<br className="hidden sm:block" />从一个想法出发，逐步搭建你的作品。</p>
+                </div>
+                <div className={styles.capabilityGrid}>
+                    {[
+                        { Icon: Layers3, title: "项目与多画布", text: "一个项目容纳多张画布。把灵感、分镜与不同版本分别展开，让长篇创作也有清晰结构。", features: ["项目管理", "多张画布", "节点连接"] },
+                        { Icon: Sparkles, title: "平台云端模型", text: "在画布里选择平台开放的模型，结合文字与参考素材展开创作，无需自行配置模型密钥。", features: ["平台统一配置", "画布内创作", "上下文参考"] },
+                        { Icon: FolderOpen, title: "素材目录与标签", text: "用多级文件夹与标签整理素材。按偏好保存在当前浏览器或账号素材库，再带入下一张画布。", features: ["多级目录", "标签检索", "按需存入素材库"] },
+                    ].map(({ Icon, title, text, features }, index) => <article key={title} className={styles.capability}>
+                        <div className={styles.capabilityIndex}><Icon size={22} strokeWidth={1.3} aria-hidden="true" /><span>0{index + 1}</span></div>
+                        <h3>{title}</h3><p>{text}</p>
+                        <ul>{features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
+                    </article>)}
+                </div>
             </section>
 
             <CreationShowcase />
 
             <section id="workflow" aria-labelledby="workflow-title" className={styles.workflow}>
-                <div className="mb-9 flex flex-wrap items-end justify-between gap-5 sm:mb-12"><div><p className={styles.eyebrow}>从灵感到作品 · 创作路径</p><h2 id="workflow-title" className={styles.sectionTitle}>创作的每一步，<br className="sm:hidden" />都在同一个空间。</h2></div><Link href={startHref} className="inline-flex min-h-10 items-center gap-3 text-sm font-medium underline decoration-border underline-offset-8 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring">开始第一张画布<ArrowUpRight className="size-4" /></Link></div>
+                <div className="mb-9 flex flex-wrap items-end justify-between gap-5 sm:mb-12"><div><p className={styles.eyebrow}>从灵感到作品 · 创作路径</p><h2 id="workflow-title" className={styles.sectionTitle}>创作的每一步，<br className="sm:hidden" />都在同一个空间。</h2></div><Link href={startHref} className="inline-flex min-h-10 items-center gap-3 text-sm font-medium underline decoration-border underline-offset-8 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring">进入工作台<ArrowUpRight className="size-4" /></Link></div>
                 <ol className={styles.workflowSteps}>
                     <li>
                         <div className={styles.stepVisual} aria-label="一个项目组织多张画布的示意">
@@ -110,7 +120,7 @@ export default function HomePage() {
 
             <section className={styles.closing} aria-labelledby="closing-title">
                 <img src="/showcase/storyboard-city.webp" width={800} height={500} alt="" loading="lazy" className={styles.closingImage} />
-                <div className={styles.closingCopy}><span className="mb-7 flex items-center gap-3 text-[10px] tracking-[.18em] text-white/70"><BrandMark className="size-6" />XIAOMENG STUDIO</span><h2 id="closing-title">故事还未开始。<br />画布，已经准备好了。</h2><p>给下一次灵感，留一个可以展开的空间。</p><Link href={startHref} className="group mt-7 inline-flex min-h-12 items-center gap-8 rounded-xl bg-white px-6 text-sm font-medium text-neutral-950 transition hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">开始创作<ArrowRight className="size-4 transition-transform group-hover:translate-x-1 motion-reduce:transition-none" /></Link></div>
+                <div className={styles.closingCopy}><span className="mb-7 flex items-center gap-3 text-[10px] tracking-[.18em] text-white/70"><BrandMark className="size-6" />XIAOMENG STUDIO</span><h2 id="closing-title">故事还未开始。<br />画布，已经准备好了。</h2><p>给下一次灵感，留一个可以展开的空间。</p><Link href={startHref} className="group mt-7 inline-flex min-h-12 items-center gap-8 rounded-xl bg-white px-6 text-sm font-medium text-neutral-950 transition hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">进入工作台<ArrowRight className="size-4 transition-transform group-hover:translate-x-1 motion-reduce:transition-none" /></Link></div>
                 <div className={styles.closingFootnote}><span>项目 · 画布 · 素材</span><span>为你的下一部作品而来</span></div>
             </section>
         </main>
