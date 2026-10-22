@@ -36,7 +36,7 @@ export default function HomePage() {
             <nav aria-label="首页导航" className="hidden items-center gap-8 text-[13px] text-muted-foreground md:flex"><a href="#creation" className="py-2 transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">创作方式</a><a href="#workflow" className="py-2 transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">工作流程</a><a href="#questions" className="py-2 transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">常见问题</a></nav>
             <div className="flex shrink-0 items-center gap-1 sm:gap-4">
                 <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground [&_svg]:size-4" aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
-                <Link href={startHref} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border px-4 text-xs font-medium transition hover:border-foreground/40 hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">{ready && user ? "进入工作台" : "登录"}<ArrowUpRight className="hidden size-3.5 sm:block" /></Link>
+                <Link href={startHref} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border px-3 text-xs sm:px-4 font-medium transition hover:border-foreground/40 hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">{ready && user ? "进入工作台" : "登录"}<ArrowUpRight className="hidden size-3.5 sm:block" /></Link>
             </div>
             </div>
         </header>
