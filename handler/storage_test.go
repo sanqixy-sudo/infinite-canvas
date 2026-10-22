@@ -17,8 +17,10 @@ func TestStorageReadSessionIsScopedAndHttpOnly(t *testing.T) {
 	config.Cfg.JWTExpireHours = 24
 	config.Cfg.JWTSecret = "storage-read-test"
 	t.Cleanup(func() { config.Cfg.JWTExpireHours = savedHours; config.Cfg.JWTSecret = savedSecret })
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, service.TokenClaims{UserID: "owner", RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(30*time.Minute))}}).SignedString([]byte(config.Cfg.JWTSecret))
-	if err != nil { t.Fatal(err) }
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, service.TokenClaims{UserID: "owner", RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * time.Minute))}}).SignedString([]byte(config.Cfg.JWTSecret))
+	if err != nil {
+		t.Fatal(err)
+	}
 	request := httptest.NewRequest(http.MethodGet, "https://studio.example.com/api/files/file-1", nil)
 	request.Header.Set("Authorization", "Bearer "+token)
 	response := httptest.NewRecorder()

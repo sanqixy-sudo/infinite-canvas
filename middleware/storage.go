@@ -1,12 +1,12 @@
 package middleware
 
 import (
-	"net/http"
-	"strings"
 	"github.com/gin-gonic/gin"
 	"github.com/tigerowo/infinite-canvas/handler"
 	"github.com/tigerowo/infinite-canvas/model"
 	"github.com/tigerowo/infinite-canvas/service"
+	"net/http"
+	"strings"
 )
 
 // StorageReadAuth 仅为媒体内容读取接受 HttpOnly 会话；写接口仍须 Bearer 登录鉴权。
@@ -31,7 +31,11 @@ func ReadUserAuth(c *gin.Context) {
 }
 
 func storageReadUser(c *gin.Context) (model.AuthUser, bool) {
-	if strings.TrimSpace(c.GetHeader("Authorization")) != "" { return authUser(c) }
-	if value, err := c.Cookie("xiaomeng_storage_viewer"); err == nil { return service.CurrentAuthUser(value) }
+	if strings.TrimSpace(c.GetHeader("Authorization")) != "" {
+		return authUser(c)
+	}
+	if value, err := c.Cookie("xiaomeng_storage_viewer"); err == nil {
+		return service.CurrentAuthUser(value)
+	}
 	return model.AuthUser{}, false
 }

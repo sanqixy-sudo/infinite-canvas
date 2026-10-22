@@ -195,9 +195,13 @@ func setStorageReadToken(w http.ResponseWriter, r *http.Request, token string) {
 		return
 	}
 	claims, err := service.ParseToken(token)
-	if err != nil || claims.ExpiresAt == nil { return }
+	if err != nil || claims.ExpiresAt == nil {
+		return
+	}
 	maxAge := int(time.Until(claims.ExpiresAt.Time).Seconds())
-	if maxAge <= 0 { return }
+	if maxAge <= 0 {
+		return
+	}
 	storageReadCookie(w, r, "", "/api/files", -1)
 	storageReadCookie(w, r, token, "/api", maxAge)
 }
