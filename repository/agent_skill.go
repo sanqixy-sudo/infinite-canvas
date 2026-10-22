@@ -42,12 +42,13 @@ func GetAgentSkill(id string) (model.AgentSkill, bool, error) {
 	return item, err == nil, err
 }
 
-func SaveAgentSkill(item model.AgentSkill) (model.AgentSkill, error) {
+func SaveAgentSkill(item model.AgentSkill, storageIDs ...string) (model.AgentSkill, error) {
 	db, err := DB()
 	if err != nil {
 		return item, err
 	}
-	return item, db.Save(&item).Error
+	err = withStorageReferences(db, storageIDs, func(tx *gorm.DB) error { return tx.Save(&item).Error })
+	return item, err
 }
 
 func ListAgentSkillFiles(skillID string) ([]model.AgentSkillFile, error) {
@@ -73,12 +74,12 @@ func GetAgentSkillFile(skillID string, filePath string) (model.AgentSkillFile, b
 	return item, err == nil, err
 }
 
-func SaveAgentSkillPackage(item model.AgentSkill, files []model.AgentSkillFile) (model.AgentSkill, error) {
+func SaveAgentSkillPackage(item model.AgentSkill, files []model.AgentSkillFile, storageIDs ...string) (model.AgentSkill, error) {
 	db, err := DB()
 	if err != nil {
 		return item, err
 	}
-	err = db.Transaction(func(tx *gorm.DB) error { return saveAgentSkillPackage(tx, &item, files) })
+	err = withStorageReferences(db, storageIDs, func(tx *gorm.DB) error { return saveAgentSkillPackage(tx, &item, files) })
 	for _, file := range files {
 		if file.Kind == model.AgentSkillFileKindFile {
 			item.HasFiles = true
@@ -89,7 +90,7 @@ func SaveAgentSkillPackage(item model.AgentSkill, files []model.AgentSkillFile) 
 	return item, err
 }
 
-func InitializeAgentSkills(items []model.AgentSkill, files [][]model.AgentSkillFile, current string) error {
+func InitializeAgentSkills(items []model.AgentSkill, files [][]model.AgentSkillFile, current string, storageIDs ...string) error {
 	if len(items) != len(files) {
 		return errors.New("Skill 与文件包数量不一致")
 	}
@@ -97,7 +98,7 @@ func InitializeAgentSkills(items []model.AgentSkill, files [][]model.AgentSkillF
 	if err != nil {
 		return err
 	}
-	return db.Transaction(func(tx *gorm.DB) error {
+	return withStorageReferences(db, storageIDs, func(tx *gorm.DB) error {
 		for index := range items {
 			if err := saveAgentSkillPackage(tx, &items[index], files[index]); err != nil {
 				return err

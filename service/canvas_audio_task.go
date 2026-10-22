@@ -54,15 +54,19 @@ func CreateCanvasAudioTask(input CanvasAudioTaskCreateInput) (model.CanvasAudioT
 	}
 	saved := task
 	var err error
+	ids, err := taskStorageReferenceIDs(task)
+	if err != nil {
+		return task, err
+	}
 	if input.WorkflowRef != "" {
 		err = ConsumeUserCredits(task.UserID, input.BillingName, task.Credits, input.BillingPath, &task)
 	} else {
-		saved, err = repository.SaveCanvasAudioTask(task)
+		saved, err = repository.SaveCanvasAudioTask(task, ids...)
 	}
 	if err == nil {
 		WakeVideoTaskPoller()
 	}
-	return saved, err
+	return saved, storageReferenceError(err)
 }
 
 func GetUserCanvasAudioTask(userID string, id string) (model.CanvasAudioTask, bool, error) {
@@ -71,7 +75,12 @@ func GetUserCanvasAudioTask(userID string, id string) (model.CanvasAudioTask, bo
 
 func SaveCanvasAudioTask(task model.CanvasAudioTask) (model.CanvasAudioTask, error) {
 	task.UpdatedAt = now()
-	return repository.UpdateCanvasAudioTask(task)
+	ids, err := taskStorageReferenceIDs(task)
+	if err != nil {
+		return task, err
+	}
+	saved, err := repository.UpdateCanvasAudioTask(task, ids...)
+	return saved, storageReferenceError(err)
 }
 
 func CanvasAudioTaskResponse(task model.CanvasAudioTask) map[string]any {

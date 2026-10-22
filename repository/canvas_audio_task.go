@@ -1,25 +1,32 @@
 package repository
 
-import "github.com/tigerowo/infinite-canvas/model"
+import (
+	"github.com/tigerowo/infinite-canvas/model"
+	"gorm.io/gorm"
+)
 
-func SaveCanvasAudioTask(task model.CanvasAudioTask) (model.CanvasAudioTask, error) {
+func SaveCanvasAudioTask(task model.CanvasAudioTask, storageIDs ...string) (model.CanvasAudioTask, error) {
 	db, err := DB()
 	if err != nil {
 		return task, err
 	}
-	return task, db.Save(&task).Error
+	err = withUserStorageLock(db, task.UserID, storageIDs, func(tx *gorm.DB) error { return tx.Save(&task).Error })
+	return task, err
 }
 
-func UpdateCanvasAudioTask(task model.CanvasAudioTask) (model.CanvasAudioTask, error) {
+func UpdateCanvasAudioTask(task model.CanvasAudioTask, storageIDs ...string) (model.CanvasAudioTask, error) {
 	db, err := DB()
 	if err != nil {
 		return task, err
 	}
 
-	return task, db.Model(&model.CanvasAudioTask{}).
-		Where("user_id = ? AND id = ? AND status <> ?", task.UserID, task.ID, "cancelled").
-		Select("*").
-		Updates(&task).Error
+	err = withUserStorageLock(db, task.UserID, storageIDs, func(tx *gorm.DB) error {
+		return tx.Model(&model.CanvasAudioTask{}).
+			Where("user_id = ? AND id = ? AND status <> ?", task.UserID, task.ID, "cancelled").
+			Select("*").
+			Updates(&task).Error
+	})
+	return task, err
 }
 
 func GetUserCanvasAudioTask(userID string, id string) (model.CanvasAudioTask, bool, error) {

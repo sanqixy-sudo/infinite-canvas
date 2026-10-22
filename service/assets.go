@@ -52,7 +52,12 @@ func SaveAsset(item model.Asset) (model.Asset, error) {
 	if item.CoverURL == "" {
 		item.CoverURL = assetCoverURL(item)
 	}
-	return repository.SaveAsset(item)
+	ids, err := taskStorageReferenceIDs(item)
+	if err != nil {
+		return item, err
+	}
+	saved, err := repository.SaveAsset(item, ids...)
+	return saved, storageReferenceError(err)
 }
 
 func DeleteAsset(id string) error {

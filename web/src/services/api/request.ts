@@ -48,10 +48,11 @@ export async function apiPost<T>(url: string, body?: unknown, token?: string) {
     });
 }
 
-export async function apiDelete<T>(url: string, token?: string) {
+export async function apiDelete<T>(url: string, token?: string, body?: unknown) {
     return apiRequest<T>({
         url,
         method: "DELETE",
+        data: body,
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
 }

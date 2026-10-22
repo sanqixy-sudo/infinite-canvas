@@ -45,6 +45,14 @@ func PatchUserConfig(userID, timestamp string, patch func(*model.UserConfig) err
 	return PatchUserConfigWithStorage(userID, timestamp, "", func(config *model.UserConfig, _ *model.StorageObject) error { return patch(config) })
 }
 
+func PatchUserConfigReferences(userID, timestamp string, ids []string, patch func(*model.UserConfig) error) (model.UserConfig, error) {
+	db, err := DB()
+	if err != nil {
+		return model.UserConfig{}, err
+	}
+	return patchUserConfig(db, userID, timestamp, "", func(config *model.UserConfig, _ *model.StorageObject) error { return patch(config) }, ids...)
+}
+
 // PatchUserConfigWithStorage 同时读取当前用户拥有的文件索引，供素材保存校验。
 func PatchUserConfigWithStorage(userID, timestamp, storageID string, patch func(*model.UserConfig, *model.StorageObject) error) (model.UserConfig, error) {
 	db, err := DB()
@@ -54,11 +62,14 @@ func PatchUserConfigWithStorage(userID, timestamp, storageID string, patch func(
 	return patchUserConfig(db, userID, timestamp, storageID, patch)
 }
 
-func patchUserConfig(db *gorm.DB, userID, timestamp, storageID string, patch func(*model.UserConfig, *model.StorageObject) error) (model.UserConfig, error) {
+func patchUserConfig(db *gorm.DB, userID, timestamp, storageID string, patch func(*model.UserConfig, *model.StorageObject) error, ids ...string) (model.UserConfig, error) {
 	var config model.UserConfig
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var user model.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
+			return err
+		}
+		if err := validateStorageReferences(tx, ids); err != nil {
 			return err
 		}
 		err := tx.First(&config, "user_id = ?", userID).Error

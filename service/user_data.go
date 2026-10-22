@@ -177,11 +177,20 @@ func CurrentUserImageHistory(ctx context.Context) (json.RawMessage, error) {
 }
 
 func SaveCurrentUserImageHistory(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	config, err := saveCurrentUserConfigField(ctx, func(config *model.UserConfig) {
-		config.ImageHistory = string(raw)
-	})
+	user, err := accountDataUser(ctx)
 	if err != nil {
 		return nil, err
+	}
+	ids, err := storageReferenceIDs(string(raw))
+	if err != nil {
+		return nil, err
+	}
+	config, err := repository.PatchUserConfigReferences(user.ID, now(), ids, func(config *model.UserConfig) error {
+		config.ImageHistory = string(raw)
+		return nil
+	})
+	if err != nil {
+		return nil, storageReferenceError(err)
 	}
 	return json.RawMessage(config.ImageHistory), nil
 }

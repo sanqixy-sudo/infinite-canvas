@@ -111,21 +111,59 @@ func RegisterDirectFile(w http.ResponseWriter, r *http.Request) {
 
 // DeleteFile 删除文件。
 func DeleteFile(w http.ResponseWriter, r *http.Request, id string) {
+	w.Header().Set("Cache-Control", "no-store")
 	var request struct {
-		Provider *service.StorageObjectProviderInput `json:"provider"`
+		Provider           *service.StorageObjectProviderInput `json:"provider"`
+		RemoveAssetRecords bool                                `json:"removeAssetRecords"`
 	}
 	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&request)
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil && !errors.Is(err, io.EOF) {
+			Fail(w, "删除请求格式无效")
+			return
+		}
+		if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+			Fail(w, "删除请求只能包含一个 JSON 对象")
+			return
+		}
 	}
-	if err := service.DeleteStorageObject(r.Context(), id, request.Provider); err != nil {
+	result, err := service.DeleteCurrentUserStorageFile(r.Context(), id, request.RemoveAssetRecords, request.Provider)
+	if err != nil {
+		if errors.Is(err, service.ErrStorageAccessDenied) {
+			FailWithStatus(w, http.StatusForbidden, "无权删除该文件")
+			return
+		}
 		FailError(w, err)
 		return
 	}
-	OK(w, true)
+	OK(w, result)
+}
+
+func UserStorageFiles(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	result, err := service.CurrentUserStorageFiles(r.Context(), parseQuery(r))
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func UserStorageFileReferences(w http.ResponseWriter, r *http.Request, id string) {
+	w.Header().Set("Cache-Control", "no-store")
+	result, err := service.CurrentUserStorageFileReferences(r.Context(), id)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
 }
 
 // DeleteDirectFileRecord 删除浏览器已直接删除的 WebDAV 文件索引。
 func DeleteDirectFileRecord(w http.ResponseWriter, r *http.Request, id string) {
+	w.Header().Set("Cache-Control", "no-store")
 	if err := service.DeleteDirectStorageObjectRecord(r.Context(), id); err != nil {
 		FailError(w, err)
 		return

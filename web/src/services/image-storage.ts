@@ -62,6 +62,15 @@ export type StorageConfig = {
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
 const objectUrls = new Map<string, string>();
 const serverUrls = new Map<string, string>();
+
+export async function invalidateImageFileCache(storageKey: string) {
+    if (!storageKey.startsWith("server:")) return;
+    serverUrls.delete(storageKey.slice("server:".length));
+    const url = objectUrls.get(storageKey);
+    if (url) URL.revokeObjectURL(url);
+    objectUrls.delete(storageKey);
+    await store.removeItem(storageKey);
+}
 export const USER_STORAGE_PROVIDER_KEY = "infinite-canvas:user_storage_provider";
 export const USER_WEBDAV_STORAGE_PROVIDER_KEY = "infinite-canvas:user_webdav_storage_provider";
 let storageConfigPromise: Promise<StorageConfig> | null = null;
@@ -591,7 +600,6 @@ async function deleteServerImage(storageKey: string) {
     const id = storageKey.slice("server:".length);
     if (!id) return;
     const token = useUserStore.getState().token;
-    serverUrls.delete(id);
     const provider = loadUserStorageProvider();
     if (storageKey.startsWith("server:webdav:") && provider?.type !== "webdav") return;
     if (provider?.type === "webdav") {
@@ -623,7 +631,8 @@ async function deleteServerImage(storageKey: string) {
     const payload = (await response.json().catch(() => null)) as { code?: number; msg?: string } | null;
     if (!response.ok || payload?.code !== 0) throw new Error(payload?.msg || "删除服务端图片失败");
     notifyAccountWalletRefresh();
-    clearAutoSyncCache(storageKey);
+    const { invalidateStorageFileCaches } = await import("@/services/storage-file-cache");
+    await invalidateStorageFileCaches(storageKey, token);
 }
 
 function blobToDataUrl(blob: Blob) {

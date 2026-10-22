@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost } from "@/services/api/request";
+import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/request";
 import { notifyAccountWalletRefresh } from "@/lib/account-wallet-events";
 import type { UserWebDAVStorageProvider } from "@/services/image-storage";
 import { useUserStore } from "@/stores/use-user-store";
@@ -20,11 +20,49 @@ export type StorageObjectInfo = {
     contentUrl: string;
 };
 
+export type StorageFileType = "image" | "video" | "audio" | "other";
+export type AccountStorageFile = {
+    id: string;
+    storageKey: string;
+    name: string;
+    mimeType: string;
+    bytes: number;
+    createdAt: string;
+    providerType: string;
+    deletePending: boolean;
+};
+export type StorageFileBlocker = { type: string; id: string; title: string };
+export type StorageFileReferences = {
+    file: AccountStorageFile;
+    assetCount: number;
+    completedTaskCount: number;
+    blockers: StorageFileBlocker[];
+    canDelete: boolean;
+    reason: string;
+};
+export type StorageFileDeletion = { deletedId: string; freedBytes: number };
+
+export function fetchAccountStorageFiles(token: string, query: { page?: number; pageSize?: number; keyword?: string; type?: StorageFileType | "" } = {}) {
+    return apiGet<{ items: StorageFileReferences[]; total: number }>("/api/v1/files", compactApiParams(query), token);
+}
+
+export function fetchStorageFileReferences(token: string, id: string) {
+    return apiGet<StorageFileReferences>(`/api/v1/files/${encodeURIComponent(id)}/references`, undefined, token);
+}
+
+export function deleteAccountStorageFile(token: string, id: string, removeAssetRecords: boolean) {
+    return apiDelete<StorageFileDeletion>(`/api/v1/files/${encodeURIComponent(id)}`, token, { removeAssetRecords });
+}
+
 export function getStorageObjectInfo(id: string) {
     return apiGet<StorageObjectInfo>(`/api/files/${encodeURIComponent(id)}`, undefined, useUserStore.getState().token);
 }
 
 const contentUrls = new Map<string, { url: string; expiresAt: number }>();
+
+export function clearStorageContentUrl(id: string, token: string) {
+    contentUrls.delete(`${token}:${id}`);
+}
 
 export function isStorageContentUrl(value: string) {
     try {

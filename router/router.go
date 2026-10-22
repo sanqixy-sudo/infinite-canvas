@@ -95,6 +95,8 @@ func New() *gin.Engine {
 	})
 	v1.POST("/storage/measure", gin.WrapF(handler.MeasureUserStorageProvider))
 	v1.POST("/files", gin.WrapF(handler.UploadFile))
+	v1.GET("/files", gin.WrapF(handler.UserStorageFiles))
+	v1.GET("/files/:id/references", func(c *gin.Context) { handler.UserStorageFileReferences(c.Writer, c.Request, c.Param("id")) })
 	v1.POST("/files/direct", gin.WrapF(handler.RegisterDirectFile))
 	v1.DELETE("/files/:id", func(c *gin.Context) {
 		handler.DeleteFile(c.Writer, c.Request, c.Param("id"))

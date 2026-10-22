@@ -45,7 +45,12 @@ func SavePrompt(item model.Prompt) (model.Prompt, error) {
 		item.Category = category.Category
 	}
 	item.GithubURL = ""
-	return repository.SavePrompt(item)
+	ids, err := taskStorageReferenceIDs(item)
+	if err != nil {
+		return item, err
+	}
+	saved, err := repository.SavePrompt(item, ids...)
+	return saved, storageReferenceError(err)
 }
 
 func DeletePrompt(id string) error {

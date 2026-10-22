@@ -83,20 +83,8 @@ export async function deletePersistedDirectWebDAV(provider: UserWebDAVStoragePro
         await deleteDirectWebDAV(provider, directWebDAVObjectKey(storageKey));
         return true;
     }
-    const token = useUserStore.getState().token;
-    if (!token || !storageKey.startsWith("server:")) return false;
-    const id = storageKey.slice("server:".length);
-    const { deleteDirectStorageObjectRecord, getStorageObjectInfo } = await import("@/services/api/storage");
-    const info = await getStorageObjectInfo(id).catch(() => null);
-    if (!info?.direct) return false;
-    try {
-        await deleteDirectWebDAV(provider, info.objectKey);
-        await deleteDirectStorageObjectRecord(token, id);
-        return true;
-    } catch (error) {
-        if (isWebDAVDirectUnavailable(error)) return false;
-        throw error;
-    }
+    // 有账号索引的文件交给服务端检查引用后删除，不能先直删再移除索引。
+    return false;
 }
 
 async function uploadDirectWebDAV(provider: UserWebDAVStorageProvider, objectKey: string, blob: Blob) {

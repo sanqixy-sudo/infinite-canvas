@@ -4,26 +4,31 @@ import (
 	"strings"
 
 	"github.com/tigerowo/infinite-canvas/model"
+	"gorm.io/gorm"
 )
 
-func SaveCanvasImageTask(task model.CanvasImageTask) (model.CanvasImageTask, error) {
+func SaveCanvasImageTask(task model.CanvasImageTask, storageIDs ...string) (model.CanvasImageTask, error) {
 	db, err := DB()
 	if err != nil {
 		return task, err
 	}
-	return task, db.Save(&task).Error
+	err = withUserStorageLock(db, task.UserID, storageIDs, func(tx *gorm.DB) error { return tx.Save(&task).Error })
+	return task, err
 }
 
-func UpdateCanvasImageTask(task model.CanvasImageTask) (model.CanvasImageTask, error) {
+func UpdateCanvasImageTask(task model.CanvasImageTask, storageIDs ...string) (model.CanvasImageTask, error) {
 	db, err := DB()
 	if err != nil {
 		return task, err
 	}
 
-	return task, db.Model(&model.CanvasImageTask{}).
-		Where("user_id = ? AND id = ? AND status <> ?", task.UserID, task.ID, "cancelled").
-		Select("*").
-		Updates(&task).Error
+	err = withUserStorageLock(db, task.UserID, storageIDs, func(tx *gorm.DB) error {
+		return tx.Model(&model.CanvasImageTask{}).
+			Where("user_id = ? AND id = ? AND status <> ?", task.UserID, task.ID, "cancelled").
+			Select("*").
+			Updates(&task).Error
+	})
+	return task, err
 }
 
 func GetUserCanvasImageTask(userID string, id string) (model.CanvasImageTask, bool, error) {

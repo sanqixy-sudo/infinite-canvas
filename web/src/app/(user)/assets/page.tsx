@@ -13,6 +13,7 @@ import { AssetFormModal } from "@/components/assets/asset-form-modal";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
 import { AssetFolderTree, ASSET_DRAG_TYPE, type FolderAction } from "./components/asset-folder-tree";
 import { AssetDetailsPanel } from "./components/asset-details-panel";
+import { useStorageFileDeletion } from "@/hooks/use-storage-file-deletion";
 import { bulkTagValues, createBulkTagDraft, updateBulkTagDraft, type BulkTagDraft } from "./bulk-tag-draft";
 
 const kinds = [{ value: "image", label: "图片" }, { value: "video", label: "视频" }, { value: "audio", label: "音频" }, { value: "text", label: "文本" }];
@@ -23,6 +24,7 @@ type DeleteDraft = { kind: "folder" | "asset"; id: string; name: string };
 
 export default function AssetsPage() {
     const { message } = App.useApp();
+    const fileDeletion = useStorageFileDeletion();
     const screens = Grid.useBreakpoint();
     const token = useUserStore((state) => state.token);
     const user = useUserStore((state) => state.user);
@@ -64,7 +66,7 @@ export default function AssetsPage() {
     const folders = scope === "cloud" ? cloudFolders : localFolders;
     const currentFolder = folders.find((folder) => folder.id === activeId);
     const canWrite = hydrated && owner !== "pending" && (scope === "local" || Boolean(token && user?.id));
-    const disabled = busy || !canWrite;
+    const disabled = busy || fileDeletion.busy || !canWrite;
     const path = useMemo(() => folderPath(folders, activeId), [folders, activeId]);
     const tagOptions = useMemo(() => [...new Set(assets.flatMap((asset) => asset.tags || []))].sort((a, b) => a.localeCompare(b, "zh-CN")).map((value) => ({ value, label: value })), [assets]);
     const treeOptions = useMemo(() => folderTreeOptions(folders), [folders]);
@@ -225,7 +227,8 @@ export default function AssetsPage() {
         { key: "folders", label: "加入文件夹", disabled }, { key: "tags", label: "整理标签", disabled }, { key: "edit", label: "编辑素材", disabled },
         ...(currentFolder ? [{ key: "remove-folder", label: "移出当前文件夹", disabled }, { key: "remove-tree", label: "移出当前目录树", disabled }] : []),
         ...(scope === "local" ? [{ key: "cloud", label: "存入账号素材库", disabled: disabled || savingIds.has(asset.id) }] : []),
-        { type: "divider" as const }, { key: "delete", label: "移除素材记录", danger: true, disabled },
+        { type: "divider" as const }, { key: "delete", label: "仅移除素材记录", danger: true, disabled },
+        ...(scope === "cloud" && asset.kind !== "text" && /^server:[^:/\s]+$/.test(asset.data.storageKey || "") ? [{ key: "delete-file", label: "删除文件并释放空间", danger: true, disabled }] : []),
     ], onClick: ({ key }: { key: string }) => {
         if (!viewMatches()) return;
         if (key === "folders" || key === "tags") openOrganization(key, [asset.id]);
@@ -233,6 +236,7 @@ export default function AssetsPage() {
         else if (key === "cloud") void saveToAccount(asset);
         else if (key === "remove-folder" || key === "remove-tree") removeFromFolder([asset.id], key === "remove-tree");
         else if (key === "delete") { setDraftError(""); setDeleting({ kind: "asset", id: asset.id, name: asset.title }); }
+        else if (key === "delete-file" && asset.kind !== "text" && asset.data.storageKey?.startsWith("server:")) fileDeletion.requestDelete(asset.data.storageKey.slice(7));
     } });
     const dropAssets = (event: DragEvent, targetId: string) => {
         event.preventDefault();
@@ -268,6 +272,7 @@ export default function AssetsPage() {
                         <button type="button" aria-label="打开素材目录" onClick={() => setTreeOpen(true)} className={quietButton + " -ml-2 !px-2 lg:hidden"}><Menu className="size-4" /></button>
                         <nav aria-label="素材面包屑" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-xs"><button type="button" onClick={() => selectFolder("")} className="shrink-0 py-2 text-muted-foreground hover:text-foreground">{scope === "cloud" ? "账号素材库" : "当前浏览器"}</button>{path.map((folder) => <span key={folder.id} className="flex shrink-0 items-center gap-1"><ChevronRight className="size-3 text-muted-foreground" /><button type="button" title={folder.name} className="max-w-40 truncate py-2 hover:underline" onClick={() => selectFolder(folder.id)}>{folder.name}</button></span>)}{activeId.startsWith("@") ? <><ChevronRight className="size-3 shrink-0 text-muted-foreground" /><span className="shrink-0">{heading}</span></> : null}</nav>
                         <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{filtered.length} 项</span>
+                        {scope === "cloud" ? <Link href="/account/storage#account-files" className={quietButton + " !min-h-8 !px-2"}>文件管理</Link> : null}
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                         <Select mode="multiple" aria-label="按类型筛选素材" placeholder="全部类型" value={kindFilters} options={kinds} maxTagCount="responsive" allowClear onChange={(values: AssetKind[]) => { setKindFilters(values); filterChanged(); }} className="w-32" size="small" />
@@ -312,6 +317,7 @@ export default function AssetsPage() {
         <Drawer title="素材目录" open={treeOpen && !screens.lg} onClose={() => setTreeOpen(false)} placement="left" size={288} styles={{ body: { padding: 0 } }} destroyOnHidden>{folderTree}</Drawer>
         <Drawer title={null} closable={false} open={Boolean(detailId) && !screens.xl} onClose={() => setDetailId("")} size={360} styles={{ body: { padding: 0 }, wrapper: { maxWidth: "100vw" } }} destroyOnHidden>{detail}</Drawer>
         <AssetFormModal open={formOpen} asset={editing} scope={scope} defaultFolderIds={currentFolder ? [currentFolder.id] : []} onClose={() => { setFormOpen(false); setEditing(null); }} />
+        {fileDeletion.dialog}
         <input ref={inputRef} type="file" accept=".zip,application/zip" className="hidden" aria-label="导入素材压缩包" onChange={(event) => void importCollection(event.target.files?.[0])} />
 
         <Modal title={folderDraft?.action === "create" ? "新建文件夹" : folderDraft?.action === "move" ? "移动文件夹" : "重命名文件夹"} open={Boolean(folderDraft)} onCancel={() => { if (!busy) setFolderDraft(null); }} onOk={() => void saveFolder()} okText="保存" cancelText="取消" confirmLoading={busy} cancelButtonProps={{ disabled: busy }} closable={!busy} maskClosable={!busy} keyboard={!busy} destroyOnHidden>

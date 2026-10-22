@@ -23,7 +23,6 @@ import (
 	"github.com/robfig/cron/v3"
 	"github.com/tigerowo/infinite-canvas/model"
 	"github.com/tigerowo/infinite-canvas/repository"
-	"gorm.io/gorm"
 )
 
 // UploadedStorageObject 上传存储对象返回结果。
@@ -328,54 +327,13 @@ func RegisterDirectStorageObject(ctx context.Context, input DirectStorageObjectI
 
 // DeleteStorageObject 删除存储对象。
 func DeleteStorageObject(ctx context.Context, id string, providerInput *StorageObjectProviderInput) error {
-	object, err := repository.GetStorageObject(id)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		return err
-	}
-	if !storageObjectOwnedBy(ctx, object) {
-		return ErrStorageAccessDenied
-	}
-	settings, err := repository.GetSettings()
-	if err != nil {
-		return err
-	}
-	storage := normalizePrivateStorageSetting(settings.Private.Storage)
-	providers := append([]model.StorageProvider{localStorageProvider()}, storage.Providers...)
-	if object.CreatedBy != "" && object.CreatedBy != "anonymous" {
-		if config, found, loadErr := repository.GetUserConfig(object.CreatedBy); loadErr == nil && found {
-			providers = append(userStorageProvidersForOwner(config.StorageProvider, object.CreatedBy), providers...)
-		}
-	}
-	if providerInput != nil && storage.AllowUserProvider {
-		providers = append([]model.StorageProvider{normalizeUserStorageProvider(*providerInput, ctx)}, providers...)
-	}
-	provider, ok := findStorageProviderForObject(object, providers)
-	if !ok {
-		return errors.New("对象存储配置不存在")
-	}
-	if err := deleteStorageObjectData(provider, object.ObjectKey); err != nil {
-		return err
-	}
-	return repository.DeleteStorageObjectRecord(id)
+	_, err := DeleteCurrentUserStorageFile(ctx, id, false, providerInput)
+	return err
 }
 
 // DeleteDirectStorageObjectRecord 删除已由浏览器直接删除的 WebDAV 对象索引。
 func DeleteDirectStorageObjectRecord(ctx context.Context, id string) error {
-	object, err := repository.GetStorageObject(id)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	user, ok := UserFromContext(ctx)
-	if !ok || user.ID == "" || object.CreatedBy != user.ID || !object.Direct {
-		return errors.New("无权删除该对象记录")
-	}
-	return repository.DeleteStorageObjectRecord(id)
+	return safeMessageError{message: "仅删除文件索引已停用，请使用账号文件删除接口核实引用并删除实际文件"}
 }
 
 // MeasureUserStorageProvider 统计用户存储提供商的已用容量。

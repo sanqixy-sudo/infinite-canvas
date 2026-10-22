@@ -110,8 +110,13 @@ func TestUserStorageQuotaAcrossUploadAndDirectRegistration(t *testing.T) {
 		t.Fatal(err)
 	}
 	actualSize := int64(7)
+	deleteRequests := 0
 	savedClient := safeProxyHTTPClient
 	safeProxyHTTPClient = &http.Client{Transport: storageQuotaTransport(func(request *http.Request) (*http.Response, error) {
+		if request.Method == http.MethodDelete {
+			deleteRequests++
+			return &http.Response{StatusCode: http.StatusNoContent, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
+		}
 		if request.Method != "PROPFIND" {
 			t.Fatalf("unexpected WebDAV metadata request: %s", request.Method)
 		}
@@ -133,12 +138,19 @@ func TestUserStorageQuotaAcrossUploadAndDirectRegistration(t *testing.T) {
 	if err != nil || usage.UsedBytes != 7 || usage.BaseBytes != 8 || usage.ExtraBytes != 2 || usage.LimitBytes != 10 {
 		t.Fatalf("extra space or actual direct size missing: %+v %v", usage, err)
 	}
-	if err := DeleteDirectStorageObjectRecord(ctx, direct.ID); err != nil {
-		t.Fatal(err)
+	if err := DeleteDirectStorageObjectRecord(ctx, direct.ID); err == nil {
+		t.Fatal("record-only deletion bypassed physical verification")
+	}
+	usage, err = CurrentUserStorageUsage(ctx)
+	if err != nil || usage.UsedBytes != 7 || usage.RemainingBytes != 3 || deleteRequests != 0 {
+		t.Fatalf("record-only rejection changed files or quota: %+v %d %v", usage, deleteRequests, err)
+	}
+	if result, err := DeleteCurrentUserStorageFile(ctx, direct.ID, true, &input.Provider); err != nil || result.FreedBytes != 3 || deleteRequests != 1 {
+		t.Fatalf("verified direct deletion failed: %+v %d %v", result, deleteRequests, err)
 	}
 	usage, err = CurrentUserStorageUsage(ctx)
 	if err != nil || usage.UsedBytes != 4 || usage.RemainingBytes != 6 {
-		t.Fatalf("deleting direct index did not release usage: %+v %v", usage, err)
+		t.Fatalf("physical direct deletion did not release usage: %+v %v", usage, err)
 	}
 	if _, err := CurrentUserStorageUsage(context.Background()); err == nil {
 		t.Fatal("anonymous user read an account quota")

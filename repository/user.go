@@ -132,7 +132,7 @@ func AdjustUserCredits(id string, credits float64, timestamp string, log model.C
 	return user, found, err
 }
 
-func ConsumeUserCredits(id string, credits float64, now string, log model.CreditLog, task any) (model.User, bool, error) {
+func ConsumeUserCredits(id string, credits float64, now string, log model.CreditLog, task any, storageIDs ...string) (model.User, bool, error) {
 	db, err := DB()
 	if err != nil {
 		return model.User{}, false, err
@@ -143,7 +143,7 @@ func ConsumeUserCredits(id string, credits float64, now string, log model.Credit
 	}
 	var user model.User
 	consumed := false
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = withUserStorageLock(db, id, storageIDs, func(tx *gorm.DB) error {
 		update := tx.Model(&model.User{}).Where("id = ? AND credits >= CAST(? AS DECIMAL(20,2))", id, credits).Updates(map[string]any{
 			"credits":    gorm.Expr("ROUND(credits - CAST(? AS DECIMAL(20,2)), 2)", credits),
 			"updated_at": now,

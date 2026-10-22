@@ -41,8 +41,13 @@ func SaveCurrentUserVideoGenerationLogs(ctx context.Context, raws []json.RawMess
 			logs = append(logs, log)
 		}
 	}
-	if err := repository.UpsertVideoGenerationLogs(user.ID, logs); err != nil {
+	raw, _ := json.Marshal(raws)
+	ids, err := storageReferenceIDs(string(raw))
+	if err != nil {
 		return nil, err
+	}
+	if err := repository.UpsertVideoGenerationLogs(user.ID, logs, ids...); err != nil {
+		return nil, storageReferenceError(err)
 	}
 	return CurrentUserVideoGenerationLogs(ctx)
 }
@@ -94,8 +99,13 @@ func SaveCurrentUserImageGenerationLogs(ctx context.Context, raws []json.RawMess
 			logs = append(logs, log)
 		}
 	}
-	if err := repository.UpsertImageGenerationLogs(user.ID, logs); err != nil {
+	raw, _ := json.Marshal(raws)
+	ids, err := storageReferenceIDs(string(raw))
+	if err != nil {
 		return nil, err
+	}
+	if err := repository.UpsertImageGenerationLogs(user.ID, logs, ids...); err != nil {
+		return nil, storageReferenceError(err)
 	}
 	return CurrentUserImageGenerationLogs(ctx)
 }
@@ -270,8 +280,12 @@ func migrateUserImageGenerationLogs(userID string) error {
 			logs = append(logs, log)
 		}
 	}
-	if err := repository.UpsertImageGenerationLogs(userID, logs); err != nil {
+	ids, err := storageReferenceIDs(config.ImageHistory)
+	if err != nil {
 		return err
+	}
+	if err := repository.UpsertImageGenerationLogs(userID, logs, ids...); err != nil {
+		return storageReferenceError(err)
 	}
 	_, err = repository.PatchUserConfig(userID, now(), func(current *model.UserConfig) error {
 		if current.ImageHistory == config.ImageHistory {

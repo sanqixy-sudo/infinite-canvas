@@ -11,6 +11,13 @@ const unavailableFiles = new Set<string>();
 const saving = new Map<string, Promise<AssetInput & { id: string }>>();
 let ownerToken = "";
 
+export function invalidateAccountAssetFile(storageKey: string, token: string) {
+    if (ownerToken !== token || useUserStore.getState().token !== token) return;
+    for (const [source, file] of uploadedFiles) if (file.storageKey === storageKey) uploadedFiles.delete(source);
+    unavailableFiles.add(storageKey);
+    while (unavailableFiles.size > 200) unavailableFiles.delete(unavailableFiles.values().next().value!);
+}
+
 function resetSession(token: string) {
     uploadedFiles.clear();
     unavailableFiles.clear();

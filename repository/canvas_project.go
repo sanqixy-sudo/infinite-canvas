@@ -23,19 +23,26 @@ func ListUserCanvasProjects(userID string) ([]model.CanvasProject, error) {
 	return projects, err
 }
 
-func SaveUserCanvasProject(
-	project model.CanvasProject,
-) (model.CanvasProject, error) {
+func SaveUserCanvasProject(project model.CanvasProject, storageIDs ...string) (model.CanvasProject, error) {
 	db, err := DB()
 	if err != nil {
 		return project, err
 	}
+	var saved model.CanvasProject
+	err = withUserStorageLock(db, project.UserID, storageIDs, func(tx *gorm.DB) error {
+		saved, err = saveUserCanvasProject(tx, project)
+		return err
+	})
+	return saved, err
+}
+
+func saveUserCanvasProject(db *gorm.DB, project model.CanvasProject) (model.CanvasProject, error) {
 
 	project.UserID = strings.TrimSpace(project.UserID)
 	project.ID = strings.TrimSpace(project.ID)
 
 	var current model.CanvasProject
-	err = db.First(
+	err := db.First(
 		&current,
 		"user_id = ? AND id = ?",
 		project.UserID,

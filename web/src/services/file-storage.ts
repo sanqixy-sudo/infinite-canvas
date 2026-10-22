@@ -15,6 +15,14 @@ export type UploadedFile = { url: string; storageKey: string; bytes: number; mim
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
 const objectUrls = new Map<string, string>();
+
+export async function invalidateMediaFileCache(storageKey: string) {
+    if (!storageKey.startsWith("server:")) return;
+    const url = objectUrls.get(storageKey);
+    if (url) URL.revokeObjectURL(url);
+    objectUrls.delete(storageKey);
+    await store.removeItem(storageKey);
+}
 let storageConfigPromise: Promise<StorageConfig> | null = null;
 
 export async function uploadMediaFile(input: string | Blob, prefix = "file", syncId?: string, tokenOverride?: string, localOnly = false): Promise<UploadedFile> {
@@ -237,7 +245,8 @@ async function deleteServerMedia(storageKey: string) {
     const payload = (await response.json().catch(() => null)) as { code?: number; msg?: string } | null;
     if (!response.ok || payload?.code !== 0) throw new Error(payload?.msg || "删除服务端视频失败");
     notifyAccountWalletRefresh();
-    clearAutoSyncCache(storageKey);
+    const { invalidateStorageFileCaches } = await import("@/services/storage-file-cache");
+    await invalidateStorageFileCaches(storageKey, token);
 }
 
 export async function deleteStoredMedia(keys: Iterable<string>) {

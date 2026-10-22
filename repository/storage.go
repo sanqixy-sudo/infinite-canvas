@@ -20,7 +20,7 @@ func GetStorageObject(id string) (model.StorageObject, error) {
 		return model.StorageObject{}, err
 	}
 	var object model.StorageObject
-	err = db.First(&object, "id = ?", id).Error
+	err = db.First(&object, "id = ? AND (deleted_at = '' OR deleted_at IS NULL)", id).Error
 	return object, err
 }
 
@@ -30,7 +30,7 @@ func CountStorageObjectsForProvider(providerID string) (int64, error) {
 		return 0, err
 	}
 	var count int64
-	err = db.Model(&model.StorageObject{}).Where("provider_id = ?", providerID).Count(&count).Error
+	err = db.Model(&model.StorageObject{}).Where("provider_id = ? AND (delete_completed_at = '' OR delete_completed_at IS NULL)", providerID).Count(&count).Error
 	return count, err
 }
 
@@ -40,7 +40,7 @@ func StorageBytesForProvider(providerID string) (int64, error) {
 		return 0, err
 	}
 	var bytes int64
-	err = db.Model(&model.StorageObject{}).Where("provider_id = ?", providerID).Select("COALESCE(SUM(bytes), 0)").Scan(&bytes).Error
+	err = db.Model(&model.StorageObject{}).Where("provider_id = ? AND (delete_completed_at = '' OR delete_completed_at IS NULL)", providerID).Select("COALESCE(SUM(bytes), 0)").Scan(&bytes).Error
 	return bytes, err
 }
 

@@ -31,11 +31,20 @@ func SaveFailedTranslatedVideoTask(task model.VideoTask, refundLog model.CreditL
 	})
 }
 
-func SaveVideoTask(task model.VideoTask) (model.VideoTask, error) {
+func SaveVideoTask(task model.VideoTask, storageIDs ...string) (model.VideoTask, error) {
 	db, err := DB()
 	if err != nil {
 		return task, err
 	}
+	err = withUserStorageLock(db, task.UserID, storageIDs, func(tx *gorm.DB) error {
+		var writeErr error
+		task, writeErr = saveVideoTask(tx, task)
+		return writeErr
+	})
+	return task, err
+}
+
+func saveVideoTask(db *gorm.DB, task model.VideoTask) (model.VideoTask, error) {
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&task).Error; err != nil {
 		return task, err
 	}
@@ -46,14 +55,16 @@ func SaveVideoTask(task model.VideoTask) (model.VideoTask, error) {
 	return task, update.Error
 }
 
-func UpdateVideoTask(task model.VideoTask) error {
+func UpdateVideoTask(task model.VideoTask, storageIDs ...string) error {
 	db, err := DB()
 	if err != nil {
 		return err
 	}
-	return db.Model(&model.VideoTask{}).
-		Where("id = ? AND status <> ?", task.ID, "cancelled").
-		Select("*").Updates(&task).Error
+	return withUserStorageLock(db, task.UserID, storageIDs, func(tx *gorm.DB) error {
+		return tx.Model(&model.VideoTask{}).
+			Where("id = ? AND status <> ?", task.ID, "cancelled").
+			Select("*").Updates(&task).Error
+	})
 }
 
 func GetVideoTask(id string) (model.VideoTask, bool, error) {

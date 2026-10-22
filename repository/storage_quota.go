@@ -30,7 +30,7 @@ func userStorageUsage(tx *gorm.DB, user model.User, baseBytes int64) (model.Stor
 	if usage.ExtraBytes <= maximum-usage.BaseBytes {
 		usage.LimitBytes = usage.BaseBytes + usage.ExtraBytes
 	}
-	if err := tx.Model(&model.StorageObject{}).Where("created_by = ?", user.ID).
+	if err := tx.Model(&model.StorageObject{}).Where("created_by = ? AND (delete_completed_at = '' OR delete_completed_at IS NULL)", user.ID).
 		Select("COALESCE(SUM(CASE WHEN bytes > 0 THEN bytes ELSE 0 END), 0)").Scan(&usage.UsedBytes).Error; err != nil {
 		return model.StorageUsage{}, err
 	}

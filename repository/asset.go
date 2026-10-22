@@ -62,17 +62,20 @@ func ListAssetFilters(q model.Query) ([]string, []string, error) {
 }
 
 // SaveAsset 保存素材，并在更新时保留原创建时间。
-func SaveAsset(item model.Asset) (model.Asset, error) {
+func SaveAsset(item model.Asset, storageIDs ...string) (model.Asset, error) {
 	db, err := DB()
 	if err != nil {
 		return item, err
 	}
-	if saved, ok, err := findAsset(db, item.ID); err != nil {
-		return item, err
-	} else if ok && item.CreatedAt == "" {
-		item.CreatedAt = saved.CreatedAt
-	}
-	return item, db.Save(&item).Error
+	err = withStorageReferences(db, storageIDs, func(tx *gorm.DB) error {
+		if saved, ok, err := findAsset(tx, item.ID); err != nil {
+			return err
+		} else if ok && item.CreatedAt == "" {
+			item.CreatedAt = saved.CreatedAt
+		}
+		return tx.Save(&item).Error
+	})
+	return item, err
 }
 
 // DeleteAsset 删除指定素材。

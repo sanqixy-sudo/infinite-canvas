@@ -338,9 +338,13 @@ func ConsumeUserCredits(userID string, modelName string, credits float64, path s
 	if len(task) > 0 {
 		workflowTask = task[0]
 	}
+	ids, err := currentTaskStorageReferenceIDs(workflowTask)
+	if err != nil {
+		return err
+	}
 	if credits <= 0 {
 		if workflowTask != nil {
-			return repository.InsertWorkflowTask(workflowTask)
+			return storageReferenceError(repository.InsertWorkflowTask(workflowTask, ids...))
 		}
 		return nil
 	}
@@ -354,9 +358,9 @@ func ConsumeUserCredits(userID string, modelName string, credits float64, path s
 		Remark:    "调用模型 " + modelName,
 		Extra:     string(extra),
 		CreatedAt: timestamp,
-	}, workflowTask)
+	}, workflowTask, ids...)
 	if err != nil {
-		return err
+		return storageReferenceError(err)
 	}
 	if !ok {
 		return safeMessageError{message: "算力点不足"}

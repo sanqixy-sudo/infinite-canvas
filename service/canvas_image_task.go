@@ -57,15 +57,19 @@ func CreateCanvasImageTask(input CanvasImageTaskCreateInput) (model.CanvasImageT
 	}
 	saved := task
 	var err error
+	ids, err := taskStorageReferenceIDs(task)
+	if err != nil {
+		return task, err
+	}
 	if input.WorkflowRef != "" {
 		err = ConsumeUserCredits(task.UserID, input.BillingName, task.Credits, input.BillingPath, &task)
 	} else {
-		saved, err = repository.SaveCanvasImageTask(task)
+		saved, err = repository.SaveCanvasImageTask(task, ids...)
 	}
 	if err == nil {
 		WakeVideoTaskPoller()
 	}
-	return saved, err
+	return saved, storageReferenceError(err)
 }
 
 func GetUserCanvasImageTask(userID string, id string) (model.CanvasImageTask, bool, error) {
@@ -102,7 +106,12 @@ func DeleteUserCanvasImageTask(userID string, id string) error {
 
 func SaveCanvasImageTask(task model.CanvasImageTask) (model.CanvasImageTask, error) {
 	task.UpdatedAt = now()
-	return repository.UpdateCanvasImageTask(task)
+	ids, err := taskStorageReferenceIDs(task)
+	if err != nil {
+		return task, err
+	}
+	saved, err := repository.UpdateCanvasImageTask(task, ids...)
+	return saved, storageReferenceError(err)
 }
 
 func CanvasImageTaskResponse(task model.CanvasImageTask) map[string]any {

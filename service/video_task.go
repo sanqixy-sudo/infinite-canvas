@@ -115,16 +115,20 @@ func CreateVideoTask(input VideoTaskCreateInput) (model.VideoTask, error) {
 	}
 	var saved model.VideoTask
 	var err error
+	ids, err := taskStorageReferenceIDs(task)
+	if err != nil {
+		return task, err
+	}
 	if input.WorkflowRef != "" {
 		saved = task
 		err = ConsumeUserCredits(saved.UserID, input.BillingName, saved.Credits, input.BillingPath, &saved)
 	} else {
-		saved, err = repository.SaveVideoTask(task)
+		saved, err = repository.SaveVideoTask(task, ids...)
 	}
 	if err == nil && input.WorkflowRef == "" && !IsCompletedVideoTaskStatus(saved.Status) && !IsFailedVideoTaskStatus(saved.Status) {
 		WakeVideoTaskPoller()
 	}
-	return saved, err
+	return saved, storageReferenceError(err)
 }
 
 func GetUserVideoTask(userID string, id string) (model.VideoTask, bool, error) {
@@ -397,11 +401,15 @@ func UpdateVideoTaskFromPoll(task model.VideoTask, update VideoTaskPollUpdate) e
 		extra, _ := json.Marshal(map[string]string{"model": task.Model, "path": "/videos"})
 		return repository.SaveFailedTranslatedVideoTask(task, model.CreditLog{ID: newID("credit"), UserID: task.UserID, Type: model.CreditLogTypeAIRefund, Amount: task.Credits, Remark: "模型调用失败返还 " + task.Model, Extra: string(extra), CreatedAt: current})
 	}
-	if task.Source == "canvas" || task.Source == "video-workbench" {
-		return repository.UpdateVideoTask(task)
+	ids, err := taskStorageReferenceIDs(task)
+	if err != nil {
+		return err
 	}
-	_, err := repository.SaveVideoTask(task)
-	return err
+	if task.Source == "canvas" || task.Source == "video-workbench" {
+		return storageReferenceError(repository.UpdateVideoTask(task, ids...))
+	}
+	_, err = repository.SaveVideoTask(task, ids...)
+	return storageReferenceError(err)
 }
 
 func NormalizeVideoTaskStatus(status string) string {

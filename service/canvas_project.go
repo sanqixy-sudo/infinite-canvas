@@ -86,9 +86,13 @@ func SaveCurrentUserCanvasProject(
 	if err != nil {
 		return nil, err
 	}
-	saved, err := repository.SaveUserCanvasProject(project)
+	storageIDs, err := storageReferenceIDs(string(raw))
 	if err != nil {
 		return nil, err
+	}
+	saved, err := repository.SaveUserCanvasProject(project, storageIDs...)
+	if err != nil {
+		return nil, storageReferenceError(err)
 	}
 	if saved.DeletedAt != "" {
 		return nil, errors.New("画布项目已删除")
@@ -105,20 +109,12 @@ func SyncCurrentUserCanvasProjects(
 		return nil, errors.New("请先登录")
 	}
 
-	projects := make([]model.CanvasProject, 0, len(rawProjects))
 	for _, raw := range rawProjects {
-		project, err := canvasProjectFromRaw(user.ID, raw)
-		if err != nil {
+		if _, err := SaveCurrentUserCanvasProject(ctx, raw); err != nil {
 			return nil, err
 		}
-		projects = append(projects, project)
 	}
-
-	saved, err := repository.SaveUserCanvasProjects(user.ID, projects)
-	if err != nil {
-		return nil, err
-	}
-	return canvasProjectData(saved), nil
+	return CurrentUserCanvasProjects(ctx)
 }
 
 func DeleteCurrentUserCanvasProjects(
