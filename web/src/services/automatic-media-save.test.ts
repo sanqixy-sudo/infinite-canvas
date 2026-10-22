@@ -40,7 +40,7 @@ test("account success requires both the uploaded file and its library entry", as
     session(token, true, async (asset) => {
         entries++;
         assert.equal(asset.kind, "image");
-        assert.equal(asset.kind === "text" ? "" : asset.data.storageKey, cloud.storageKey);
+        assert.equal(asset.data.storageKey, cloud.storageKey);
         return "cloud-file";
     });
     const options = { source: "image:success", kind: "image" as const, title: "图片", token, saveLocal: async () => { throw new Error("不应写本机"); }, uploadCloud: async () => { uploads++; return cloud; }, unarchived: async () => null };

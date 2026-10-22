@@ -55,7 +55,7 @@ export function saveAssetToAccountLibrary(asset: AssetInput, token = useUserStor
                     uploaded = await uploadRemoteMediaToServer(url, next.title || next.kind, token);
                 }
                 assertSession();
-                next = { ...next, coverUrl: "", data: { ...next.data, url: uploaded.url, storageKey: uploaded.storageKey, bytes: uploaded.bytes, mimeType: uploaded.mimeType } };
+                next = { ...next, coverUrl: "", data: { ...next.data, url: uploaded.url, storageKey: uploaded.storageKey, bytes: uploaded.bytes, mimeType: uploaded.mimeType } } as AssetInput;
             }
             assertSession();
             rememberFile(key, uploaded);
