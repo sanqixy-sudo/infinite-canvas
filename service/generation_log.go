@@ -255,8 +255,7 @@ func migrateUserImageGenerationLogs(userID string) error {
 		Logs []json.RawMessage `json:"logs"`
 	}
 	if err := json.Unmarshal([]byte(config.ImageHistory), &legacy); err != nil || len(legacy.Logs) == 0 {
-		config.ImageHistory = ""
-		_, saveErr := repository.SaveUserConfig(config)
+		_, saveErr := repository.PatchUserConfig(userID, now(), func(current *model.UserConfig) error { if current.ImageHistory == config.ImageHistory { current.ImageHistory = "" }; return nil })
 		return saveErr
 	}
 	logs := make([]model.ImageGenerationLog, 0, len(legacy.Logs))
@@ -269,8 +268,7 @@ func migrateUserImageGenerationLogs(userID string) error {
 	if err := repository.UpsertImageGenerationLogs(userID, logs); err != nil {
 		return err
 	}
-	config.ImageHistory = ""
-	_, err = repository.SaveUserConfig(config)
+	_, err = repository.PatchUserConfig(userID, now(), func(current *model.UserConfig) error { if current.ImageHistory == config.ImageHistory { current.ImageHistory = "" }; return nil })
 	return err
 }
 

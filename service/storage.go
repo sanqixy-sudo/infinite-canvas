@@ -157,36 +157,16 @@ func SaveCurrentUserStorageProvider(ctx context.Context, incoming UserStoragePro
 	if !ok || user.ID == "" {
 		return UserConfigPayload{}, errors.New("请先登录")
 	}
-	config, _, err := repository.GetUserConfig(user.ID)
+	_, err := repository.PatchUserConfig(user.ID, now(), func(config *model.UserConfig) error {
+		providers := readUserStorageProviders(config.StorageProvider)
+		if incoming.S3 != nil { provider := *incoming.S3; provider.Type = model.StorageProviderTypeS3; providers.S3 = &provider }
+		if incoming.WebDAV != nil { provider := *incoming.WebDAV; provider.Type = model.StorageProviderTypeWebDAV; providers.WebDAV = &provider }
+		if err := validateUserStorageProviderTypes(providers); err != nil { return err }
+		raw, err := json.Marshal(providers)
+		if err == nil { config.StorageProvider = string(raw) }
+		return err
+	})
 	if err != nil {
-		return UserConfigPayload{}, err
-	}
-	providers := readUserStorageProviders(config.StorageProvider)
-	if incoming.S3 != nil {
-		provider := *incoming.S3
-		provider.Type = model.StorageProviderTypeS3
-		providers.S3 = &provider
-	}
-	if incoming.WebDAV != nil {
-		provider := *incoming.WebDAV
-		provider.Type = model.StorageProviderTypeWebDAV
-		providers.WebDAV = &provider
-	}
-	if err := validateUserStorageProviderTypes(providers); err != nil {
-		return UserConfigPayload{}, err
-	}
-	raw, err := json.Marshal(providers)
-	if err != nil {
-		return UserConfigPayload{}, err
-	}
-	current := now()
-	if config.UserID == "" {
-		config.UserID = user.ID
-		config.CreatedAt = current
-	}
-	config.StorageProvider = string(raw)
-	config.UpdatedAt = current
-	if _, err := repository.SaveUserConfig(config); err != nil {
 		return UserConfigPayload{}, err
 	}
 	return CurrentUserConfig(ctx)

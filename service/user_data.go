@@ -126,16 +126,7 @@ func SaveCurrentUserModelConfig(ctx context.Context, raw json.RawMessage) (UserC
 	if !ok || user.ID == "" {
 		return UserConfigPayload{}, errors.New("请先登录")
 	}
-	config, _, err := repository.GetUserConfig(user.ID)
-	if err != nil {
-		return UserConfigPayload{}, err
-	}
-	current := now()
-	if config.UserID == "" {
-		config.UserID = user.ID
-		config.CreatedAt = current
-	}
-	var incoming, saved map[string]json.RawMessage
+	var incoming map[string]json.RawMessage
 	if json.Unmarshal(raw, &incoming) != nil || incoming == nil {
 		return UserConfigPayload{}, errors.New("模型配置格式错误")
 	}
@@ -145,20 +136,22 @@ func SaveCurrentUserModelConfig(ctx context.Context, raw json.RawMessage) (UserC
 			return UserConfigPayload{}, ErrPersonalModelChannelDisabled
 		}
 	}
-	_ = json.Unmarshal([]byte(config.ModelConfig), &saved)
 	for _, key := range privateModelConfigKeys {
 		if _, supplied := incoming[key]; supplied {
 			return UserConfigPayload{}, ErrPersonalModelChannelDisabled
 		}
-		if value, exists := saved[key]; exists {
-			incoming[key] = value
-		}
 	}
-	incoming["channelMode"] = json.RawMessage(`"remote"`)
-	raw, _ = json.Marshal(incoming)
-	config.ModelConfig = string(raw)
-	config.UpdatedAt = current
-	if _, err := repository.SaveUserConfig(config); err != nil {
+	_, err := repository.PatchUserConfig(user.ID, now(), func(config *model.UserConfig) error {
+		saved, err := userModelPreferenceMap(config.ModelConfig)
+		if err != nil { return err }
+		for _, key := range privateModelConfigKeys { if value, exists := saved[key]; exists { incoming[key] = value } }
+		incoming["channelMode"] = json.RawMessage(`"remote"`)
+		incoming["autoSaveAssetsToCloud"], _ = json.Marshal(storagePreferencesFromMap(saved).AutoSaveAssetsToCloud)
+		value, err := json.Marshal(incoming)
+		if err == nil { config.ModelConfig = string(value) }
+		return err
+	})
+	if err != nil {
 		return UserConfigPayload{}, err
 	}
 	return CurrentUserConfig(ctx)
@@ -197,13 +190,7 @@ func CurrentUserAssetData(ctx context.Context) (json.RawMessage, error) {
 }
 
 func SaveCurrentUserAssetData(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	config, err := saveCurrentUserConfigField(ctx, func(config *model.UserConfig) {
-		config.AssetData = string(raw)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(config.AssetData), nil
+	return nil, safeMessageError{message: "素材列表批量覆盖已停用，请使用单条素材接口"}
 }
 
 func currentUserConfig(ctx context.Context) (model.UserConfig, error) {
@@ -226,16 +213,5 @@ func saveCurrentUserConfigField(ctx context.Context, patch func(config *model.Us
 	if !ok || user.ID == "" {
 		return model.UserConfig{}, errors.New("请先登录")
 	}
-	config, _, err := repository.GetUserConfig(user.ID)
-	if err != nil {
-		return model.UserConfig{}, err
-	}
-	current := now()
-	if config.UserID == "" {
-		config.UserID = user.ID
-		config.CreatedAt = current
-	}
-	patch(&config)
-	config.UpdatedAt = current
-	return repository.SaveUserConfig(config)
+	return repository.PatchUserConfig(user.ID, now(), func(config *model.UserConfig) error { patch(config); return nil })
 }
