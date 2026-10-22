@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { ArrowRight, ArrowUpRight, FolderOpen, ImageIcon, Layers3, MousePointer2, Play, Plus, Sparkles, Tag } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
@@ -17,6 +18,14 @@ export default function HomePage() {
     const theme = useThemeStore((state) => state.theme);
     const setTheme = useThemeStore((state) => state.setTheme);
     const startHref = ready && user ? "/workspace" : loginHrefForPath("/workspace");
+
+    useEffect(() => {
+        const target = document.getElementById(window.location.hash.slice(1));
+        if (!target) return;
+        // Restore the fragment inside this page's scroll container after hydration.
+        const frame = requestAnimationFrame(() => target.scrollIntoView({ behavior: "instant", block: "start" }));
+        return () => cancelAnimationFrame(frame);
+    }, []);
 
     return <div className={`${styles.page} h-full overflow-y-auto scroll-smooth bg-background text-foreground motion-reduce:scroll-auto`}>
         <div id="home-top" aria-hidden="true" />

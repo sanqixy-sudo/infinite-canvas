@@ -13,11 +13,12 @@ import { AssetFormModal } from "@/components/assets/asset-form-modal";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
 import { AssetFolderTree, ASSET_DRAG_TYPE, type FolderAction } from "./components/asset-folder-tree";
 import { AssetDetailsPanel } from "./components/asset-details-panel";
+import { bulkTagValues, createBulkTagDraft, updateBulkTagDraft, type BulkTagDraft } from "./bulk-tag-draft";
 
 const kinds = [{ value: "image", label: "图片" }, { value: "video", label: "视频" }, { value: "audio", label: "音频" }, { value: "text", label: "文本" }];
 const quietButton = "inline-flex min-h-9 items-center justify-center gap-2 rounded-lg px-3 text-xs font-medium transition hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-40";
 type FolderDraft = { action: Exclude<FolderAction, "delete">; id?: string; name: string; parentId: string };
-type OrganizationDraft = { mode: "folders" | "tags"; ids: string[]; folders: string[]; addTags: string[]; removeTags: string[] };
+type OrganizationDraft = { mode: "folders" | "tags"; ids: string[]; folders: string[]; tags: BulkTagDraft };
 type DeleteDraft = { kind: "folder" | "asset"; id: string; name: string };
 
 export default function AssetsPage() {
@@ -136,7 +137,25 @@ export default function AssetsPage() {
     const openOrganization = (mode: "folders" | "tags", ids: string[]) => {
         if (disabled || !viewMatches()) return;
         if (!ids.length || ids.length > 200) { message.info("每次请选择 1 至 200 个素材"); return; }
-        setFolderDraft(null); setDraftError(""); setOrganization({ mode, ids, folders: [], addTags: [], removeTags: [] });
+        const targets = assets.filter((asset) => ids.includes(asset.id));
+        if (targets.length !== ids.length) { message.error("素材列表已变化，请重新选择"); return; }
+        setFolderDraft(null); setDraftError(""); setOrganization({ mode, ids, folders: [], tags: createBulkTagDraft(targets) });
+    };
+    const changeOrganizationTags = (values: string[]) => {
+        if (!organization || organization.mode !== "tags" || disabled) return;
+        try { setOrganization({ ...organization, tags: updateBulkTagDraft(organization.tags, values) }); setDraftError(""); }
+        catch (error) { setDraftError(report(error)); }
+    };
+    const saveOrganization = () => {
+        if (!organization || disabled) return;
+        if (organization.mode === "folders") {
+            if (!organization.folders.length) { setDraftError("请选择至少一个目标文件夹"); return; }
+            void organize(organization.ids, { addFolderIds: organization.folders }, true);
+        } else {
+            const { addTags, removeTags } = organization.tags;
+            if (!addTags.length && !removeTags.length) { setOrganization(null); return; }
+            void organize(organization.ids, { addTags, removeTags }, true);
+        }
     };
     const moveFolder = async (id: string, parentId: string) => {
         if (!start()) return;
@@ -298,8 +317,41 @@ export default function AssetsPage() {
         <Modal title={folderDraft?.action === "create" ? "新建文件夹" : folderDraft?.action === "move" ? "移动文件夹" : "重命名文件夹"} open={Boolean(folderDraft)} onCancel={() => { if (!busy) setFolderDraft(null); }} onOk={() => void saveFolder()} okText="保存" cancelText="取消" confirmLoading={busy} cancelButtonProps={{ disabled: busy }} closable={!busy} maskClosable={!busy} keyboard={!busy} destroyOnHidden>
             <div className="space-y-5 py-3">{folderDraft?.action !== "move" ? <div><label htmlFor="asset-folder-name" className="mb-2 block text-xs font-medium">文件夹名称</label><Input id="asset-folder-name" autoFocus value={folderDraft?.name || ""} maxLength={80} disabled={busy} onChange={(event) => setFolderDraft((draft) => draft ? { ...draft, name: event.target.value } : draft)} onPressEnter={() => void saveFolder()} placeholder="例如：品牌参考、产品素材" /></div> : <p className="break-words text-sm">移动「{folderDraft.name}」</p>}{folderDraft?.action !== "rename" ? <div><label htmlFor="asset-folder-parent" className="mb-2 block text-xs font-medium">上级文件夹</label><TreeSelect id="asset-folder-parent" aria-label="上级文件夹" treeData={parentOptions} value={folderDraft?.parentId || ""} disabled={busy} onChange={(parentId) => setFolderDraft((draft) => draft ? { ...draft, parentId } : draft)} className="w-full" showSearch treeNodeFilterProp="title" treeDefaultExpandAll /></div> : null}<p className="text-xs leading-6 text-muted-foreground">文件夹只管理素材归属，不搬移或复制实际文件。同级不能重名，最多支持 8 层。</p>{draftError ? <p role="alert" className="text-xs text-destructive">{draftError}</p> : null}</div>
         </Modal>
-        <Modal title={organization?.mode === "folders" ? "加入文件夹" : "批量整理标签"} open={Boolean(organization)} onCancel={() => { if (!busy) setOrganization(null); }} onOk={() => { if (!organization) return; if (organization.mode === "folders" && !organization.folders.length) { setDraftError("请选择至少一个目标文件夹"); return; } void organize(organization.ids, organization.mode === "folders" ? { addFolderIds: organization.folders } : { addTags: organization.addTags, removeTags: organization.removeTags }, true); }} okText="保存整理" cancelText="取消" confirmLoading={busy} cancelButtonProps={{ disabled: busy }} closable={!busy} maskClosable={!busy} keyboard={!busy} destroyOnHidden>
-            <div className="space-y-5 py-3"><p className="text-xs text-muted-foreground">整理 {organization?.ids.length || 0} 个素材 · {scope === "cloud" ? "账号素材库" : "当前浏览器"}</p>{organization?.mode === "folders" ? <><TreeSelect aria-label="加入的文件夹" multiple treeData={treeOptions} value={organization.folders} disabled={busy} onChange={(value) => setOrganization((draft) => draft ? { ...draft, folders: value } : draft)} placeholder={folders.length ? "选择一个或多个文件夹" : "请先在目录树中新建文件夹"} className="w-full" maxTagCount="responsive" showSearch treeNodeFilterProp="title" /><p className="text-xs leading-6 text-muted-foreground">保留原有归属，将所选素材加入这些文件夹；不会复制文件或增加空间占用。</p></> : <><div><label htmlFor="asset-add-tags" className="mb-2 block text-xs font-medium">添加标签</label><Select id="asset-add-tags" mode="tags" aria-label="批量添加标签" options={tagOptions} value={organization?.addTags || []} disabled={busy} onChange={(value) => setOrganization((draft) => draft ? { ...draft, addTags: value } : draft)} tokenSeparators={[",", "，"]} className="w-full" placeholder="输入后按回车" /></div><div><label htmlFor="asset-remove-tags" className="mb-2 block text-xs font-medium">移除标签</label><Select id="asset-remove-tags" mode="multiple" aria-label="批量移除标签" options={tagOptions} value={organization?.removeTags || []} disabled={busy} onChange={(value) => setOrganization((draft) => draft ? { ...draft, removeTags: value } : draft)} className="w-full" placeholder="只移除指定标签，保留其他标签" /></div><p className="text-xs leading-6 text-muted-foreground">每份素材最多 50 个标签。同一标签不能同时添加和移除。</p></>}{draftError ? <p role="alert" className="text-xs text-destructive">{draftError}</p> : null}</div>
+        <Modal title={organization?.mode === "folders" ? "加入文件夹" : organization?.ids.length === 1 ? "整理标签" : "批量整理标签"} open={Boolean(organization)} onCancel={() => { if (!busy) setOrganization(null); }} onOk={saveOrganization} okText="保存整理" cancelText="取消" confirmLoading={busy} cancelButtonProps={{ disabled: busy }} closable={!busy} maskClosable={!busy} keyboard={!busy} destroyOnHidden>
+            <div className="space-y-5 py-3">
+                <p className="text-xs text-muted-foreground">整理 {organization?.ids.length || 0} 个素材 · {scope === "cloud" ? "账号素材库" : "当前浏览器"}</p>
+                {organization?.mode === "folders" ? <><TreeSelect aria-label="加入的文件夹" multiple treeData={treeOptions} value={organization.folders} disabled={busy} onChange={(value) => setOrganization((draft) => draft ? { ...draft, folders: value } : draft)} placeholder={folders.length ? "选择一个或多个文件夹" : "请先在目录树中新建文件夹"} className="w-full" maxTagCount="responsive" showSearch treeNodeFilterProp="title" /><p className="text-xs leading-6 text-muted-foreground">保留原有归属，将所选素材加入这些文件夹；不会复制文件或增加空间占用。</p></> : organization ? <>
+                    <div>
+                        <label htmlFor="asset-organize-tags" className="mb-2 block text-xs font-medium">标签</label>
+                        <Select<string[]>
+                            id="asset-organize-tags"
+                            mode="tags"
+                            aria-label="素材标签"
+                            aria-describedby="asset-organize-tags-help"
+                            options={tagOptions}
+                            value={bulkTagValues(organization.tags)}
+                            disabled={busy}
+                            onChange={changeOrganizationTags}
+                            showSearch={{ optionFilterProp: "label" }}
+                            tokenSeparators={[",", "，"]}
+                            className="w-full [&_.ant-select-content]:max-h-52 [&_.ant-select-content]:overflow-y-auto"
+                            placeholder="选择已有标签，或输入后按回车创建"
+                            tagRender={({ value, closable, onClose }) => {
+                                const tag = String(value);
+                                const count = organization.tags.counts.get(tag) || 0;
+                                const partial = count > 0 && count < organization.tags.assetCount && !organization.tags.addTags.includes(tag);
+                                return <span onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} className="my-0.5 mr-1 inline-flex max-w-full items-center gap-1.5 rounded border border-border bg-muted px-2 py-1 text-xs leading-5">
+                                    <span className="max-w-52 truncate" title={tag}>{tag}</span>
+                                    {partial ? <span className="shrink-0 text-[10px] text-muted-foreground" title="只在部分所选素材中存在，未操作时保持原样">部分 {count}/{organization.tags.assetCount}</span> : null}
+                                    {closable ? <button type="button" disabled={busy} aria-label={`移除标签${tag}`} onClick={(event) => { event.stopPropagation(); onClose(event); }} className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"><X className="size-3" aria-hidden="true" /></button> : null}
+                                </span>;
+                            }}
+                        />
+                    </div>
+                    <p id="asset-organize-tags-help" className="text-xs leading-6 text-muted-foreground">输入后按回车添加，点击 × 移除。{organization.tags.assetCount > 1 ? "“部分”标签保持原有归属；新增应用到全部所选素材，移除后重新添加也会应用到全部。" : ""}每份素材最多 50 个标签，每个标签最多 80 字。</p>
+                </> : null}
+                {draftError ? <p role="alert" className="text-xs text-destructive">{draftError}</p> : null}
+            </div>
         </Modal>
         <Modal title={deleting?.kind === "folder" ? "移除文件夹？" : "移除素材记录？"} open={Boolean(deleting)} okText="确认移除" cancelText="取消" okButtonProps={{ danger: true }} confirmLoading={busy} cancelButtonProps={{ disabled: busy }} closable={!busy} maskClosable={!busy} keyboard={!busy} onCancel={() => { if (!busy) setDeleting(null); }} onOk={() => void deleteRecord()}>
             <p className="my-4 break-words text-sm">{deleting?.name}</p><p className="text-xs leading-6 text-muted-foreground">{deleting?.kind === "folder" ? `将移除此文件夹及 ${Math.max(0, folderDescendantIds(folders, deleting.id).length - 1)} 个子文件夹，仅解除相应归属。素材和实际文件全部保留，其他文件夹归属不受影响。` : "只移除当前素材库中的这条记录，实际文件及已有画布引用保留。此操作不会立即释放账号存储空间。"}</p>{draftError ? <p role="alert" className="mt-3 text-xs text-destructive">{draftError}</p> : null}

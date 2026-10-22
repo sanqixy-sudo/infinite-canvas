@@ -1,10 +1,10 @@
 "use client";
 
-import { ChevronDown, Upload } from "lucide-react";
+import { ChevronDown, Music2, Upload } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { App, AutoComplete, Button, Form, Input, Modal, Select, Space, Tag, TreeSelect, Typography } from "antd";
+import { App, AutoComplete, Button, Form, Input, Modal, Select, Tag, TreeSelect, Typography } from "antd";
 
-import { formatBytes, readFileAsDataUrl } from "@/lib/image-utils";
+import { formatBytes } from "@/lib/image-utils";
 import { uploadMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import { saveAssetToAccountLibrary } from "@/services/account-asset-save";
@@ -16,7 +16,6 @@ import { folderTreeOptions, normalizeAssetFolderIds, normalizeAssetTags, type As
 type AssetFormValues = {
     kind: AssetKind;
     title: string;
-    coverUrl: string;
     tags: string[];
     folderIds: string[];
     category?: string;
@@ -38,9 +37,7 @@ type AssetFormModalProps = {
 export function AssetFormModal({ open, asset = null, scope: requestedScope, defaultFolderIds, onClose }: AssetFormModalProps) {
     const { message } = App.useApp();
     const [form] = Form.useForm<AssetFormValues>();
-    const coverInputRef = useRef<HTMLInputElement>(null);
-    const imageInputRef = useRef<HTMLInputElement>(null);
-    const mediaInputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const sessionRef = useRef({ version: 0, token: "", userId: "" });
     const busyRef = useRef(false);
     const assets = useAssetStore((state) => state.assets);
@@ -62,7 +59,6 @@ export function AssetFormModal({ open, asset = null, scope: requestedScope, defa
     const [mediaDraft, setMediaDraft] = useState<MediaDraft>(null);
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
-    const coverUrl = Form.useWatch("coverUrl", form) || "";
     const title = Form.useWatch("title", form) || "";
     const tags = Form.useWatch("tags", form) || [];
     const content = Form.useWatch("content", form) || "";
@@ -80,13 +76,12 @@ export function AssetFormModal({ open, asset = null, scope: requestedScope, defa
         form.setFieldsValue(asset ? {
             kind: asset.kind,
             title: asset.title,
-            coverUrl: asset.coverUrl,
             tags: asset.tags || [],
             folderIds: asset.folderIds || [],
             category: asset.category,
             source: asset.source,
             content: asset.kind === "text" ? asset.data.content : asset.kind === "image" ? asset.data.dataUrl : asset.data.url,
-        } : { kind: "text", title: "", coverUrl: "", tags: [], folderIds: initialFolderIds, category: "", source: "手动添加", content: "" });
+        } : { kind: "text", title: "", tags: [], folderIds: initialFolderIds, category: "", source: "手动添加", content: "" });
         return () => { sessionRef.current.version++; };
     }, [asset, form, open]);
 
@@ -115,9 +110,12 @@ export function AssetFormModal({ open, asset = null, scope: requestedScope, defa
         if (scope === "cloud" && !session.token) throw new Error("请先登录后再保存到账号素材库");
         const values = await form.validateFields();
         assertSession(session);
+        const url = (values.content || "").trim();
+        const originalContent = !asset ? "" : asset.kind === "text" ? asset.data.content : asset.kind === "image" ? asset.data.dataUrl : asset.data.url;
+        const unchangedFile = asset?.kind === values.kind && originalContent === url;
         const base = {
             title: values.title.trim(),
-            coverUrl: values.coverUrl?.trim() || (values.kind === "image" && imageDraft ? imageDraft.dataUrl : ""),
+            coverUrl: asset && asset.kind === values.kind && (values.kind === "text" || unchangedFile) ? asset.coverUrl : "",
             tags: normalizeAssetTags(values.tags || []),
             folderIds: normalizeAssetFolderIds(values.folderIds || [], folders),
             category: values.category?.trim(),
@@ -125,12 +123,11 @@ export function AssetFormModal({ open, asset = null, scope: requestedScope, defa
             metadata: asset?.metadata || { source: "manual" },
         };
 
-        const url = (values.content || "").trim();
         let nextAsset: AssetInput;
         if (values.kind === "text") {
             nextAsset = { ...base, kind: "text", data: { content: url } };
         } else if (values.kind === "image") {
-            if (!url) throw new Error("请选择图片文件或填写图片 URL");
+            if (!url) throw new Error("请选择图片素材文件");
             let data = imageDraft?.dataUrl === url && imageDraft.storageKey ? imageDraft : null;
             if (!data) {
                 const image = await uploadImage(url, { localOnly: true, token: session.token });
@@ -142,7 +139,7 @@ export function AssetFormModal({ open, asset = null, scope: requestedScope, defa
             }
             nextAsset = { ...base, coverUrl: base.coverUrl || data.dataUrl, kind: "image", data };
         } else {
-            if (!url) throw new Error(values.kind === "video" ? "请选择视频文件或填写视频 URL" : "请选择音频文件或填写音频 URL");
+            if (!url) throw new Error(values.kind === "video" ? "请选择视频素材文件" : "请选择音频素材文件");
             let data = mediaDraft?.url === url && mediaDraft.storageKey ? mediaDraft : null;
             if (!data) {
                 const media = await uploadMediaFile(url, values.kind === "audio" ? "asset-audio" : "asset-video", undefined, session.token, true);
@@ -191,16 +188,6 @@ export function AssetFormModal({ open, asset = null, scope: requestedScope, defa
         finally { if (session.version === sessionRef.current.version) { busyRef.current = false; setUploading(false); } }
     };
 
-    const readCoverFile = async (file?: File) => {
-        if (!file) return;
-        const session = { ...sessionRef.current };
-        await readFile(async () => {
-            const dataUrl = await readFileAsDataUrl(file);
-            assertSession(session);
-            form.setFieldValue("coverUrl", dataUrl);
-        });
-    };
-
     const readImageFile = async (file?: File) => {
         if (!file || !file.type.startsWith("image/")) return;
         const session = { ...sessionRef.current };
@@ -211,7 +198,6 @@ export function AssetFormModal({ open, asset = null, scope: requestedScope, defa
         const draft = { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType };
         setImageDraft(draft);
         form.setFieldValue("content", draft.dataUrl);
-        if (!form.getFieldValue("coverUrl")) form.setFieldValue("coverUrl", draft.dataUrl);
         if (!form.getFieldValue("title")) form.setFieldValue("title", file.name);
         });
     };
@@ -257,14 +243,6 @@ export function AssetFormModal({ open, asset = null, scope: requestedScope, defa
                         <Form.Item name="title" label="标题" rules={[{ required: true, message: "请输入标题" }]}>
                             <Input size="large" placeholder="给素材起一个容易检索的名字" />
                         </Form.Item>
-                        <Form.Item label="封面 URL">
-                            <Space.Compact className="w-full">
-                                <Form.Item name="coverUrl" noStyle><Input placeholder="可粘贴图片 URL，也可以上传本地封面" /></Form.Item>
-                                <Button icon={<Upload className="size-3.5" />} onClick={() => coverInputRef.current?.click()}>
-                                    上传
-                                </Button>
-                            </Space.Compact>
-                        </Form.Item>
                         <Form.Item name="tags" label="标签">
                             <Select mode="tags" maxCount={50} tokenSeparators={[",", "，"]} options={Array.from(new Set(assets.flatMap((item) => item.tags || []))).sort().map((value) => ({ value }))} placeholder="输入标签后回车" />
                         </Form.Item>
@@ -284,14 +262,13 @@ export function AssetFormModal({ open, asset = null, scope: requestedScope, defa
                                 <Input.TextArea rows={8} placeholder="保存提示词、说明文案、参考描述等文本素材" />
                             </Form.Item>
                         ) : (
-                            <Form.Item label={formKind === "image" ? "图片内容" : formKind === "video" ? "视频内容" : "音频内容"} required>
-                                <div className="rounded-lg border border-dashed border-stone-300 p-4 dark:border-stone-700">
-                                    <Space.Compact className="w-full">
-                                        <Form.Item name="content" noStyle><Input placeholder={formKind === "image" ? "填写图片 URL，或选择本地图片文件" : formKind === "video" ? "填写视频 URL，或选择本地视频文件" : "填写音频 URL，或选择本地音频文件"} /></Form.Item>
-                                        <Button icon={<Upload className="size-4" />} onClick={() => (formKind === "image" ? imageInputRef.current?.click() : mediaInputRef.current?.click())}>
-                                            上传
-                                        </Button>
-                                    </Space.Compact>
+                            <Form.Item label="素材文件" required>
+                                <Form.Item name="content" noStyle><Input type="hidden" /></Form.Item>
+                                <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4">
+                                    <Button icon={<Upload className="size-4" />} loading={uploading} onClick={() => fileInputRef.current?.click()}>
+                                        {content ? "更换素材文件" : "选择素材文件"}
+                                    </Button>
+                                    <p className="mb-0 mt-3 text-xs leading-5 text-muted-foreground">{formKind === "image" ? "选择图片后自动显示预览" : formKind === "video" ? "选择视频后自动显示画面，可直接播放预览" : "选择音频后可直接播放预览"}，无需另传封面。</p>
                                     <div className="mt-2">
                                         {formKind === "image" && imageDraft ? (
                                             <Typography.Text type="secondary" className="text-xs">
@@ -311,17 +288,17 @@ export function AssetFormModal({ open, asset = null, scope: requestedScope, defa
                             </Form.Item>
                         )}
                     </Form>
-                    <div className="rounded-xl border border-stone-200 bg-stone-50 p-4 dark:border-stone-800 dark:bg-stone-950">
+                    <div className="rounded-xl border border-border bg-muted/20 p-4">
                         <Typography.Text strong>预览</Typography.Text>
-                        <div className="mt-3 overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
-                            {coverUrl || imageDraft?.dataUrl ? (
-                                <img src={coverUrl || imageDraft?.dataUrl} alt="" className="aspect-[4/3] w-full object-cover" />
-                            ) : formKind === "video" && (mediaDraft?.url || content) ? (
-                                <video src={mediaDraft?.url || content} className="aspect-[4/3] w-full bg-black object-contain" controls />
-                            ) : formKind === "audio" && (mediaDraft?.url || content) ? (
-                                <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 dark:bg-stone-900"><audio src={mediaDraft?.url || content} controls className="w-full" /></div>
+                        <div className="mt-3 overflow-hidden rounded-lg border border-border bg-background">
+                            {formKind === "image" && content ? (
+                                <img src={content} alt={title || "素材图片预览"} className="aspect-[4/3] w-full object-contain" />
+                            ) : formKind === "video" && content ? (
+                                <video key={content} src={content.includes("#") ? content : `${content}#t=0.1`} className="aspect-[4/3] w-full bg-muted object-contain" controls playsInline preload="metadata" />
+                            ) : formKind === "audio" && content ? (
+                                <div className="flex aspect-[4/3] flex-col items-center justify-center gap-5 bg-muted/40 p-5"><Music2 className="size-10 text-muted-foreground" aria-hidden="true" /><audio key={content} src={content} controls preload="metadata" className="w-full" /></div>
                             ) : (
-                                <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm text-stone-500 dark:bg-stone-900">{content || "暂无封面"}</div>
+                                <div className="flex aspect-[4/3] items-center justify-center overflow-y-auto whitespace-pre-wrap break-words bg-muted/40 p-5 text-center text-sm text-muted-foreground">{formKind === "text" ? content || "输入文本后自动显示预览" : "选择素材文件后自动显示预览"}</div>
                             )}
                             <div className="p-4">
                                 <Typography.Text strong ellipsis className="block">
@@ -343,32 +320,12 @@ export function AssetFormModal({ open, asset = null, scope: requestedScope, defa
                     </div>
                 </div>
                 <input
-                    ref={coverInputRef}
+                    ref={fileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept={formKind === "image" ? "image/*" : formKind === "audio" ? "audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" : "video/*"}
                     className="hidden"
                     onChange={(event) => {
-                        void readCoverFile(event.target.files?.[0]);
-                        event.target.value = "";
-                    }}
-                />
-                <input
-                    ref={imageInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(event) => {
-                        void readImageFile(event.target.files?.[0]);
-                        event.target.value = "";
-                    }}
-                />
-                <input
-                    ref={mediaInputRef}
-                    type="file"
-                    accept={formKind === "audio" ? "audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" : "video/*"}
-                    className="hidden"
-                    onChange={(event) => {
-                        void readMediaFile(event.target.files?.[0]);
+                        void (formKind === "image" ? readImageFile(event.target.files?.[0]) : readMediaFile(event.target.files?.[0]));
                         event.target.value = "";
                     }}
                 />
