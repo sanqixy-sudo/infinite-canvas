@@ -111,14 +111,37 @@ func TestUserStorageQuotaAcrossUploadAndDirectRegistration(t *testing.T) {
 	}
 	actualSize := int64(7)
 	deleteRequests := 0
+	deleteChallenges := 0
+	deletedFiles := 0
+	filePresent := true
 	savedClient := safeProxyHTTPClient
 	safeProxyHTTPClient = &http.Client{Transport: storageQuotaTransport(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Scheme != "https" || request.URL.Host != "dav.invalid" {
+			t.Fatalf("unexpected WebDAV endpoint: %s", request.URL.Host)
+		}
 		if request.Method == http.MethodDelete {
-			if strings.TrimSuffix(request.URL.Path, "/") == "/canvas/quota-user/upload.bin" {
-				deleteRequests++
-			} else if strings.TrimSuffix(request.URL.Path, "/") != "/canvas/quota-user" {
+			if strings.TrimSuffix(request.URL.Path, "/") != "/canvas/quota-user/upload.bin" {
 				t.Fatalf("unexpected WebDAV deletion path: %s", request.URL.Path)
 			}
+			deleteRequests++
+		}
+		// AutoAuth probes first, then repeats the request with the selected auth.
+		username, password, authenticated := request.BasicAuth()
+		if !authenticated {
+			if request.Method == http.MethodDelete {
+				deleteChallenges++
+			}
+			return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{"Www-Authenticate": {`Basic realm="quota-test"`}}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
+		}
+		if username != "quota-user" || password != "test-only" {
+			t.Fatal("unexpected WebDAV credentials")
+		}
+		if request.Method == http.MethodDelete {
+			if !filePresent {
+				return &http.Response{StatusCode: http.StatusNotFound, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
+			}
+			filePresent = false
+			deletedFiles++
 			return &http.Response{StatusCode: http.StatusNoContent, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
 		}
 		if request.Method != "PROPFIND" {
@@ -146,15 +169,23 @@ func TestUserStorageQuotaAcrossUploadAndDirectRegistration(t *testing.T) {
 		t.Fatal("record-only deletion bypassed physical verification")
 	}
 	usage, err = CurrentUserStorageUsage(ctx)
-	if err != nil || usage.UsedBytes != 7 || usage.RemainingBytes != 3 || deleteRequests != 0 {
+	if err != nil || usage.UsedBytes != 7 || usage.RemainingBytes != 3 || deleteRequests != 0 || deletedFiles != 0 || !filePresent {
 		t.Fatalf("record-only rejection changed files or quota: %+v %d %v", usage, deleteRequests, err)
 	}
-	if result, err := DeleteCurrentUserStorageFile(ctx, direct.ID, true, &input.Provider); err != nil || result.FreedBytes != 3 || deleteRequests != 1 {
-		t.Fatalf("verified direct deletion failed: %+v %d %v", result, deleteRequests, err)
+	if result, err := DeleteCurrentUserStorageFile(ctx, direct.ID, true, &input.Provider); err != nil || result.FreedBytes != 3 || deletedFiles != 1 || filePresent || deleteChallenges != 1 || deleteRequests != deleteChallenges+1 {
+		t.Fatalf("verified direct deletion failed: %+v requests=%d challenges=%d deleted=%d present=%t %v", result, deleteRequests, deleteChallenges, deletedFiles, filePresent, err)
 	}
 	usage, err = CurrentUserStorageUsage(ctx)
 	if err != nil || usage.UsedBytes != 4 || usage.RemainingBytes != 6 {
 		t.Fatalf("physical direct deletion did not release usage: %+v %v", usage, err)
+	}
+	requestsAfterDelete := deleteRequests
+	if result, err := DeleteCurrentUserStorageFile(ctx, direct.ID, true, &input.Provider); err != nil || result.FreedBytes != 0 || deleteRequests != requestsAfterDelete || deletedFiles != 1 {
+		t.Fatalf("repeated deletion touched remote file or released quota twice: %+v requests=%d deleted=%d %v", result, deleteRequests, deletedFiles, err)
+	}
+	usage, err = CurrentUserStorageUsage(ctx)
+	if err != nil || usage.UsedBytes != 4 || usage.RemainingBytes != 6 {
+		t.Fatalf("repeated deletion changed quota: %+v %v", usage, err)
 	}
 	if _, err := CurrentUserStorageUsage(context.Background()); err == nil {
 		t.Fatal("anonymous user read an account quota")
