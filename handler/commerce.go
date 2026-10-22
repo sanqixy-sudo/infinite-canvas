@@ -10,6 +10,7 @@ import (
 )
 
 func CurrentUserWallet(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
 	result, err := service.CurrentUserWallet(r.Context())
 	if err != nil {
 		FailError(w, err)
@@ -19,6 +20,7 @@ func CurrentUserWallet(w http.ResponseWriter, r *http.Request) {
 }
 
 func UserPurchaseOrders(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
 	result, err := service.ListCurrentUserPurchaseOrders(r.Context(), purchaseOrderQuery(r))
 	if err != nil {
 		FailError(w, err)
@@ -53,6 +55,7 @@ func CancelUserPurchaseOrder(w http.ResponseWriter, r *http.Request, id string) 
 }
 
 func AdminCommerceSettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
 	result, err := service.AdminCommerceSettings(r.Context())
 	if err != nil {
 		FailError(w, err)
@@ -75,6 +78,7 @@ func AdminSaveCommerceSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func AdminPurchaseOrders(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
 	result, err := service.ListPurchaseOrders(r.Context(), purchaseOrderQuery(r))
 	if err != nil {
 		FailError(w, err)
