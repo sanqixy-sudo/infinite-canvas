@@ -62,7 +62,6 @@ function LoginContent() {
         if (navigationStarted.current) return;
         navigationStarted.current = true;
         router.replace(redirect);
-        router.refresh();
     }, [redirect, router]);
 
     useEffect(() => {

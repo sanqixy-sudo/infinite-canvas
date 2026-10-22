@@ -3,6 +3,8 @@
     background-size: 18px 18px;
 }
 
+.frame { box-shadow: 0 24px 70px -35px color-mix(in srgb, var(--foreground) 12%, transparent); }
+
 .intro, .preview, .node {
     animation: enter .65s both;
 }
