@@ -19,3 +19,8 @@
 @media (prefers-reduced-motion: reduce) {
     .intro, .preview, .node { animation: none; }
 }
+.page {
+    height: 100dvh;
+    --muted-foreground: color-mix(in srgb, var(--foreground) 70%, var(--background));
+}
+

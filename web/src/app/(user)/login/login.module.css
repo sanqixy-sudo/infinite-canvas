@@ -1,0 +1,127 @@
+.page {
+    height: 100dvh;
+    width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: var(--background);
+    color: var(--foreground);
+    --muted-foreground: color-mix(in srgb, var(--foreground) 70%, var(--background));
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: min(1280px, 100%);
+    margin-inline: auto;
+    padding: 20px 40px;
+}
+
+.content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
+    min-height: calc(100dvh - 84px);
+    align-items: center;
+    gap: clamp(64px, 8vw, 128px);
+    width: min(1120px, 100%);
+    margin-inline: auto;
+    padding: 32px 40px 48px;
+}
+
+.introduction {
+    min-width: 0;
+    padding-top: 4px;
+}
+
+.mobileIntro {
+    display: none;
+}
+
+.sketch {
+    width: min(100%, 330px);
+    margin-block: 24px;
+}
+
+.features {
+    display: grid;
+    gap: 14px;
+    padding-top: 22px;
+    border-top: 1px solid var(--border);
+}
+
+.feature {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.featureText {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 12px;
+    row-gap: 2px;
+}
+
+.formSection {
+    min-width: 0;
+    width: 100%;
+    max-width: 380px;
+}
+
+.form :global(.ant-form-item) {
+    margin-bottom: 20px;
+}
+
+@media (max-width: 1023px) {
+    .header {
+        padding: 16px 24px;
+    }
+
+    .content {
+        grid-template-columns: minmax(0, 1fr);
+        min-height: 0;
+        align-items: start;
+        gap: 24px;
+        width: min(428px, 100%);
+        padding: 8px 24px 32px;
+    }
+
+    .introduction {
+        padding-top: 0;
+    }
+
+    .desktopIntro {
+        display: none;
+    }
+
+    .mobileIntro {
+        display: block;
+        margin: 0;
+        font-size: 13px;
+        line-height: 22px;
+        color: var(--muted-foreground);
+    }
+
+    .formSection {
+        max-width: none;
+    }
+}
+
+@media (max-width: 399px) {
+    .header {
+        gap: 8px;
+        padding-inline: 16px;
+    }
+
+    .returnLabel {
+        display: none;
+    }
+
+    .content {
+        padding-inline: 20px;
+    }
+}

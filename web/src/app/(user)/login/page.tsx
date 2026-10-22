@@ -13,6 +13,8 @@ import { useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 
+import styles from "./login.module.css";
+
 type LoginFormValues = { username: string; password: string; confirmPassword?: string };
 
 export default function LoginPage() {
@@ -121,56 +123,57 @@ function LoginContent() {
     };
 
     return (
-        <main className="relative grid h-full min-h-dvh w-full overflow-x-hidden overflow-y-auto bg-background text-foreground lg:grid-cols-[42%_58%]">
-            <header className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-3 px-6 py-5 sm:px-10 lg:px-12 lg:py-8">
+        <main className={styles.page}>
+            <header className={styles.header}>
                 <Link href="/" aria-label="小盟视频工作台首页" className="inline-flex min-w-0 items-center gap-2.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background">
-                    <BrandMark className="size-8 shrink-0 lg:size-9" />
-                    <span className="truncate text-[14px] font-semibold tracking-[-0.02em] sm:text-base">小盟视频工作台</span>
+                    <BrandMark className="size-7 shrink-0 sm:size-8" />
+                    <span className="truncate text-[14px] font-semibold sm:text-base">小盟视频工作台</span>
                 </Link>
                 <nav aria-label="登录页导航" className="flex shrink-0 items-center gap-1 sm:gap-3">
-                    <Link href="/" className="inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring sm:text-[13px]">
-                        <ArrowLeft className="size-3.5" aria-hidden="true" />返回首页
+                    <Link href="/" aria-label="返回首页" className="inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded-md px-2 text-[13px] text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+                        <ArrowLeft className="size-4" aria-hidden="true" /><span className={styles.returnLabel}>返回首页</span>
                     </Link>
-                    <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} className="inline-flex size-11 items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-[18px]" />
+                    <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} className="inline-flex size-10 items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-[18px]" />
                 </nav>
             </header>
 
-            <aside className="flex min-w-0 flex-col border-b border-border/70 bg-muted/20 px-6 pb-7 pt-28 sm:px-10 lg:min-h-dvh lg:border-b-0 lg:border-r lg:px-12 lg:pb-10 lg:pt-40 xl:px-16">
-                <div className="lg:my-auto">
-                    <p className="mb-5 hidden items-center gap-3 text-[11px] tracking-[0.2em] text-muted-foreground lg:flex"><span className="h-px w-7 bg-current opacity-50" />为创作，留出无限可能</p>
-                    <h1 className="max-w-[12em] text-[30px] font-medium leading-[1.3] tracking-[-0.045em] sm:text-4xl lg:text-[clamp(2.3rem,3.05vw,3.7rem)] lg:leading-[1.22]">
-                        让灵感，<br /><span className="text-foreground/80">在画布上成为作品</span>
+            <div className={styles.content}>
+                <aside className={styles.introduction} aria-label="创作工作台介绍">
+                    <p className={styles.mobileIntro}>一个创作空间，连接项目、画布与素材。</p>
+                    <div className={styles.desktopIntro}>
+                    <p className="mb-4 flex items-center gap-3 text-[13px] text-muted-foreground"><span className="h-px w-6 bg-current opacity-50" />为创作，留出无限可能</p>
+                    <h1 className="text-[clamp(2rem,2.8vw,2.75rem)] font-medium leading-[1.3] tracking-[-0.01em]">
+                        让灵感，<br />在画布上成为作品
                     </h1>
-                    <p className="mt-4 max-w-[26em] text-[13px] leading-6 text-muted-foreground lg:text-sm lg:leading-7">从一个念头到一组画面，让项目、模型与素材，在同一张画布里连接。</p>
-                    <div className="my-8 hidden max-w-[440px] lg:block"><ProductSketch /></div>
-                    <ul className="hidden space-y-4 border-t border-border/70 pt-6 lg:block">
+                    <p className="mt-4 max-w-[28em] text-sm leading-6 text-muted-foreground">连接项目、模型与素材，<br />从一个念头，走向完整的创作。</p>
+                    <div className={styles.sketch}><ProductSketch /></div>
+                    <ul className={styles.features}>
                         {[
-                            { Icon: Layers3, title: "一个项目，多张画布", text: "围绕同一作品，展开不同的创作分支。" },
-                            { Icon: Cloud, title: "平台云端模型", text: "在画布中选择平台开放的创作能力。" },
-                            { Icon: FolderOpen, title: "有序沉淀每一份素材", text: "用多级目录和标签，整理你的创作积累。" },
+                            { Icon: Layers3, title: "项目与画布", text: "展开不同的创作分支" },
+                            { Icon: Cloud, title: "云端创作", text: "选用平台开放的模型" },
+                            { Icon: FolderOpen, title: "有序积累", text: "用目录与标签管理素材" },
                         ].map(({ Icon, title, text }) => (
-                            <li key={title} className="flex items-start gap-3.5"><Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" /><div><p className="text-[13px] font-medium">{title}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{text}</p></div></li>
+                            <li key={title} className={styles.feature}><Icon className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" /><div className={styles.featureText}><span className="font-medium">{title}</span><span className="text-muted-foreground">{text}</span></div></li>
                         ))}
                     </ul>
-                </div>
-                <p className="mt-10 hidden text-[10px] tracking-[0.18em] text-muted-foreground/70 lg:block">灵感 · 连接 · 创作</p>
-            </aside>
+                    </div>
+                </aside>
 
-            <section aria-labelledby="login-heading" className="flex min-w-0 items-center justify-center px-6 pb-10 pt-8 sm:px-10 sm:py-12 lg:px-16 lg:py-32">
-                <div className="w-full max-w-[380px]">
-                    <div className="mb-7 sm:mb-9">
-                        <p className="mb-2 text-[11px] tracking-[0.16em] text-muted-foreground">{mode === "register" ? "开始新的创作" : "继续你的创作"}</p>
-                        <h2 id="login-heading" className="text-[28px] font-medium tracking-[-0.035em] sm:text-[32px]">{mode === "register" ? "创建账号" : "欢迎回来"}</h2>
+                <section aria-labelledby="login-heading" className={styles.formSection}>
+                    <div className="mb-6">
+                        <p className="mb-2 hidden text-[13px] text-muted-foreground lg:block">{mode === "register" ? "开始新的创作" : "继续你的创作"}</p>
+                        <h2 id="login-heading" className="text-[28px] font-medium tracking-[-0.01em] sm:text-[32px]">{mode === "register" ? "创建账号" : "欢迎回来"}</h2>
                         <p className="mt-2 text-[13px] leading-6 text-muted-foreground">{mode === "register" ? "为接下来的每一个灵感，准备好创作空间。" : "登录小盟视频工作台，回到你的项目与画布。"}</p>
                     </div>
 
-                    {allowRegister ? <Segmented aria-label="登录或注册" block className="mb-7" value={mode} disabled={busy} onChange={changeMode} options={[{ label: "登录", value: "login" }, { label: "注册", value: "register" }]} /> : null}
+                    {allowRegister ? <Segmented aria-label="登录或注册" block className="mb-6" value={mode} disabled={busy} onChange={changeMode} options={[{ label: "登录", value: "login" }, { label: "注册", value: "register" }]} /> : null}
                     {errorText ? <div role="alert" className="mb-5 break-words rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-[13px] leading-6 text-destructive">{errorText}</div> : null}
                     {callbackStatus === "pending" || isLoading && !submitting ? <div role="status" className="mb-5 flex items-center gap-2 text-[13px] text-muted-foreground"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{callbackStatus === "pending" ? "正在完成授权登录…" : "正在验证登录状态…"}</div> : null}
 
                     <Form<LoginFormValues>
                         form={form}
                         name="xiaomeng-account"
+                        className={styles.form}
                         layout="vertical"
                         size="large"
                         requiredMark={false}
@@ -194,15 +197,15 @@ function LoginContent() {
                             {mode === "register" ? "注册并进入工作台" : "进入工作台"}<ArrowRight className="ml-1 size-4" aria-hidden="true" />
                         </Button>
                         {linuxDoEnabled ? (
-                            <div className="mt-6">
-                                <div className="mb-5 flex items-center gap-4 text-[11px] text-muted-foreground"><span className="h-px flex-1 bg-border" />或使用其他方式<span className="h-px flex-1 bg-border" /></div>
+                            <div className="mt-5">
+                                <div className="mb-4 flex items-center gap-4 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" />或使用其他方式<span className="h-px flex-1 bg-border" /></div>
                                 <Button block disabled={busy} href={`/api/auth/linux-do/authorize?redirect=${encodeURIComponent(redirect)}`} className="!h-12 !text-[13px]" icon={<img src="/icons/linuxdo.svg" alt="" width={18} height={18} />}>使用 LinuxDo 登录</Button>
                             </div>
                         ) : null}
                     </Form>
-                    <p className="mt-7 border-t border-border/70 pt-5 text-xs leading-6 text-muted-foreground">{allowRegister ? "项目与素材按账号管理，让每次创作都能继续。" : "当前未开放注册，请使用已有账号登录。"}</p>
-                </div>
-            </section>
+                    <p className="mt-6 border-t border-border/70 pt-4 text-xs leading-6 text-muted-foreground">{allowRegister ? "项目与素材按账号管理，让每次创作都能继续。" : "当前未开放注册，请使用已有账号登录。"}</p>
+                </section>
+            </div>
         </main>
     );
 }
