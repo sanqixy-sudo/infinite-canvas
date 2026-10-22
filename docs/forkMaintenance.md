@@ -94,13 +94,50 @@ GitHub Fork 关联必须保留。GitHub 写入前核对账号为 `sanqixy-sudo`�
 
 升级与回滚均须保留旧全局原档、各账号分桶、浏览器真实文件及服务器数据库/媒体/配置。回退旧客户端可能重新混用全局缓存或重新开放访客业务，应先评估；不能清空浏览器数据消除冲突。原创 `BrandMark`、产品 Logo 和浏览器图标纳入主题与导航回归，不恢复官方宣传入口，不删除许可证或作者信息。
 
-本轮提交 SHA 待补，自动回归、独立类型检查、Go 检查、Docker、隔离接口/浏览器及部署尚未执行；待主代理提供实际结果后逐项记录。优先验收安全回跳、OAuth、401/403/断网与切号竞态、媒体只读/写入权限、旧项目多画布恢复/重复恢复、桌面手机深浅主题与键盘焦点。真实供应商和 R2 联调仍待资源。
+功能提交 `1141512`、Go 官方 gofmt `ff99112` 的 Go 全量、独立 TypeScript 与合计 38 项 Bun 回归通过，不是新增 38 项；随后仅移除登录多余刷新及调整首页阴影的 `fca04ad` 完整 Docker 构建退出 0，类型检查与构建分别记录。隔离 HTTP 已通过公开页/图标、匿名 401、普通用户后台 403、媒体 Cookie 剩余期与路径、Cookie 只读/写入拒绝、无效 Bearer 不回退、`/me`/FileInfo 无 Cookie 副作用、本人及签名媒体、裸私有文件拦截和退出双路径清理。浏览器已通过登录/退出/错误提示及 A→B 空工作台、旧项目明确选择后新 ID 副本恢复。
+
+`fca04ad` 删除导航后的多余 `router.refresh()` 后，真实深链精确为 `/assets?scope=local#folder`、锚点不重复。显式恢复副本刷新后仍为 1 项并保留剩余 1 项旧档提示，不重复恢复；A/B 切号后账号和当前浏览器素材各自隔离。最终首页已查看深浅主题，首页/登录 390×844 无横向溢出；访客“开始使用”进入 `/login?redirect=%2Fworkspace`，手机按钮完整、注册确认密码可见，未实际新建账号。截图及范围见待测试，不能扩大为所有注册/OAuth/键盘交互验收。
+
+登录门禁版本已部署 `fca04ad`，部署与数据保留依据见下节；后续排版复核记录见下面单节。继续验收真实注册、注册开关/LinuxDo/OAuth、断网与长期切号、真实旧原档、多画布和文件恢复。真实供应商和 R2 联调仍待资源，详细检查点与 38 项组成见 `pending-test.md`。
+
+最终 `fca04ad` 镜像另已实测跨标签页退出：一个标签退出后，其他画布标签立即卸载画布并跳转到携带原 canvas 返回路径的登录页。该权限响应需纳入后续回归，不能只等下一次模型或保存请求失败；隔离交互和实际部署的检查范围分别记录。
+
+### 首页与登录排版后续复核
+
+`697ca4b741058e53c2dd6541711cb38b80a2d050` 仅修改首页、登录页及两份页面私有样式，处理首屏密度、标题/说明对比、三卡 grid、固定同页导航与登录自然滚动；最终 `016f30f81e8a0aae62ef86b1866bb0b0485f7f381` 仅再补 5 行登录标签高度 CSS。697 完整 Docker 与独立 TypeScript 顺序重跑均退出 0，首次并行类型进程因内存主动终止不计通过；016 完整 Docker 退出 0。Go/38 项回归仍属于 114/ff 功能检查点，本轮没有后端逻辑变化，不将历史测试写成重新执行。
+
+016 真实浏览器已覆盖 1920×911、1366×768、1024×768、768×1024、390×844、320×640：首页/登录无横向溢出、三卡不重叠、桌面与手机按钮可见；320 注册显示 3 条校验后可原生滚动到提交按钮，未实际注册。深浅主题、手机/桌面流程同页锚点与固定导航无遮挡、品牌回顶部及登录返回通过，截图与具体位置见待测试。保留页面 `100dvh`+纵向滚动、正常流布局和章节滚动留白，避免上游样式回归造成长表单裁切。016 已部署，备份与原数据核对见下节；用户体验和 OAuth/R2/真实生成继续待验收。
+
+### 首页四段演示维护
+
+`61997d9` 新增页面私有 `creation-showcase.tsx`、4 个 MP4/4 张 JPG 并替换首页文字卡，`ad9c43d` 去掉窗口焦点限制，最终 `2d9910e075cf36fa2d3d438b984e27493f47dedc` 集中播放 effect，取消旧播放 Promise 对当前片段提示的写入。最终 2d 独立类型、完整 Docker 均退出 0，源码记录 `/opt/xiaomeng-landing-image-source.sha` 与完整 SHA 一致；已完成普通播放、资源和部署检查，不能用 016 排版结果代替，Go/38项仍属原功能检查点。
+
+原用户 ZIP/WebP 保留，Pillow/ffmpeg 转码后媒体与海报合计 6,943,929 B，较 173,266,848 B 原动画约减 96%。维护时保留单个 video、入视口才设置 src、preload none、离屏/隐藏暂停与减少动态效果偏好，不改成四段全预载。最终浏览器已确认首屏无 src、4 段实际播放 ready4/720×406/无 error、手动暂停不被选段打破、观察到自动轮换、回顶离屏暂停/返回可继续、手机前后闭环与 End 移焦，五档宽度与单 video、深浅主题通过；不写固定秒数恰好切第二段的断言。4 海报 HEAD 为 200/image/jpeg，4 MP4 Range0-1023 为 206/video/mp4、1024 B 且总长正确。
+
+减少动态效果及隐藏标签暂停尚未切真实偏好/标签验证，播放受限和网络失败重试未做故障注入，快速切段竞态仍需专项检查，不能把实现或普通无错误播放当成全覆盖。功能演示不能承诺未开放能力。静态资源不属于账号素材、配额或供应商调用，本轮不改数据库/计费/模型边界，真实生成和 R2 继续待资源，用户认可前不升级正式功能说明。
 
 ### 当前测试部署与回滚依据
 
-本节的 `86b07b0` 仍是已验证和已部署的素材目录版本。当前公开首页、登录门禁、Logo 与旧画布恢复改动尚未执行本轮验证、构建或部署，不能用下方历史结果替代。
+- 当前源码 `2d9910e075cf36fa2d3d438b984e27493f47dedc`，镜像 `xiaomeng-video-workbench:2d9910e`；只更新 app，仍为 `127.0.0.1:3001 → 3000`，挂载 `/opt/xiaomeng-video-workbench-deploy/data:/app/data`，OpenResty 未改。独立类型、完整构建和浏览器媒体结果按各检查点保留，不冒称后端 Go/38 项回归在最终媒体提交重跑。
+- 私有备份 `/opt/xiaomeng-video-workbench-deploy/backups/pre-showcase-2d9910e/` 含 SQLite 在线副本（完整性 `ok`）、Compose/`.env` 私有副本、媒体归档和原行摘要，目录700、文件600。停旧应用后与新启动后，8 表结构及全行 SHA256 均与备份相同、完整性 `ok`：`users/canvas_projects/settings` 各1，其他 `credit_logs/storage_objects/user_configs/purchase_orders/storage_upload_reservations` 共5表均0；原数据保留，未执行数据回滚。
+- 实际站点 `/`、`/login`、`/workspace`、`/api/health` 均200，4 JPG HEAD 均200/image/jpeg，4 MP4 Range0-1023 均206/video/mp4/1024 B且总长正确；匿名 GET `/api/assets` 与 POST `/api/v1/images/generations` 均401。页面响应200不等于匿名业务授权。隔离 preview 的 docker stop 已正常返回、当前已停止，隔离数据保留；fca/016阶段曾在停止后重启用于后续验收，此处为最终停止确认。
 
-- 当前测试站点源码 `86b07b00b7e586f71998441cd723f919fcf5a56d`，镜像 `xiaomeng-video-workbench:86b07b0`，完整 Docker 构建退出 0。功能检查点 `1115c6f4bac0ca6c76d850fc3ef904df99c0148c` 的独立 TypeScript 和 32 项 Bun 回归通过，Go `go test ./...` 全量通过；隔离 HTTP 和浏览器结果见上节及待测试清单。
+#### 上一轮首页与登录排版阶段
+
+- 016 阶段源码 `016f30f81e8a0aae62ef86b1866bb0b0485f7f381`，镜像 `xiaomeng-video-workbench:016f30f`。仅更新 app，继续 `127.0.0.1:3001`，原 data 挂载及 OpenResty 保持；私有备份 `/opt/xiaomeng-video-workbench-deploy/backups/pre-layout-016f30f/` 包含 SQLite、媒体、Compose/`.env` 和行摘要。停应用后与新启动后 8 表结构及全部行 SHA256 均一致、完整性 `ok`，用户/画布/设置各 1、其余 5 表 0。
+- 016 站点 `/`、`/login`、`/workspace`、`/api/health`、`/logo.svg`、`/icon.svg`、`/favicon.ico` 均 200；匿名 GET 素材、POST 真实目录路径和图片生成均 401。此为阶段历史，媒体版最终检查与部署见上。
+
+#### 上一轮公开首页与登录门禁版本
+
+- 上一轮源码 `fca04adc3709c4bdede7d7ea47b11313bdeb8ceb6`，镜像 `xiaomeng-video-workbench:fca04ad`。功能 `1141512`、Go 格式 `ff99112`、页面小改 `fca04ad` 的自动、独立类型、完整构建、隔离权限和真实浏览器结果按上述检查点保存，不冒称所有检查都在最终样式提交重新执行。
+- 仅更新 app，继续 `127.0.0.1:3001 → 3000` 和 `/opt/xiaomeng-video-workbench-deploy/data:/app/data`，OpenResty 未改。升级前备份 `/opt/xiaomeng-video-workbench-deploy/backups/pre-landing-fca04ad/` 包含完整性 `ok` 的 SQLite 在线副本、Compose/`.env` 私有副本、`media-files.tar.gz` 和 `original-records.json`，目录 700、文件 600；不公开环境配置内容。
+- 停旧 app 后、新 app 启动后及匿名 HTTP 检查后，8 表结构和全部行 SHA256 与备份完全一致：`users=1/canvas_projects=1/settings=1`，`credit_logs/storage_objects/user_configs/purchase_orders/storage_upload_reservations` 均 0。实际站点未新增验收账户或素材，未执行数据回滚。
+- 首页、`/login`、`/legal`、`/workspace`、`/canvas`、`/assets`、`/account`、`/account/storage`、`/admin`、`/api/health`、`/logo.svg`、`/icon.svg`、`/favicon.ico` 均 200；页面 HTTP 200 不等于匿名业务授权。匿名 GET `/api/assets`、`/api/prompts`、`/api/proxy-image?...`，POST `/api/anonymous/files`、`/api/v1/user-data/asset-folders`、`/api/v1/user-data/assets/organize`、`/api/v1/images/generations` 均 401。
+- 代码回退前核对旧版本是否会重新开放访客业务和混用全局画布缓存；数据库、媒体及各浏览器原档一并保留，不能通过删除旧数据适配旧代码。隔离数据保留，预览最终已停止，fca/016阶段曾重启供后续验收，当前状态以上节为准。
+
+#### 上一轮素材目录版本与历史回滚记录
+
+- 上一轮素材目录部署源码 `86b07b00b7e586f71998441cd723f919fcf5a56d`，镜像 `xiaomeng-video-workbench:86b07b0`，完整 Docker 构建退出 0。功能检查点 `1115c6f4bac0ca6c76d850fc3ef904df99c0148c` 的独立 TypeScript 和 32 项 Bun 回归通过，Go `go test ./...` 全量通过；隔离 HTTP 和浏览器结果见上节及待测试清单。
 - 部署目录 `/opt/xiaomeng-video-workbench-deploy`，仅更新应用容器，继续 `127.0.0.1:3001 → 3000`，原 `data` 挂载不变，OpenResty 未改动；隔离预览容器已停止，隔离数据保留。
 - 升级前备份 `/opt/xiaomeng-video-workbench-deploy/backups/pre-folders-86b07b0/` 包含 SQLite 在线备份、Compose 和 `.env` 私有副本、`media-files.tar.gz`，目录权限 700、文件 600。环境配置仅保留在受限备份，不在文档或日志公开内容。
 - 停应用后及新容器启动后，8 张表结构和全部行 SHA256 均与备份完全一致，完整性 `ok`：`users=1`、`canvas_projects=1`、`settings=1`，`credit_logs/storage_objects/user_configs/purchase_orders/storage_upload_reservations` 均为 0。实际测试站未因隔离验收新增用户、目录或素材。

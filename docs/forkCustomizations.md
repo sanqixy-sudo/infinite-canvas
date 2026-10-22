@@ -27,22 +27,29 @@
 | 用户钱包、个人配额与人工套餐 | 部分验证 | `model/commerce.go`、`storage_quota.go`、对应 repository/service/handler、账户与后台套餐页面 | `11c994ca544dadfd58a804de6267cd0e138c32a4` | 订单幂等与审计、跨 Provider 容量、并发事务、数据保留 |
 | 个人存储设置与账号素材库 | 部分验证 | 个人存储页、偏好与素材 store、画布菜单、`account_assets.go`、用户配置补丁事务 | `5022098a1079da1d45a3bfa95cb0d81e6569e5f1` | 浏览器真实文件、账号隔离、单条并发去重、失败重试与引用保留 |
 | 素材多级目录与标签组织 | 部分验证 | `account_asset_folders.go`、素材组织 API/store/工具、素材表单、画布选择器与素材包 | `48f5752110282a6e5806e336506f5ee27a4e0cd7` | Go、独立类型/32 回归、构建、隔离接口/浏览器及测试站升级通过；真实场景待验收 |
-| 公开首页、登录门禁与账号画布保护 | 待验证 | 用户首页/布局/登录/工作台、鉴权 store/导航/请求、媒体会话、中间件、BrandMark 与画布 store | 待补 | 公开白名单、安全回跳、401/403、切号竞态、旧档副本恢复与媒体权限；本轮尚未检查或部署 |
+| 公开首页、登录门禁与账号画布保护 | 部分验证 | 用户首页/布局/登录/工作台、鉴权 store/导航/请求、媒体会话、中间件、BrandMark、演示播放器与画布 store | `1141512` | 分检查点自动/类型/构建、权限和界面播放检查通过；当前 `2d9910e` 已部署、原数据一致；用户体验及真实业务仍待验收 |
 
 ### 功能名称：公开首页、登录门禁与账号画布保护
 
-- 状态与目的：实现已落盘、待验证；公开 `/` 用于介绍产品，原工作台移至登录后的 `/workspace`，业务操作统一先确认真实会话。以独立黑白灰视觉重做公开页和登录页，并使用原创几何 SVG 品牌标识。
-- 对应文件：`web/src/app/(user)/page.tsx`、`landing.module.css`、`layout.tsx`、`login/page.tsx`、`workspace/page.tsx`、`canvas/stores/use-canvas-store.ts`、`web/src/stores/use-user-store.ts`、`web/src/lib/auth-navigation.ts`、`auth-session.ts`、`web/src/services/api/request.ts`、`web/src/components/layout/client-root-init.tsx`、`web/src/components/brand/brand-mark.tsx`、品牌展示与图标文件、`router/router.go`、鉴权/存储中间件及 `handler/storage.go`。
+- 状态与目的：已完成自动、构建及部分隔离/浏览器验证并部署测试站，继续接受用户排版与真实场景验收；公开 `/` 用于介绍产品，原工作台移至登录后的 `/workspace`，业务操作统一先确认真实会话。以独立黑白灰视觉重做公开页和登录页，并使用原创几何 SVG 品牌标识。
+- 对应文件：`web/src/app/(user)/page.tsx`、`landing.module.css`、`layout.tsx`、`login/page.tsx`、`login/login.module.css`、`workspace/page.tsx`、`canvas/stores/use-canvas-store.ts`、`web/src/stores/use-user-store.ts`、`web/src/lib/auth-navigation.ts`、`auth-session.ts`、`web/src/services/api/request.ts`、`web/src/components/layout/client-root-init.tsx`、`web/src/components/brand/brand-mark.tsx`、品牌展示与图标文件、`router/router.go`、鉴权/存储中间件及 `handler/storage.go`。
 - 原版与二开差异：用户布局仅 `/`、`/login`、`/legal` 公开，其余用户业务页校验登录后展示；私人工作台不嵌入公开页。登录页保留真实注册开关与 LinuxDo 条件入口，无虚构找回密码等功能；手机保留完整操作。原有项目多画布、素材目录和浏览器保存能力不取消。
 - 关键依赖：共享 `safeLoginRedirect` 与 `loginHrefForPath`、用户 store 的 `loginWithToken/authError/sessionVersion`、现有 Bearer 鉴权及 localforage；回跳默认 `/workspace`，只允许安全站内路径，不由普通用户逻辑覆盖目标。OAuth Token 验证成功才接收，敏感回调参数清出地址栏，错误可读。
 - 会话与 API：无新业务响应格式；401 仅清理与请求 Token 和会话版本仍匹配的当前登录，403 不自动退出，网络校验错误显示重试。直接 fetch 的统一观察仅作用同源 `/api/`。`POST /api/files/session` 需 Bearer 并建立 `/api` 范围只读 HttpOnly Cookie；DELETE 清理，前端串行同步防旧响应覆写。普通登录、`/me`、文件元数据不再隐式设置 Cookie；只读素材/提示词/技能和图片代理可用阅读会话，写入仍用 Bearer。
 - 画布数据：原 `infinite-canvas:canvas_store` 原文只读保留，新缓存用 `infinite-canvas:canvas_store:user:<userId>`，含 `ownerId/restoredLegacyRootIds`。远端已确认为本人的同 ID 旧项目可合并，未知归属项目不自动上传；控制台通过 `readLegacyCanvasProjects()` 和 `restoreLegacyCanvasProjects(rootIds)` 让用户明确选择，以全新 ID 恢复选定项目及全部画布、重映射 `workspaceId`、清除旧 Codex 线程引用，原档保留且已恢复根按账号记录。无新增后端恢复接口，沿用现有保存/同步。
 - 数据库变化：无新表、字段或迁移；浏览器账号分桶不迁移服务器文件归属。恢复本地引用仍需要原文件，恢复他人 `server:` 引用不授予访问权；不删除历史访客档案、素材、任务或真实数据。
-- Git 提交：待主代理补实际 SHA；本轮尚未执行测试、类型检查、构建、浏览器检查或部署，历史 `86b07b0` 通过记录不覆盖本轮。
+- Git 提交与检查点：功能 `1141512`、Go 官方 gofmt `ff99112`；Go `go test ./...` 全量、独立 `tsc` 与合计 38 项 Bun 回归通过，不是本轮新增 38 项。最终源码 `fca04adc3709c4bdede7d7ea47b11313bdeb8ceb6` 仅再移除登录跳转后多余刷新及调整首页阴影 CSS，完整 Docker 构建退出 0，测试站镜像为 `xiaomeng-video-workbench:fca04ad`；不以构建代替独立类型检查，历史 `86b07b0` 另行保留。
 - **必须保护的行为**：公开页不展示私人项目；未验证会话不进入业务页；合法目标回跳、OAuth 失败可见；退出/切号后旧响应不污染新账号；阅读 Cookie 不提供写权限；旧全局档案不改写/删除，未知归属不静默上传，副本恢复不转移别账号文件权；登录后仍可用当前浏览器保存，模型仍只走平台云端。
 - 品牌保护：共享 `BrandMark` 与浏览器图标保持原创 SVG，随深浅主题显示；不恢复官方轮播、推广、GitHub 或版本入口，不因此删除 LICENSE、作者署名或 `/legal`。
-- 更新后验证：验收公开/受保护路径、登录注册开关与 OAuth、恶意回跳、401/403/断网、切号旧响应、媒体读取及写入权限，旧档多画布副本恢复/重复恢复/浏览器文件缺失，以及桌面手机深浅主题、滚动与焦点。真实模型供应商与 R2 仍待资源，不把本轮页面改造视为已联调。
-- 备份与回滚：部署前保留数据库、媒体、配置、原全局画布键与各账号浏览器分桶；回退旧客户端前评估是否重新混用全局缓存和开放访客业务页，不通过清空旧档完成回滚。
+- 已有验证：隔离 HTTP 通过公开页与图标 200、匿名业务/代理/旧匿名上传 401、显式媒体 Cookie 剩余期/HttpOnly/Path=/api、Cookie 只读不能写、无效 Bearer 不回退、普通用户后台 403、`/me`/FileInfo 无 Cookie 副作用、本人/签名媒体读取及裸私有文件拦截、退出双路径清理。浏览器通过登录/退出和错误密码提示；A→B 后 B 空工作台，旧 2 项仅作默认不选的恢复提示，手动恢复一项生成新 ID、保留另一项提示，刷新后不重复恢复。`fca04ad` 已复测深链精确为 `/assets?scope=local#folder`，A/B 的账号及浏览器素材隔离；首页深浅主题、390×844 首页/登录无横向溢出和手机完整表单通过，注册只查看确认密码，未创建新账号。
+- 排版后续提交：`697ca4b741058e53c2dd6541711cb38b80a2d050` 只调整首页/登录及两份私有样式，缩短首屏空白、放宽标题字距、增强说明对比，三张示意卡使用正常 grid，固定导航保留同页流程与回顶部；登录页头走文档流、双栏各自居中、手机压缩简介，页面 `100dvh` 可纵向滚动。最终 `016f30f81e8a0aae62ef86b1866bb0b0485f7f381` 仅补登录标签 22 px 高度。697 完整构建和独立类型顺序重跑通过，016 完整 Docker 退出 0；Go/38 项仍属于 114/ff 检查点，未冒称重跑。
+- 排版验证：016 首页/登录在 1920×911、1366×768、1024×768、768×1024、390×844、320×640 均无横向溢出，三卡无交叠；桌面表单与按钮在首屏可见，320 注册空提交的 3 条中文错误后原生滚动可到按钮。深浅主题、手机同页流程固定导航无遮挡、品牌回顶部、登录/返回首页通过，详细数值及截图检查点见待测试。**必须保护**：不要恢复绝对百分比叠放、锁死长表单滚动或把流程链接改成离开首页；布局可达检查不代替实际注册成功。
+- 首页演示后续：`61997d9` 新增 `creation-showcase.tsx` 与 4 个 MP4/4 张 JPG，替换创作方式文字卡；`ad9c43d` 去掉窗口焦点限制，最终 `2d9910e075cf36fa2d3d438b984e27493f47dedc` 集中播放 effect 并防旧 Promise 提示污染。保留用户原 ZIP，Pillow/ffmpeg 将 173,266,848 B WebP 转为 H.264 720×406/24 fps 的 MP4 与海报，总 6,943,929 B（约减 96%）；只有当前 video、入视口才设置 src、preload none、离屏/隐藏暂停、减少动态效果默认停且不自动轮换，支持选段/键盘/重试。**必须保护**：不能改成四段全预载，不以演示文案承诺未开放模型能力。最终2d独立类型与完整构建均退出0，已部署测试站；Go/38项不冒称在媒体提交重跑。
+- 媒体验证：首屏1个video无src/currentSrc空且暂停；滚入后4段实际播放均ready4/720×406且无error，手动暂停选段不打破暂停，不手动选片时观察到自动轮换（不做固定秒数下一帧断言）。回顶部离屏暂停、返回可继续，手机前后闭环及End选段/移焦通过；1440/1024/768/390/320等宽且始终1video，深浅主题和手机已查看。4 JPG HEAD为200/image/jpeg，4 MP4 Range0-1023为206/video/mp4/1024B且总长正确。减少动态效果/隐藏标签暂停尚未真实偏好或切标签实测，故障恢复未注入；完整范围和截图见待测试。
+- 剩余验证：当前媒体版2d已部署且原数据一致，016保留阶段历史，排版体验仍等待用户验收。减少动态效果/隐藏标签、播放受限/故障重试/快速切段竞态，真实注册、注册开关/LinuxDo/OAuth、断网与长期切号、完整键盘焦点，真实旧原档、多画布归属/文件缺失和历史同步仍待验收。真实模型供应商与 R2 仍待资源，不把页面改造视为已联调。
+- 跨标签退出验证：最终 `fca04ad` 镜像中，第二标签退出后，第一画布标签立即卸载画布并转向携带原 canvas 返回路径的登录页，真实浏览器已通过；上游更新需保留此行为，不只在后续请求时报错。
+- 当前部署与备份：镜像 `xiaomeng-video-workbench:2d9910e`，仅更新 app，继续 `127.0.0.1:3001 → 3000` 及原 data 挂载，OpenResty 未改；`backups/pre-showcase-2d9910e/` 保存完整性 `ok` 的 SQLite 在线副本、Compose/`.env` 私有副本、媒体归档和原行摘要，目录 700/文件600。停旧应用与新启动后8表结构/全行SHA256一致，用户/画布/设置各1、其余5表0；实际页与健康200、展示资源HEAD/Range正确，匿名素材与图片生成401。隔离preview已停止、数据保留；fca和016备份/检查继续保留历史，详见维护手册及待测试。
+- 回滚保护：保留数据库、媒体、配置、原全局画布键与各账号浏览器分桶；回退旧客户端前评估是否重新混用全局缓存和开放访客业务页，不通过清空旧档完成回滚，未执行实际数据回滚。
 
 ### 功能名称：项目内多画布与首页工作台
 

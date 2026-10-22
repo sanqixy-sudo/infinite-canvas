@@ -7,7 +7,13 @@ description: 当前后端主要数据表与字段说明
 
 本文档只记录后端当前已经使用的主要数据表。
 
-当前公开首页、登录门禁、品牌与旧画布恢复改造不新增数据库表、列或迁移，沿用现有用户鉴权和 `canvas_projects`。会话版本与只读媒体 Cookie 不作为数据库新增字段；浏览器画布改用 `infinite-canvas:canvas_store:user:<userId>` 分区，原全局键只读保留，明确选择恢复时创建新画布 ID 并沿用既有保存 API。浏览器恢复不是服务器文件所有权迁移，`storage_objects` 归属与权限不变。新访问策略要求登录，但仍保留历史访客文件及登录后的当前浏览器存储。本轮验证、构建与部署尚未执行；下方既有通过记录不覆盖本轮。
+后续首页/登录排版 `697ca4b`、`016f30f81e8a0aae62ef86b1866bb0b0485f7f381` 只涉及页面与私有 CSS，无数据库、后端逻辑或迁移变化；697 独立类型顺序重跑和 697/016 完整构建、016 多尺寸界面检查通过，不重记为 Go/38 项回归重新执行。016 的 `backups/pre-layout-016f30f/` 数据备份与部署核对保留阶段历史。
+
+当前已部署四段演示版本 `2d9910e075cf36fa2d3d438b984e27493f47dedc`，最终独立类型、完整构建和普通播放检查通过；只新增前端播放器和静态 MP4/JPG，不进入账号存储索引、用户素材或配额，不新增表。私有备份 `backups/pre-showcase-2d9910e/` 含完整性 `ok` 的SQLite在线副本、Compose/`.env`、媒体归档和原行摘要，目录700/文件600。停旧应用与新启动后8表结构及全行SHA256一致、完整性ok，`users/canvas_projects/settings`各1，其他 `credit_logs/storage_objects/user_configs/purchase_orders/storage_upload_reservations` 共5表均0；原data挂载保留，隔离preview停止且数据保留。下方fca/016记录不替代本次实际数据核对，浏览器原档仍须另行保留。
+
+当前公开首页、登录门禁、品牌与旧画布恢复改造不新增数据库表、列或迁移，沿用现有用户鉴权和 `canvas_projects`。会话版本与只读媒体 Cookie 不作为数据库新增字段；浏览器画布改用 `infinite-canvas:canvas_store:user:<userId>` 分区，原全局键只读保留，明确选择恢复时创建新画布 ID 并沿用既有保存 API。浏览器恢复不是服务器文件所有权迁移，`storage_objects` 归属与权限不变。新访问策略要求登录，但仍保留历史访客文件及登录后的当前浏览器存储。功能 `1141512`、Go 格式 `ff99112` 的 Go 全量、独立类型及合计 38 项前端回归通过，后续 `fca04ad` 完整 Docker 构建退出 0；隔离 HTTP 已验证媒体读写和账号权限，浏览器已验证旧项目按选择恢复新 ID。
+
+fca 阶段曾部署 `fca04adc3709c4bdede7d7ea47b11313bdeb8ceb6`，此处保留历史证据。`backups/pre-landing-fca04ad/` 保存完整性 `ok` 的 SQLite 在线备份、配置与媒体；停旧 app 后、新 app 启动后、匿名 HTTP 检查后，8 表结构与全部行 SHA256 均和备份一致：`users/canvas_projects/settings` 各 1，`credit_logs/storage_objects/user_configs/purchase_orders/storage_upload_reservations` 均 0，实际站点未新增验收账户或素材。原数据挂载保留；浏览器原档不包含于服务器备份，仍须独立保留。详细验证范围和备份绝对路径见待测试与维护手册，下方旧部署记录保留为历史。
 
 钱包相关表和字段已在数据库副本中验证并部署测试站点，原数据保留；自动测试、隔离 HTTP 与浏览器结果见 [待测试](../progress/pending-test.md#用户钱包个人存储额度与人工套餐确认)。真实收款和 R2 仍待资源联调。
 

@@ -5,9 +5,33 @@ description: 当前版本已实现但仍需人工验证的变更项
 
 # 待测试
 
+## 首页四段功能演示
+
+- 已实现范围：`61997d9` 新增 `web/src/app/(user)/components/creation-showcase.tsx` 与 `web/public/showcase/` 的 4 个 MP4、4 张 JPG 海报，并替换首页原创作方式文字卡；`ad9c43d` 删除 `hasFocus` 限制，最终 `2d9910e075cf36fa2d3d438b984e27493f47dedc` 将播放请求集中到带取消守卫的 effect，旧片段的 Promise 不应覆盖新片段提示。最终2d独立 `tsc` 与完整 Docker 均退出 0，镜像源码记录 `/opt/xiaomeng-landing-image-source.sha` 精确匹配该 SHA，浏览器检查完成且测试站已升级；Go/38项仍为此前功能检查点，未声称媒体提交重新执行。
+- 演示内容为“3D 导演台、运镜时间轴、画布 Agent、全景创作”。4 个原始 WebP 合计 173,266,848 B，用户 ZIP 原位置保留；使用 Pillow 解码和 ffmpeg 转 H.264、yuv420p、faststart MP4，720×406、24 fps，分别约 15/10/11/15 秒，无音频。原一张 405 高素材补齐为 406 偶数高，不裁删内容。4 个 MP4 合计 6,793,123 B，4 张海报 150,806 B，总计 6,943,929 B，较原动画减约 96%；这是文件体积统计，不等于浏览器网络性能实测通过。
+- 播放器只保留当前片段一个 video DOM，首次入视口才设置 src，`preload="none"`，不把四段视频同时预载；离屏和页面隐藏时暂停，片段结束才轮换。减少动态效果时默认暂停且不自动切下一段，可手动播放/选择；提供播放暂停、前后选段、方向键/Home/End、错误海报和重新加载，明确是功能演示，实际能力以工作台开放配置为准。
+- 最终2d浏览器实测：首页初始仅 1 个 video，`src=null/currentSrc=""/paused=true/preload=none`，页面可见；入视口后逐一手动选段并播放，4 段均 `readyState=4/paused=false/720×406`、无媒体错误，时长分别 `14.916667/10.625/10.958333/15.25` 秒。手动暂停后的文案稳定，选段不会自动打破暂停；不手动选片、保持播放时实际观察到片段自动变化，但未截取结束后的精确下一帧，不写“固定16秒转第二段”的断言。
+- 点击品牌回顶部后 `scrollTop=0/videoTop=953/paused=true`，再次进入可继续；手机前后切换实际 `panorama → director → panorama` 闭环通过，End 键选中 panorama 并移动焦点。深浅桌面与390手机实际查看；1440/1024/768/390/320 五档根 `scrollWidth=clientWidth`，始终只有 1 个 video。截图 `home-showcase-desktop-light.png`、`home-showcase-desktop-dark.png`、`home-showcase-mobile-dark.png` 保存在本任务原 visualizations 目录。
+- 资源检查：4 张海报 HEAD 均 200、`image/jpeg`；4 个 MP4 的 Range `bytes=0-1023` 均为 206、`video/mp4`，响应 1024 B 且总长度正确。普通播放无错误；未通过故障注入验证网络失败恢复，不能把错误处理实现视为已测。
+- 实际测试站已部署 `xiaomeng-video-workbench:2d9910e`，完整源码为上述2d SHA；仅更新 app，继续 `127.0.0.1:3001 → 3000` 和 `/opt/xiaomeng-video-workbench-deploy/data:/app/data`，OpenResty 未改。`/opt/xiaomeng-video-workbench-deploy/backups/pre-showcase-2d9910e/` 保存 SQLite 在线备份（完整性 `ok`）、Compose/`.env` 私有副本、媒体归档和原行摘要，目录 700、文件 600，不公开配置内容。
+- 停旧应用后与新启动后，8 表结构和全部行 SHA256 与备份一致、完整性 `ok`：`users/canvas_projects/settings` 各 1，其他 `credit_logs/storage_objects/user_configs/purchase_orders/storage_upload_reservations` 共5表为0。实际站 `/`、`/login`、`/workspace`、`/api/health` 均 200，4 JPG/4 MP4 的 HEAD/Range 结果同上；匿名 GET `/api/assets` 和 POST `/api/v1/images/generations` 均 401。隔离 preview 的 docker stop 已正常返回，当前已停止、隔离数据保留；fca/016阶段曾停后重启用于后续验收，此处为最终停止确认。
+- 剩余验收：减少动态效果与隐藏标签暂停目前只确认代码实现，未切真实系统偏好/标签实测；播放受限、网络失败重试和快速切段故障竞态仍需专项验证。模型渠道、计费、素材存储、R2、用户数据与登录门禁未改，实际供应商、R2、真实生成及用户对界面体验的认可继续待验收；正式功能说明不提前升级。
+
+## 首页与登录排版复核
+
+- 范围与检查点：`697ca4b741058e53c2dd6541711cb38b80a2d050` 只修改首页 `page.tsx/landing.module.css` 和登录 `page.tsx/login.module.css`；`016f30f81e8a0aae62ef86b1866bb0b0485f7f381` 仅再补 5 行登录标签高度 CSS。`697ca4b` 完整 Docker 构建退出 0，独立 `tsc` 顺序重跑退出 0；首次与构建并行时因服务器内存紧张主动 TERM 的检查不计通过，实际通过来自后续重跑。`016f30f` 完整 Docker 构建退出 0，已部署测试站。Go 全量与 38 项回归仍属于下节 `1141512/ff99112` 检查点；本轮无后端逻辑变化，没有声称在排版提交重跑这些测试。后续四段媒体展示另按上节记录。
+- 首页调整：保留固定导航、品牌回顶部与登录入口，“向下了解创作流程”仍为 `#workflow` 同页锚点，各章节增加滚动留白避免标题被导航遮挡。标题字距由 `-.065em` 放宽到 `-.015em` 并缩小字号、缩短首屏空白，放大说明并增强本页次要文字对比；三张示意卡改正常 grid，避免绝对百分比摆位在窄屏重叠，不改变原创黑白灰方向。
+- 登录调整：页头回到文档流，压缩左侧介绍与示意，桌面双栏在可增长容器分别垂直居中；手机只留一行简介、表单提前。页面明确 `100dvh` 与 `overflow-y:auto`，长注册表单不再被 body 隐藏溢出裁切；Ant Design 标签由实测 47.5 px 改为 22 px，保留中文标签、确认密码及真实登录注册开关，不新增假操作。
+- 最终 `016f30f` 真实浏览器覆盖首页与登录 `1920×911`、`1366×768`、`1024×768`、`768×1024`、`390×844`、`320×640`：各页面 `scrollWidth=clientWidth`，窄屏 15 px 原生竖滚动条属正常；首页三卡片在全部尺寸无交叠。1366 登录 `formY=147.14/formBottom=680.84/submitBottom=603.84/labelHeight=22`，均在 768 高度内；1920 登录按钮底部 675、表单底部 752，均在 911 内；390 与 320 登录按钮底部均 546。
+- 320×640 切注册并空提交后仅触发表单校验，显示 3 条中文提示，未创建账号；`scrollHeight=759/clientHeight=640`，原生滚动到 `scrollTop=119` 后按钮底部 531，可完整到达。这是长表单与错误态可达检查，不是实际注册成功测试。
+- 真实导航检查：390 手机点击流程链接保持 `pathname=/`、`hash=#workflow`、`headerTop=0/targetTop=95.78`；桌面目标顶部 112，导航不遮挡。品牌回 `#home-top` 后 `scrollTop=0`；登录入口仍到 `/login?redirect=%2Fworkspace`，登录页回首页也通过。
+- 深浅主题已实际查看。截图为 `public-home-refined-light.png`、`branded-login-refined-light.png`、`home-scroll-navigation.png`、`public-home-mobile-refined.png`、`branded-login-mobile-refined.png`、`public-home-refined.png`、`branded-login-refined.png`；其中深色首页截图来自 `697ca4b`（016 未再改首页），深色登录来自 `016f30f`，不混称所有截图来自同一检查点。
+- 016 阶段部署完成，仅更新该 app，仍为 `127.0.0.1:3001`，原 data 挂载及 OpenResty 保持。私有备份 `/opt/xiaomeng-video-workbench-deploy/backups/pre-layout-016f30f/` 包含 SQLite、媒体、Compose/`.env` 和原行摘要；停应用后、新应用启动后 8 表结构及全部行 SHA256 与备份一致，完整性 `ok`，用户/画布/设置各 1，其他 5 表 0。首页、`/login`、`/workspace`、`/api/health`、`/logo.svg`、`/icon.svg`、`/favicon.ico` 均 200；匿名 GET 素材、POST 目录及图片生成均 401。此处保留016历史证据，当前媒体版2d部署另见上节。
+- 待用户确认排版与真实设备体验。登录门禁、原档/账号隔离、平台云端模型边界不变；OAuth、真实注册、R2、真实生成和长期数据场景仍按下节待验收，本轮不新增业务接口、数据库表或迁移。
+
 ## 公开首页、登录门禁与品牌标识
 
-- 当前状态：本轮实现已落盘，提交 SHA 待补；自动回归、独立 TypeScript 检查、Go 检查、Docker 构建、隔离 HTTP、真实浏览器及部署均尚未执行。下方 `86b07b0` 等通过记录仅属于历史功能，不作为本轮验证结果。
+- 当前状态：功能提交 `1141512`、Go 官方 gofmt 提交 `ff99112`；Go `go test ./...` 全量、独立 `tsc` 与合计 38 项 Bun 回归通过，构成为导航 1、fetch 1、用户 store 2、画布 store 2、目录工具 4、原有 7、自动保存 6、素材 store 11、个人偏好 1、手动保存 3，不是本轮新增 38 项。随后 `fca04ad` 仅删除登录跳转后的多余刷新并调整首页阴影 CSS，其完整 Docker 构建退出 0；锚点、恢复刷新/账号隔离和手机/主题复测也已完成。不同检查点分别记录，不以构建代替独立类型检查。测试站已部署完整源码 `fca04adc3709c4bdede7d7ea47b11313bdeb8ceb6`，下方 `86b07b0` 等属于历史功能。
 - `/` 改为独立公开产品介绍页，使用黑白灰主题、真实能力说明与创作流程示意；原项目工作台移到 `/workspace`，保留真实项目、多画布和继续创作入口。公开页不加载私人项目列表；登录后进入控制台，未登录进入带安全回跳的登录页。
 - 用户布局只公开 `/`、`/login`、`/legal`，其他用户业务页等待会话验证后才显示；未登录转登录，校验中显示稳定等待状态，非 401 的会话读取失败显示错误与重试。该页面白名单不等于所有静态资源、健康接口或登录配置 API 都要求鉴权，后台仍保留管理员权限检查。
 - 登录页为独立全屏双栏，大屏为产品说明与账号表单，手机保留品牌、简要文案及全部表单操作；沿用真实登录、注册开关及 LinuxDo 条件入口，无未实现的邮箱/找回密码按钮。页面使用统一主题、中文标签、自动填充、键盘焦点、忙碌及内联错误状态，提供回首页入口。
@@ -17,7 +41,15 @@ description: 当前版本已实现但仍需人工验证的变更项
 - 新增原创 `BrandMark` SVG，并替换产品界面及浏览器图标，保持黑白灰和深浅主题；品牌修改不删除仓库 LICENSE、作者署名或 `/legal`，不恢复已移除的推广、GitHub 和版本入口。
 - 画布原全局 `infinite-canvas:canvas_store` 保留原文只读，新数据写入 `infinite-canvas:canvas_store:user:<userId>`，记录 `ownerId` 与 `restoredLegacyRootIds`。远端已确认为当前用户的同 ID 旧画布可合并；归属不明的旧项目不自动上传，在控制台明确选择后，以新项目/画布 ID 恢复副本并重映射 `workspaceId`、清除旧 Codex 会话引用，原档不覆盖。恢复沿用现有画布 API，无新增后端恢复接口；已恢复根按账号记录，切号不写入其他账号。
 - 历史访客画布和素材文件不删除；恢复浏览器引用仍依赖原浏览器真实文件，恢复服务器引用不会转移他人文件权限。新策略要求先登录使用业务页面，替代历史访客直接编辑入口；登录后仍可保存到当前浏览器，账号素材库及管理员服务器本地/R2 模式不变。平台云端唯一模型来源、供应商密钥只在后台的边界不变。
-- 待验证：首页/登录深浅主题、桌面与手机留白/滚动/焦点，注册关闭和 LinuxDo 启停，正常与恶意回跳，OAuth 成功/失败/重复加载及地址栏清理；401/403/断网和切号竞态；媒体 Cookie 串行及私有文件读取/写入边界；旧原档保留、多画布恢复新 ID、跨账号拒绝、重复恢复、浏览器文件缺失及历史项目同步。无新增表或迁移，后续部署仍须备份数据库、媒体、配置和浏览器原档，不以本轮改造清理真实数据。
+- 隔离 HTTP 检查通过：公开页面、Logo、`icon.svg` 与 favicon 返回 200；匿名业务、图片代理和旧匿名上传拒绝 401；显式 POST 阅读会话使用 JWT 剩余有效期，Cookie 为 HttpOnly、Path=/api。Cookie 可读不能写、无效 Bearer 不回退 Cookie、普通用户访问后台为 403、`/me` 与 FileInfo 不再产生 Cookie 副作用、本人媒体与有效签名媒体可读、裸私有文件拦截、退出清理新旧两个路径均通过。该结果不代表真实供应商或 R2 已联调。
+- `ff99112` 真实浏览器检查通过登录进入 `/workspace`、退出后业务拦截、错误密码可读提示并保留用户名；深链虽到素材页但曾出现重复锚点。`fca04ad` 删除导航后的多余刷新后已重新实测：`window.location` 精确为 `/assets?scope=local#folder`，`hash` 为 `#folder`，不重复。
+- 浏览器账号 A→B 后，B 工作台为空；旧全局 2 个项目仅显示显式恢复提示，默认不选。手动恢复“目录素材验收”后，新 ID 为 `bqDb3tdw5es4xASo2iJmI`，恢复 1 张画布，剩余 1 个旧项目提示；`fca04ad` 刷新后仍保持同一项目和剩余提示，不重复恢复。A/B 切号后账号素材、当前浏览器素材各自隔离，未把全部未知旧档自动附到 B。此检查不代替所有旧数据、多画布及浏览器媒体恢复验收。
+- 最终 `fca04ad` 已查看首页深浅色，截图 `public-home-dark.jpg`、`public-home-light.jpg`；390×844 首页及登录页 `clientWidth=scrollWidth=390`。访客首页“开始使用”实际到 `/login?redirect=%2Fworkspace`；手机登录按钮完整可见，切注册显示确认密码，未实际创建新账号。登录截图 `branded-login-desktop.jpg`、`branded-login-mobile.jpg`；不据此声称真实注册、LinuxDo 或所有主题交互已完成。
+- 最终 `fca04ad` 镜像的跨标签页退出实测通过：第二个标签退出后，第一个画布标签立即卸载画布并转到登录页，登录链接携带原 canvas 返回路径。此为真实浏览器检查，不只依据 store 单元用例；仍不等于所有长期竞态已覆盖。
+- 实际测试站已升级镜像 `xiaomeng-video-workbench:fca04ad`，仅更新 app，沿用 `127.0.0.1:3001 → 3000` 与 `/opt/xiaomeng-video-workbench-deploy/data:/app/data`，OpenResty 未改。备份 `/opt/xiaomeng-video-workbench-deploy/backups/pre-landing-fca04ad/` 含 SQLite 在线备份（完整性 `ok`）、Compose/`.env` 私有副本、`media-files.tar.gz` 和 `original-records.json`，目录 700、文件 600；不公开配置内容。
+- 停旧 app 后、新 app 启动后及匿名 HTTP 检查后，8 表结构与全部行 SHA256 均与备份一致：`users=1/canvas_projects=1/settings=1`，`credit_logs/storage_objects/user_configs/purchase_orders/storage_upload_reservations` 均为 0；实际站点未新增验收账户或素材。首页、`/login`、`/legal`、`/workspace`、`/canvas`、`/assets`、`/account`、`/account/storage`、`/admin`、`/api/health`、`/logo.svg`、`/icon.svg`、`/favicon.ico` 均 200；业务页 HTTP 200 为 Next.js 页面响应，不等于匿名已进入业务。
+- 实际站点匿名 GET `/api/assets`、`/api/prompts`、`/api/proxy-image?...` 均 401；POST `/api/anonymous/files`、`/api/v1/user-data/asset-folders`、`/api/v1/user-data/assets/organize`、`/api/v1/images/generations` 均 401。该 fca 阶段预览曾停止，后续重启用于媒体验收；最终媒体版验收后已正常停止，隔离数据仍保留。
+- 剩余验收：首页/登录后续排版调整和多尺寸检查见上节，仍需用户确认体验，不以窄屏等宽代表整体认可。真实注册、注册关闭和 LinuxDo 启停，OAuth 成功/失败/重复加载及地址栏清理，断网与长期切号竞态、完整键盘焦点，真实旧原档、多画布归属、浏览器文件缺失及历史同步仍待验收。无新增表或迁移，不以改造清理真实数据；浏览器原档须另行保留。
 
 ## 素材目录与标签整理
 
