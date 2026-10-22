@@ -30,18 +30,14 @@ export default function CreationShowcase() {
     useEffect(() => {
         const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
         const updateMotion = () => setReducedMotion(preference.matches);
-        const updateVisibility = () => setPageVisible(!document.hidden && document.hasFocus());
+        const updateVisibility = () => setPageVisible(!document.hidden);
         updateMotion();
         updateVisibility();
         preference.addEventListener("change", updateMotion);
         document.addEventListener("visibilitychange", updateVisibility);
-        window.addEventListener("focus", updateVisibility);
-        window.addEventListener("blur", updateVisibility);
         return () => {
             preference.removeEventListener("change", updateMotion);
             document.removeEventListener("visibilitychange", updateVisibility);
-            window.removeEventListener("focus", updateVisibility);
-            window.removeEventListener("blur", updateVisibility);
         };
     }, []);
 
