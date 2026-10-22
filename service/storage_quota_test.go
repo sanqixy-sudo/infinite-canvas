@@ -114,7 +114,11 @@ func TestUserStorageQuotaAcrossUploadAndDirectRegistration(t *testing.T) {
 	savedClient := safeProxyHTTPClient
 	safeProxyHTTPClient = &http.Client{Transport: storageQuotaTransport(func(request *http.Request) (*http.Response, error) {
 		if request.Method == http.MethodDelete {
-			deleteRequests++
+			if strings.TrimSuffix(request.URL.Path, "/") == "/canvas/quota-user/upload.bin" {
+				deleteRequests++
+			} else if strings.TrimSuffix(request.URL.Path, "/") != "/canvas/quota-user" {
+				t.Fatalf("unexpected WebDAV deletion path: %s", request.URL.Path)
+			}
 			return &http.Response{StatusCode: http.StatusNoContent, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
 		}
 		if request.Method != "PROPFIND" {
