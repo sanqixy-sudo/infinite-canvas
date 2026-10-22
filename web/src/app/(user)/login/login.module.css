@@ -5,7 +5,7 @@
     overflow-y: auto;
     background: var(--background);
     color: var(--foreground);
-    --muted-foreground: color-mix(in srgb, var(--foreground) 70%, var(--background));
+    --muted-foreground: color-mix(in srgb, var(--foreground) 68%, var(--background));
 }
 
 .header {
@@ -13,72 +13,304 @@
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    width: min(1280px, 100%);
+    width: min(1400px, 100%);
     margin-inline: auto;
-    padding: 20px 40px;
+    padding: 20px 36px;
+}
+
+.brand {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    gap: 11px;
+    border-radius: 4px;
+    outline: none;
+}
+
+.brand:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 6px;
 }
 
 .content {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
-    min-height: calc(100dvh - 84px);
-    align-items: center;
-    gap: clamp(64px, 8vw, 128px);
-    width: min(1120px, 100%);
-    margin-inline: auto;
-    padding: 32px 40px 48px;
+    grid-template-columns: minmax(0, 1.12fr) minmax(390px, 0.88fr);
+    min-height: calc(100dvh - 112px);
+    width: min(1328px, calc(100% - 64px));
+    margin: 0 auto 32px;
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    background: var(--card);
 }
 
 .introduction {
+    position: relative;
     min-width: 0;
-    padding-top: 4px;
+    min-height: 560px;
+    overflow: hidden;
+    border-radius: 23px 0 0 23px;
 }
 
 .mobileIntro {
     display: none;
 }
 
-.sketch {
-    width: min(100%, 330px);
-    margin-block: 24px;
+.brandScene {
+    position: absolute;
+    inset: 0;
+    color: #f7f7f5;
+    background: #181818;
 }
 
-.features {
-    display: grid;
-    gap: 14px;
-    padding-top: 22px;
-    border-top: 1px solid var(--border);
+.sceneImage,
+.sceneShade {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
 }
 
-.feature {
+.sceneImage {
+    object-fit: cover;
+    object-position: 50% 58%;
+}
+
+.sceneShade {
+    background: linear-gradient(180deg, rgb(0 0 0 / 62%), rgb(0 0 0 / 12%) 46%, rgb(0 0 0 / 18%) 56%, rgb(0 0 0 / 82%));
+}
+
+.sceneContent {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 72px;
+    height: 100%;
+    padding: clamp(30px, 3.4vw, 52px);
+}
+
+.sceneEyebrow {
     display: flex;
     align-items: center;
-    gap: 12px;
-    font-size: 13px;
-    line-height: 1.6;
+    gap: 10px;
+    font-size: 12px;
+    line-height: 20px;
+    color: rgb(255 255 255 / 80%);
 }
 
-.featureText {
+.sceneEyebrow > span {
+    width: 24px;
+    height: 1px;
+    background: currentColor;
+}
+
+.sceneTitle {
+    margin-top: 24px;
+    font-size: clamp(32px, 3.1vw, 48px);
+    font-weight: 500;
+    line-height: 1.32;
+    letter-spacing: -0.01em;
+}
+
+.sceneDescription {
+    margin-top: 20px;
+    color: rgb(255 255 255 / 80%);
+    font-size: 13px;
+    line-height: 24px;
+}
+
+.referenceFrame {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    column-gap: 12px;
-    row-gap: 2px;
+    align-items: center;
+    gap: 18px;
+    padding: 12px;
+    border: 1px solid rgb(255 255 255 / 24%);
+    border-radius: 12px;
+    background: rgb(12 12 12 / 48%);
+    backdrop-filter: blur(12px);
+}
+
+.referenceImage {
+    position: relative;
+    width: 128px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 6px;
+}
+
+.referenceImage > img {
+    width: 100%;
+    height: auto;
+}
+
+.referenceImage > span {
+    position: absolute;
+    bottom: 6px;
+    left: 7px;
+    font-family: monospace;
+    font-size: 10px;
+    line-height: 16px;
+    text-shadow: 0 1px 5px #000;
+}
+
+.referenceText {
+    min-width: 0;
+}
+
+.referenceText > p {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 22px;
+}
+
+.referenceText > span {
+    display: block;
+    margin-top: 6px;
+    color: rgb(255 255 255 / 72%);
+    font-size: 12px;
+    line-height: 21px;
+}
+
+.sceneFooter {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 20px;
+    font-size: 11px;
+    line-height: 20px;
+    color: rgb(255 255 255 / 68%);
 }
 
 .formSection {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     min-width: 0;
+    padding: 36px clamp(30px, 4.3vw, 72px);
+    border-left: 1px solid var(--border);
+}
+
+.formContent {
     width: 100%;
-    max-width: 380px;
+    max-width: 360px;
+}
+
+.formHeading {
+    margin-bottom: 26px;
+}
+
+.formEyebrow {
+    margin-bottom: 10px;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 20px;
+}
+
+.formHeading > h2 {
+    font-size: 32px;
+    font-weight: 500;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+}
+
+.formDescription {
+    margin-top: 9px;
+    color: var(--muted-foreground);
+    font-size: 13px;
+    line-height: 23px;
+}
+
+.modeSwitcher {
+    margin-bottom: 24px;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--background);
+}
+
+.modeSwitcher :global(.ant-segmented-item) {
+    border-radius: 7px;
+    color: var(--muted-foreground);
+}
+
+.modeSwitcher :global(.ant-segmented-item-label) {
+    min-height: 32px;
+    line-height: 32px;
+    font-size: 13px;
+}
+
+.modeSwitcher :global(.ant-segmented-item-selected),
+.modeSwitcher :global(.ant-segmented-thumb) {
+    color: var(--background);
+    background: var(--foreground);
+    box-shadow: none;
 }
 
 .form :global(.ant-form-item) {
-    margin-bottom: 20px;
+    margin-bottom: 18px;
 }
 
 .form :global(.ant-form-item-label > label) {
     height: auto;
     min-height: 22px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.form :global(.ant-input-affix-wrapper) {
+    border-color: var(--border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--foreground) 2%, var(--card));
+    box-shadow: none;
+}
+
+.form :global(.ant-input-affix-wrapper .ant-input) {
+    background: transparent;
+}
+
+.form :global(.ant-input-affix-wrapper:hover) {
+    border-color: color-mix(in srgb, var(--foreground) 40%, var(--background));
+}
+
+.form :global(.ant-input-affix-wrapper-focused) {
+    border-color: var(--foreground);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--foreground) 7%, transparent);
+}
+
+.submitButton,
+.oauthButton {
+    border-radius: 10px;
+}
+
+.formFootnote {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 22px;
+}
+
+@media (min-width: 1024px) and (max-width: 1199px) {
+    .content {
+        grid-template-columns: minmax(0, 1fr) minmax(380px, 0.95fr);
+        width: calc(100% - 40px);
+    }
+
+    .sceneContent {
+        padding: 28px;
+    }
+
+    .referenceFrame {
+        gap: 12px;
+    }
+
+    .referenceImage {
+        width: 104px;
+    }
 }
 
 @media (max-width: 1023px) {
@@ -87,32 +319,53 @@
     }
 
     .content {
-        grid-template-columns: minmax(0, 1fr);
+        display: block;
         min-height: 0;
-        align-items: start;
-        gap: 24px;
-        width: min(428px, 100%);
-        padding: 8px 24px 32px;
+        width: min(400px, calc(100% - 48px));
+        margin: 12px auto 32px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
     }
 
     .introduction {
-        padding-top: 0;
+        min-height: 0;
+        overflow: visible;
+        border-radius: 0;
     }
 
-    .desktopIntro {
+    .brandScene {
         display: none;
     }
 
     .mobileIntro {
         display: block;
-        margin: 0;
+        margin-bottom: 24px;
+        color: var(--muted-foreground);
         font-size: 13px;
         line-height: 22px;
-        color: var(--muted-foreground);
     }
 
     .formSection {
+        display: block;
+        padding: 0;
+        border-left: 0;
+    }
+
+    .formContent {
         max-width: none;
+    }
+
+    .formEyebrow {
+        display: none;
+    }
+
+    .formHeading {
+        margin-bottom: 24px;
+    }
+
+    .formHeading > h2 {
+        font-size: 30px;
     }
 }
 
@@ -127,6 +380,7 @@
     }
 
     .content {
-        padding-inline: 20px;
+        width: calc(100% - 40px);
     }
 }
+

@@ -1,14 +1,79 @@
+.page {
+    height: 100dvh;
+    --muted-foreground: color-mix(in srgb, var(--foreground) 65%, var(--background));
+    background-image: radial-gradient(ellipse at 80% 8%, color-mix(in srgb, var(--foreground) 3%, transparent), transparent 40%);
+}
+
+.hero {
+    display: grid;
+    align-items: center;
+    gap: 40px;
+    padding-block: 52px 56px;
+}
+
+.title {
+    margin-top: 24px;
+    font-size: clamp(42px, 5vw, 72px);
+    font-weight: 600;
+    line-height: 1.22;
+    letter-spacing: -.045em;
+}
+
+.preview {
+    width: 100%;
+    min-width: 0;
+    max-width: 740px;
+    margin-inline: auto;
+}
+
+.frame {
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--foreground) 15%, transparent);
+    border-radius: 20px;
+    background: var(--card);
+    box-shadow: 0 32px 64px -40px color-mix(in srgb, var(--foreground) 30%, transparent), 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
 .canvas {
-    background-image: radial-gradient(color-mix(in srgb, var(--foreground) 13%, transparent) .65px, transparent .65px);
-    background-size: 18px 18px;
+    position: relative;
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    align-items: center;
+    gap: 28px;
+    padding: 28px 22px 34px;
+    background-color: color-mix(in srgb, var(--background) 75%, var(--card));
+    background-image: radial-gradient(color-mix(in srgb, var(--foreground) 14%, transparent) .6px, transparent .6px);
+    background-size: 16px 16px;
 }
 
-.frame { box-shadow: 0 24px 70px -35px color-mix(in srgb, var(--foreground) 12%, transparent); }
-
-.intro, .preview, .node {
-    animation: enter .65s both;
+.node {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--foreground) 17%, var(--card));
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: 0 6px 18px -12px color-mix(in srgb, var(--foreground) 20%, transparent);
 }
 
+.port {
+    position: absolute;
+    z-index: 1;
+    width: 6px;
+    height: 6px;
+    border: 1px solid color-mix(in srgb, var(--foreground) 45%, var(--card));
+    border-radius: 50%;
+    background: var(--card);
+}
+
+.benefits {
+    display: grid;
+    gap: 24px;
+    padding-block: 30px 42px;
+    border-top: 1px solid var(--border);
+}
+
+.intro, .preview { animation: enter .65s both; }
 .preview { animation-delay: .08s; }
 
 @keyframes enter {
@@ -16,11 +81,24 @@
     to { opacity: 1; transform: translateY(0); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-    .intro, .preview, .node { animation: none; }
+@media (min-width: 640px) {
+    .canvas { gap: 38px; padding: 36px 30px 42px; }
+    .benefits { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
 }
-.page {
-    height: 100dvh;
-    --muted-foreground: color-mix(in srgb, var(--foreground) 70%, var(--background));
+
+@media (min-width: 1024px) {
+    .hero { grid-template-columns: .85fr 1.15fr; gap: 44px; min-height: 650px; padding-block: 52px 64px; }
+}
+
+@media (max-width: 639px) {
+    .hero { gap: 32px; padding-block: 32px 36px; }
+    .title { font-size: clamp(34px, 8.7vw, 48px); letter-spacing: -.035em; }
+    .canvas { gap: 18px; padding: 20px 14px 24px; }
+    .frame { border-radius: 16px; }
+    .node { border-radius: 9px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .intro, .preview { animation: none; }
 }
 
