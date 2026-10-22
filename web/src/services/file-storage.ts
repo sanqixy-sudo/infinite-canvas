@@ -1,6 +1,6 @@
-import { notifyAccountWalletRefresh } from "@/lib/account-wallet-events";
 "use client";
 
+import { notifyAccountWalletRefresh } from "@/lib/account-wallet-events";
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 
