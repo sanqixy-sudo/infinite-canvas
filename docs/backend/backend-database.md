@@ -9,6 +9,8 @@ description: 当前后端主要数据表与字段说明
 
 钱包相关表和字段已在数据库副本中验证并部署测试站点，原数据保留；自动测试、隔离 HTTP 与浏览器结果见 [待测试](../progress/pending-test.md#用户钱包个人存储额度与人工套餐确认)。真实收款和 R2 仍待资源联调。
 
+本轮个人存储设置与单条账号素材接口复用 `user_configs` JSON，不新增表或列；`f9538f9` 的 Go 全套、独立 TypeScript、20 项回归、完整 Docker、隔离 HTTP 及桌面图片/390px 菜单检查通过，已升级测试站。升级前在线备份，升级后完整性 `ok`；用户、画布、流水、文件索引、用户配置、订单、上传预留、设置共 8 表原行摘要完全一致，数量分别为 `1/1/0/0/0/0/0/1`，实际库未写入验收数据。真实旧浏览器、视频/音频实机、供应商及 R2 仍待验收或联调，具体记录见待测试。
+
 ## 数据库
 
 后端使用 GORM 管理数据库连接和表结构迁移。
@@ -104,14 +106,22 @@ description: 当前后端主要数据表与字段说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `user_id` | string | 用户 ID，主键 |
-| `model_config` | 大文本 | 云端模型选择与创作偏好 JSON；旧个人渠道/工作流配置可保留在原数据中，但不向前端恢复或参与调用。S3/R2 和 WebDAV 自动同步开关为 `syncStorageConfig`、`syncWebDAVStorageConfig` |
+| `model_config` | 大文本 | 云端模型选择、创作偏好与个人 `autoSaveAssetsToCloud` JSON；旧个人渠道/工作流配置可保留在原数据中，但不向前端恢复或参与调用。Provider 配置同步开关为 `syncStorageConfig`、`syncWebDAVStorageConfig`，不是素材默认入库设置 |
 | `storage_provider` | text | 用户存储配置 JSON，内部结构为 `{ "s3": {...}, "webdav": {...} }`，两类配置可保留但不能同时启用 |
 | `image_history` | text | 用户图片历史同步数据 |
-| `asset_data` | text | 用户素材同步数据 |
+| `asset_data` | text | 账号素材库 JSON，包含 `assets` 及已有分类等扩展字段；保留历史数据 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
 `storage_provider.s3` 保存 Endpoint、Region、Bucket、Access Key、Secret、公开域名和路径前缀；`storage_provider.webdav` 保存 WebDAV 地址、远程目录、用户名和密码/应用密码。自动同步开关不重复写入 Provider；后端下载和删除旧媒体时仍会读取已保存但已停用的 Provider。
+
+`model_config.autoSaveAssetsToCloud` 是个人默认保存偏好，缺省为 `false`，独立 `storage-preferences` API 只原子合并这一字段；模型配置整份保存保留数据库最新值。用户配置更新在同一用户锁内补丁写入变化的字段，存储配置和历史记录更新不能回写旧整行快照覆盖偏好或素材列表。
+
+账号素材用单条 API 在事务中合并 `asset_data`；媒体项新增/修改必须引用该用户拥有的 `storage_objects`，类型及字节数取文件索引，同 ID 和同文件键去重。旧本地引用、已有条目和 JSON 扩展字段不批量删除；旧整份列表覆盖接口停用。删除素材条目不删除 `storage_objects` 或物理文件，也不直接释放额度，以免损坏仍被画布或历史记录引用的文件。
+
+`asset_data.assets[].metadata.browserSourceId` 可记录白名单稳定浏览器键的独立身份，供前端刷新后复用已归档文件；不包含 Token、Blob、Base64 或外链 URL，不是媒体引用或服务端鉴权凭据，不新增列。文件归属、实际类型和字节数仍以 `storage_objects` 为准。
+
+偏好关闭时，真实素材文件和本地条目保存在当前浏览器的 IndexedDB/localforage，按访客/账号隔离，不建后端表；登录不会自动将这些本地文件变成账号云文件。偏好切换只影响后续保存，不批量搬移现有数据。管理员的服务器本地/R2 模式仍独立决定账号文件位置。
 
 ### storage_objects
 
@@ -427,7 +437,7 @@ Bridge 持久化请求队列表。普通执行请求由服务端按设备分配�
 
 `public.value` 常放前端展示和可公开读取的配置，例如模型列表、登录开关等。  
 `private.value` 常放渠道密钥、登录密钥、后台内部开关等。
-`private.value.storage.mode` 为 `local`（默认服务器本地）或 `r2`。新默认配置开启登录用户使用平台存储及新增媒体自动转存；匿名用户仍使用浏览器本地保存。`autoSyncAllAssets` 控制自动转存，`capacityLimitBytes` 控制平台总容量，默认 9 GiB。该平台配置保存在现有 JSON 中；切换模式只影响新上传，旧渠道存在文件引用时必须保留原配置，个人额度另由 `commerce` 管理。
+`private.value.storage.mode` 为 `local`（默认服务器本地）或 `r2`，决定账号文件的后端位置。`autoSyncAllAssets` 保留为平台配置字段，不能代替个人 `autoSaveAssetsToCloud` 或把用户默认改为自动上传；本轮新素材缺省保存在当前浏览器。`capacityLimitBytes` 控制平台总容量，默认 9 GiB。切换后端模式只影响新上传，旧渠道存在文件引用时必须保留原配置，个人额度另由 `commerce` 管理。
 
 当前系统设置接口会按后端结构体序列化和反序列化已知字段；数据库 JSON 中额外存在的旧字段会被忽略。
 

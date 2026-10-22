@@ -35,10 +35,38 @@ description: 业务接口统一响应结构与前端处理约定
 
 - `GET /api/v1/credit-logs` 需要 Bearer 登录鉴权，用户 ID 固定取当前会话；支持现有分页、关键词及 `type` 筛选，返回 `{ items, total }`。不返回流水原始 `extra`，仅返回模型、关联任务和公开备注等字段。
 - 管理员独立新增、修改、删除流水接口返回 HTTP 405 和统一失败结构；余额调整继续使用用户管理调点接口，必须明确传入有效的 `credits`。
-- `GET /api/storage/config` 返回 `mode=local|r2` 与公开开关，不返回密钥。默认本地指服务器文件目录；匿名浏览器本地行为保留。
+- `GET /api/storage/config` 返回 `mode=local|r2` 与公开开关，不返回密钥。此处 `local` 指账号文件的服务器目录，与用户默认保存在当前浏览器的个人偏好不同。
 - `POST /api/v1/files` 上传、`GET /api/files/:id` 元数据及文件删除按当前用户权限处理；私有文件内容支持 GET、HEAD、Range，使用文件所属用户/管理员只读会话或单文件限时凭证。无权限返回 HTTP 403；内容响应为媒体流，使用 `private, no-store` 缓存策略。
 - 文件上传和元数据成功响应会设置仅 `/api/files` 使用的 HttpOnly 阅读会话；该 Cookie 不用于写入鉴权，退出时通过 `DELETE /api/files/session` 清理。
 - `GET /api/assets/:id` 仅返回当前已发布的公共条目并刷新媒体链接；已撤下返回 404。前端插入或收藏时重新读取条目并保存独立副本，不将公共临时链接作为永久作品地址。
+
+## 个人存储偏好与账号素材
+
+以下为当前测试站 `f9538f9` 的接口契约。Go 全套、独立 TypeScript、20 项回归、完整 Docker、隔离 HTTP 和桌面图片/390px 菜单检查通过，已升级测试站；真实旧浏览器、视频/音频实机、供应商及 R2 仍待验收或联调，记录见 [待测试](../progress/pending-test.md#个人存储设置与账号素材库)。所有接口需要 Bearer 登录鉴权，用户固定取会话，响应使用 `Cache-Control: private, no-store`；测试站匿名偏好请求返回 401。
+
+| 接口 | 请求 | 成功时的 `data` |
+| --- | --- | --- |
+| `GET /api/v1/storage-preferences` | 无业务参数 | `{ autoSaveAssetsToCloud: boolean }`，未配置为 `false` |
+| `POST /api/v1/storage-preferences` | `{ "autoSaveAssetsToCloud": true }` 或 `false` | 保存后的同一对象 |
+| `GET /api/v1/user-data/assets` | 无业务参数 | 已保存的账号素材 JSON，包含 `assets` 及已有扩展字段 |
+| `POST /api/v1/user-data/assets/item` | `{ "asset": Asset }` | `{ assets: Asset[] }`，最新账号列表 |
+| `DELETE /api/v1/user-data/assets/item/:id` | 当前账号的素材条目 ID | `{ assets: Asset[] }`；不存在的 ID 幂等返回原列表 |
+| `POST /api/v1/user-data/assets` | 旧批量覆盖接口 | HTTP 405、统一失败结构，提示使用单条接口 |
+
+偏好 POST 只接受这一布尔字段，拒绝缺失、`null`、字符串等错误类型、未知字段和多段 JSON。设置复用 `user_configs.model_config.autoSaveAssetsToCloud`，通过独立补丁原子更新；模型偏好整份保存保留数据库最新值，不能通过旧模型快照覆盖。该设置只决定用户新素材的默认去向，不改变平台云端模型来源或管理员的服务器本地/R2 模式，也不自动搬移已有素材。
+
+账号素材写入在锁定用户的事务中读取并合并最新 `asset_data`，不接受整份列表覆盖。`asset` 沿用 `id`、`kind`、`title`、`tags`、`category`、`source`、`metadata`、`data` 等现有结构；`id` 必填且最多 128 字节，标题必填且最多 200 字，最多 50 个标签、每个最多 80 字。请求体最大 1 MiB；创建时间由服务端生成，更新保留原创建时间，`metadata` 允许普通 JSON 扩展。
+
+- 媒体必须先归档实际文件，再传 `data.storageKey="server:<文件ID>"`。文件索引必须存在且属于当前账号，拒绝本机 `image:`、`file:`、Blob、未归档远程地址和旧 WebDAV 直连标识。`kind`、`mimeType`、`bytes` 根据文件索引确认，活动媒体地址归一为 `/api/files/:id/content`，不信任客户端自报的类型、大小和临时 URL。
+- 文本使用 `kind="text"` 与非空 `data.content`，最多 200000 字，不要求文件索引。历史条目和列表扩展字段原样保留，本轮只严格校验新写入或修改项，不批量清除旧本地引用。
+- 同 `asset.id` 为更新/重试；同文件键已归另一 ID 时复用既有条目、不产生重复项，也不将原 ID 的其他内容覆盖为重复文件。客户端从返回列表识别实际条目 ID，不能假设一定等于本次提交 ID。
+- 文件上传和素材条目写入是两步。只有两步完成才可显示“已存入账号素材库”；第二步失败时保留原内容并支持复用文件重试，不能把仅上传成功显示成已入库。
+- 前端可在 `metadata.browserSourceId` 保存稳定浏览器文件的独立身份，以从本账号已有条目复用归档文件；仅由白名单本地键生成，不存 Token、Blob、Base64 或外链 URL，不作为文件读取地址或服务端授权依据。归属仍由 `storageKey` 对应的文件索引校验。
+- 删除接口只移除账号素材库条目，不删除物理文件、文件索引或其他画布引用，因此不直接释放个人额度。实际文件删除或清理须另行核对引用和权限；不要把条目删除等同于“彻底清除文件”。
+
+偏好关闭、未登录或尚未加载成功时，前端将新素材真实文件保存在当前浏览器的 IndexedDB/localforage；浏览器本地条目按访客/账号分区，不批量上传到账号列表，不承诺跨设备可读。切换账号必须丢弃旧会话的异步响应并重新加载该账号偏好和云列表，不能清空其他分区的历史文件。
+
+隔离 HTTP 已验证独立偏好与模型整份保存互不覆盖、严格输入、禁止缓存、文件归属和权威字段、ID/文件去重、跨用户隔离与旧接口 405；12 个并发文本加原图片完整保留 13 条。删除条目后文件和占额仍保留，实际文件删除后占用归零。这些结果不等于所有画布/历史长期引用场景已验收。
 
 ## 钱包、个人配额与人工套餐申请
 
