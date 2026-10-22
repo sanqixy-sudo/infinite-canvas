@@ -68,11 +68,34 @@ GitHub Fork 关联必须保留。GitHub 写入前核对账号为 `sanqixy-sudo`�
 
 删除素材条目仅删除列表记录，不删除文件索引或物理文件，不保证立即释放容量；其他画布和历史引用不得被破坏。实际文件清理须另行确认引用、权限和失败后保留文件的处理，不能在升级时擅自清空素材。回滚到旧整份同步版本前，评估其对本地分区和账号列表的覆盖风险；备份须同时保留数据库、媒体及浏览器各分区。
 
+### 素材目录与标签组织维护
+
+本轮目录、多归属和标签整理功能为 `48f5752110282a6e5806e336506f5ee27a4e0cd7`，Go 标准格式为 `53e3494ce90601867c8a1e1456b053f9c553a004`，功能检查点为 `1115c6f4bac0ca6c76d850fc3ef904df99c0148c`，最终样式与部署源码为 `86b07b00b7e586f71998441cd723f919fcf5a56d`。Go 全量（含目录并发和删目录保文件）、`1115c6f` 独立 TypeScript 与 32 项 Bun 回归、`86b07b0` 完整 Docker 构建通过；隔离 HTTP、目录/标签/ZIP/画布选择器浏览器检查、最终深浅主题与390px目录抽屉检查已完成，测试站已升级且原数据保留。类型检查为独立结果，不以 Docker/Next.js 构建代替；不同检查点的范围分别记录，不声称全部流程在最终样式提交重跑。真实用户及 R2 等资源验收仍保留在 `pending-test.md`，用户确认前不写正式功能说明。
+
+账号目录复用 `user_configs.asset_data.folders[]`，素材使用 `folderIds` 与原 `tags/category`，不新增表、列或迁移。账号目录与浏览器目录、不同 owner 的 localforage 分区分别保存；明确位置的新建表单不能被自动保存偏好改存到其他位置，游客请求账号保存必须拒绝。个人默认去向、平台云端模型及管理员的服务器本地/R2 模式仍是独立规则。
+
+已有条目的标签和目录归属只能通过权威组织补丁修改，普通单条整份保存、自动保存及同文件重试须保留数据库最新值。批量整理在同一用户锁内应用增删/替换意图，最多 200 个素材；出现无效或越权目标时整批拒绝，不允许部分提交或使用旧列表回写。上游若恢复整份同步或重写素材序列化，应按数据覆盖风险做语义审查。
+
+前后端共同约束每素材库最多 1000 目录、8 层、同级不重名、目录名最多 80 字；每素材最多 32 个目录归属、50 个且每个最多 80 字的标签。新增/替换目录输入最多 32 个，移除输入可达 1000 个以支持批量移出，最终单素材归属上限不变。目录移动必须拒绝自身/子级循环；导入包装单独导致超限时省略包装保留有效原树，所选父级容不下原树时提示选根目录，整体不合法时不得部分写入元数据，也不能压平层级或覆盖既有目录。
+
+素材包须带齐真实文件与目录树，导出账号文件时核对当前会话并读取有权访问的内容，缺失不能静默跳过。导入重建目录、素材和浏览器文件 ID，保留分类与标签，不复用原账号文件键，不自动批量入账号；本地手动归档时剥离本地目录 ID。隔离浏览器已验证 2 素材、5 目录、1 真实 SVG 的 ZIP 导出，导入本机后含包装层 6 目录且账号不变，刷新后 Blob 图片仍可读；重复导入、独立封面、真实资源及空间不足等故障场景继续待验收。
+
+删除父目录会移除它和下级目录的组织元数据及相应归属，不能删除素材、其他目录归属、文件索引或物理文件，也不保证释放配额。隔离 HTTP 已确认目录树/多归属、跨用户与无效批量原子拒绝、并发标签与旧快照互不覆盖；删目录后素材/文件索引仍在、232 B 占用不变。升级/回滚备份需同时保留 `asset_data`、媒体与浏览器分区；旧版本不理解目录字段或允许整份标签覆盖时优先保留数据修复，不通过清空 JSON、目录或文件完成回退。新增检查继续按授权执行并记录具体 SHA、范围和真实结果。
+
 ### 当前测试部署与回滚依据
 
-- 当前测试站点来源：`f9538f959f24d55aa26bdd3288de5b2ba73b60ea`，镜像 `xiaomeng-video-workbench:f9538f9`，完整 Docker 构建退出码 0。后端功能 `5022098a1079da1d45a3bfa95cb0d81e6569e5f1`、前端功能 `8b674878e43bbbc42c770aca355080fcd7d5d7d9`；代码已推送，Go 全套、独立 TypeScript 与 20 项前端回归通过。
+- 当前测试站点源码 `86b07b00b7e586f71998441cd723f919fcf5a56d`，镜像 `xiaomeng-video-workbench:86b07b0`，完整 Docker 构建退出 0。功能检查点 `1115c6f4bac0ca6c76d850fc3ef904df99c0148c` 的独立 TypeScript 和 32 项 Bun 回归通过，Go `go test ./...` 全量通过；隔离 HTTP 和浏览器结果见上节及待测试清单。
+- 部署目录 `/opt/xiaomeng-video-workbench-deploy`，仅更新应用容器，继续 `127.0.0.1:3001 → 3000`，原 `data` 挂载不变，OpenResty 未改动；隔离预览容器已停止，隔离数据保留。
+- 升级前备份 `/opt/xiaomeng-video-workbench-deploy/backups/pre-folders-86b07b0/` 包含 SQLite 在线备份、Compose 和 `.env` 私有副本、`media-files.tar.gz`，目录权限 700、文件 600。环境配置仅保留在受限备份，不在文档或日志公开内容。
+- 停应用后及新容器启动后，8 张表结构和全部行 SHA256 均与备份完全一致，完整性 `ok`：`users=1`、`canvas_projects=1`、`settings=1`，`credit_logs/storage_objects/user_configs/purchase_orders/storage_upload_reservations` 均为 0。实际测试站未因隔离验收新增用户、目录或素材。
+- 首页、`/assets`、`/canvas`、`/account`、`/account/storage`、`/login`、`/admin` 与 `/api/health` 均 200，匿名 POST `/api/v1/user-data/asset-folders` 与 `/api/v1/user-data/assets/organize` 均 401。最终 `86b07b0` 查看了深浅主题；390×844 的 `clientWidth=scrollWidth=390`，手机目录抽屉展开“角色资产”并选“主角设定”后 2 条素材/面包屑更新，抽屉关闭。截图为 `asset-folders-desktop.jpg`、`asset-folders-light.jpg`、`asset-folders-mobile.jpg`，不据此宣称所有媒体和故障流程实机通过。
+- GitHub 写入身份为 `sanqixy-sudo`；草稿 PR [#1](https://github.com/sanqixy-sudo/infinite-canvas/pull/1) 交付说明已更新为多级素材库，目标 `my-version`，交付时 REST `mergeable_state=clean`。PR 仍为草稿，正式合并须用户批准；本轮未执行数据回滚。
+
+#### 上一轮个人存储版本与历史回滚记录
+
+- 上一轮个人存储版本来源：`f9538f959f24d55aa26bdd3288de5b2ba73b60ea`，镜像 `xiaomeng-video-workbench:f9538f9`，完整 Docker 构建退出码 0。后端功能 `5022098a1079da1d45a3bfa95cb0d81e6569e5f1`、前端功能 `8b674878e43bbbc42c770aca355080fcd7d5d7d9`；代码已推送，Go 全套、独立 TypeScript 与 20 项前端回归通过。
 - 部署目录 `/opt/xiaomeng-video-workbench-deploy`，继续仅绑定 `127.0.0.1:3001`，原 `data` 挂载保留，OpenResty 未改动。升级前镜像 `xiaomeng-video-workbench:5d03258` 保留作代码回滚参考；旧版本会恢复登录默认上传和整份素材列表同步，回滚前须评估这些行为与本轮新数据。
-- 本轮备份为部署目录下 `backups/pre-storage-f9538f9/`，包含 SQLite 在线备份、Compose、`.env`、`media-files.tar.gz` 和 `original-records.json`；目录归 root、权限 700，文件 600。环境配置仅保留在受限备份，不在文档或日志公开内容。
+- 该轮备份为部署目录下 `backups/pre-storage-f9538f9/`，包含 SQLite 在线备份、Compose、`.env`、`media-files.tar.gz` 和 `original-records.json`；目录归 root、权限 700，文件 600。环境配置仅保留在受限备份，不在文档或日志公开内容。
 - 升级后数据库完整性 `ok`；8 表原行摘要全部一致：`users=1`、`canvas_projects=1`、`credit_logs=0`、`storage_objects=0`、`user_configs=0`、`purchase_orders=0`、`storage_upload_reservations=0`、`settings=1`。实际库未写入验收账号、素材、订单或其他测试数据。健康、首页、账户、存储设置、素材、画布、登录、后台均返回 200，匿名偏好接口返回 401。
 - 隔离 HTTP 通过默认/独立偏好、模型保存不覆盖、严格输入/no-store、本人文件归属及权威 MIME/字节/地址、ID/文件去重、12 并发文本加原图片共 13 条、跨用户隔离、旧批量 405、条目删除保留文件/占额及实际删文件归零。桌面验证图片本地刷新、右键入库、开启后自动入库；390px 验证偏好刷新保持、设置/素材无横向溢出、节点更多菜单禁用重复入库。
 - 以上浏览器验证使用隔离图片素材；用户真实旧浏览器、视频/音频实机、真实供应商和 R2 仍待联调。失败与会话竞态由自动回归覆盖，不能写成实机故障注入或所有媒体链路通过。具体结果及待验收范围见 `docs/progress/pending-test.md`。
