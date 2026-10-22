@@ -84,6 +84,7 @@ export type CanvasNodeMetadata = {
     primaryImageId?: string;
     imageBatchExpanded?: boolean;
     storageKey?: string;
+    accountSaveError?: string;
     mimeType?: string;
     bytes?: number;
     durationMs?: number;

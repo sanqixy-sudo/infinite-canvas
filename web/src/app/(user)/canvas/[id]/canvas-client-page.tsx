@@ -11,18 +11,19 @@ import { deleteCanvasProjects, stopCanvasTask } from "@/services/api/canvas-task
 import { createCanvasImageTask, pollCanvasImageTaskStatus, requestImageQuestion, type CanvasImageTask } from "@/services/api/image";
 import { createCanvasAudioTask, pollCanvasAudioTaskStatus, type CanvasAudioTask } from "@/services/api/audio";
 import { createVideoGenerationTask, pollVideoGenerationTaskStatus, VIDEO_POLL_INTERVAL_MS, type VideoResponse } from "@/services/api/video";
-import { comfyOutputStorageKey, getWorkflowTask, submitWorkflowTask, workflowMediaSource, type WorkflowGenerationTask } from "@/services/api/workflow-generation";
+import { getWorkflowTask, submitWorkflowTask, workflowMediaSource, type WorkflowGenerationTask } from "@/services/api/workflow-generation";
 import type { WorkflowRef } from "@/lib/workflow-channel";
 import { channelProtocolForConfig, defaultConfig, resolveModelForCapability, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
-import { collectImageStorageKeys, deleteStoredImages, resolveImageUrl, uploadImage, uploadRemoteImageToServer, type UploadedImage } from "@/services/image-storage";
-import { downloadRemoteMedia, resolveMediaUrl, uploadMediaFile, uploadRemoteMediaToServer, type UploadedFile } from "@/services/file-storage";
+import { collectImageStorageKeys, deleteStoredImages, resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
+import { downloadRemoteMedia, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { copyLibraryAsset } from "@/services/asset-library-copy";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { isKIEKlingV3Config, kieKlingOmniVariant } from "@/components/video-settings-panel";
-import { useAssetStore } from "@/stores/use-asset-store";
+import { useAssetStore, type AssetInput } from "@/stores/use-asset-store";
+import { saveAssetToAccountLibrary } from "@/services/account-asset-save";
 import { useUserStore } from "@/stores/use-user-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "../utils/canvas-image-data";
@@ -329,8 +330,8 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     const historyPausedRef = useRef(false);
     const didInitialCenterRef = useRef(false);
     const rafRef = useRef<number | null>(null);
-    const uploadingMediaNodeIdsRef = useRef(new Set<string>());
-    const uploadingImageNodeIdsRef = useRef(new Set<string>());
+    const savingAssetNodeIdsRef = useRef(new Set<string>());
+    const [savingAssetIds, setSavingAssetIds] = useState(new Set<string>());
     const nodeDraggingRef = useRef(false);
     const dragRef = useRef<{
         isDraggingNode: boolean;
@@ -352,7 +353,6 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
-    const addAsset = useAssetStore((state) => state.addAsset);
     const cleanupAssetImages = useAssetStore((state) => state.cleanupImages);
     const hydrated = useCanvasStore((state) => state.hydrated);
     const createProject = useCanvasStore((state) => state.createProject);
@@ -2408,128 +2408,40 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         [message],
     );
 
-    const uploadNodeMediaToCloud = useCallback(async (node: CanvasNodeData) => {
-        if ((node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio) || !node.metadata?.content || node.metadata.storageKey?.startsWith("server:") || uploadingMediaNodeIdsRef.current.has(node.id)) return;
-        uploadingMediaNodeIdsRef.current.add(node.id);
-        const isAudio = node.type === CanvasNodeType.Audio;
-        const mediaName = isAudio ? "音频" : "视频";
-        const hideLoading = message.loading(`正在上传${mediaName}至云存储...`, 0);
+    const saveNodeAsset = useCallback(async (node: CanvasNodeData) => {
+        const token = useUserStore.getState().token;
+        if (!token) { message.info("登录后可存入账号素材库"); router.push(`/login?redirect=${encodeURIComponent(`/canvas/${projectId}`)}`); return; }
+        if (!node.metadata?.content || savingAssetNodeIdsRef.current.has(node.id)) return;
+        const source = node.metadata.storageKey || node.metadata.content;
+        const base = { id: `canvas-${projectId}-${node.id}`, title: node.title || node.metadata.prompt?.slice(0, 32) || "画布素材", tags: [], source: "Canvas", coverUrl: "", metadata: { source: "canvas", nodeId: node.id, prompt: node.metadata.prompt } };
+        let asset: AssetInput;
+        if (node.type === CanvasNodeType.Text) asset = { ...base, kind: "text", data: { content: node.metadata.content } };
+        else if (isCanvasImageNodeType(node.type)) asset = { ...base, kind: "image", data: { dataUrl: node.metadata.content, storageKey: node.metadata.storageKey, width: node.metadata.naturalWidth || node.width, height: node.metadata.naturalHeight || node.height, bytes: node.metadata.bytes || 0, mimeType: node.metadata.mimeType || "image/png" } };
+        else if (node.type === CanvasNodeType.Video) asset = { ...base, kind: "video", data: { url: node.metadata.content, storageKey: node.metadata.storageKey, width: node.metadata.naturalWidth || node.width, height: node.metadata.naturalHeight || node.height, bytes: node.metadata.bytes || 0, mimeType: node.metadata.mimeType || "video/mp4" } };
+        else if (node.type === CanvasNodeType.Audio) asset = { ...base, kind: "audio", data: { url: node.metadata.content, storageKey: node.metadata.storageKey, bytes: node.metadata.bytes || 0, mimeType: node.metadata.mimeType || "audio/mpeg", durationMs: node.metadata.durationMs } };
+        else return;
+        savingAssetNodeIdsRef.current.add(node.id);
+        setSavingAssetIds((ids) => new Set(ids).add(node.id));
         try {
-            const mediaUrl = await resolveMediaUrl(node.metadata.storageKey, node.metadata.content);
-            const filename = `canvas-${node.type}-${node.id}.${isAudio ? audioExtension(node.metadata.mimeType) : "mp4"}`;
-            const uploaded = await uploadRemoteMediaToServer(mediaUrl, filename);
-            setNodes((nodes) => nodes.map((item) => (item.id === node.id ? {
-                ...item,
-                metadata: {
-                    ...item.metadata,
-                    content: uploaded.url,
-                    storageKey: uploaded.storageKey,
-                    bytes: uploaded.bytes,
-                    mimeType: uploaded.mimeType,
-                    naturalWidth: uploaded.width || item.metadata?.naturalWidth,
-                    naturalHeight: uploaded.height || item.metadata?.naturalHeight,
-                },
-            } : item)));
-            message.success(`${mediaName}已上传至云存储`);
+            const saved = await saveAssetToAccountLibrary(asset, token);
+            if (useUserStore.getState().token !== token) return;
+            if (saved.kind !== "text") {
+                const content = saved.kind === "image" ? saved.data.dataUrl : saved.data.url;
+                setNodes((current) => current.map((item) => item.id === node.id && (item.metadata?.storageKey || item.metadata?.content) === source ? { ...item, metadata: { ...item.metadata, content, storageKey: saved.data.storageKey, bytes: saved.data.bytes, mimeType: saved.data.mimeType, accountSaveError: undefined } } : item));
+                const currentNode = nodesRef.current.find((item) => item.id === node.id);
+                if (saved.kind === "image" && currentNode && (currentNode.metadata?.storageKey || currentNode.metadata?.content) === source) setChatSessions((sessions) => syncAssistantReferences(sessions, [{ ...currentNode, metadata: { ...currentNode.metadata, content, storageKey: saved.data.storageKey } }]));
+            }
+            message.success("已存入账号素材库");
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "";
-            if (errorMessage.includes("服务端对象存储未启用") || errorMessage.includes("用户对象存储配置不完整")) {
-                message.error("未添加云存储");
-            } else {
-                message.error(errorMessage || `${mediaName}上传失败`);
-            }
+            if (useUserStore.getState().token !== token) return;
+            const reason = error instanceof Error ? error.message : "请稍后重试";
+            setNodes((current) => current.map((item) => item.id === node.id && (item.metadata?.storageKey || item.metadata?.content) === source ? { ...item, metadata: { ...item.metadata, accountSaveError: reason } } : item));
+            message.error(`未存入账号素材库，原内容保留：${reason}`);
         } finally {
-            hideLoading();
-            uploadingMediaNodeIdsRef.current.delete(node.id);
+            savingAssetNodeIdsRef.current.delete(node.id);
+            setSavingAssetIds((ids) => { const next = new Set(ids); next.delete(node.id); return next; });
         }
-    }, [message]);
-
-    const uploadNodeImageToCloud = useCallback(async (node: CanvasNodeData) => {
-        if (!isCanvasImageNodeType(node.type) || !node.metadata?.content || node.metadata.storageKey?.startsWith("server:") || uploadingImageNodeIdsRef.current.has(node.id)) return;
-        uploadingImageNodeIdsRef.current.add(node.id);
-        const hideLoading = message.loading("正在上传图片至云存储...", 0);
-        try {
-            const imageUrl = await resolveImageUrl(node.metadata.storageKey, node.metadata.content);
-            const uploaded = await uploadRemoteImageToServer(imageUrl, "canvas-image-" + node.id + ".png");
-            setNodes((nodes) => nodes.map((item) => (item.id === node.id ? {
-                ...item,
-                metadata: {
-                    ...item.metadata,
-                    content: uploaded.url,
-                    storageKey: uploaded.storageKey,
-                    bytes: uploaded.bytes,
-                    mimeType: uploaded.mimeType,
-                    naturalWidth: uploaded.width || item.metadata?.naturalWidth,
-                    naturalHeight: uploaded.height || item.metadata?.naturalHeight,
-                },
-            } : item)));
-            setChatSessions((sessions) => syncAssistantReferences(sessions, [{
-                ...node,
-                metadata: {
-                    ...node.metadata,
-                    content: uploaded.url,
-                    storageKey: uploaded.storageKey,
-                    mimeType: uploaded.mimeType,
-                },
-            }]));
-            message.success("图片已上传至云存储");
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "";
-            if (errorMessage.includes("服务端对象存储未启用") || errorMessage.includes("用户对象存储配置不完整")) {
-                message.error("未添加云存储");
-            } else {
-                message.error(errorMessage || "图片上传失败");
-            }
-        } finally {
-            hideLoading();
-            uploadingImageNodeIdsRef.current.delete(node.id);
-        }
-    }, [message]);
-
-    const saveNodeAsset = useCallback(
-        async (node: CanvasNodeData) => {
-            if (node.type === CanvasNodeType.Text) {
-                const content = node.metadata?.content?.trim();
-                if (!content) return message.error("没有可保存的文本");
-                addAsset({ kind: "text", title: node.metadata?.prompt?.slice(0, 24) || "画布文本", coverUrl: "", tags: [], source: "Canvas", data: { content }, metadata: { source: "canvas", nodeId: node.id } });
-                message.success("已加入我的素材");
-                return;
-            }
-            if (node.type === CanvasNodeType.Video) {
-                if (!node.metadata?.content) return message.error("没有可保存的视频");
-                addAsset({ kind: "video", title: node.metadata?.prompt?.slice(0, 24) || "画布视频", coverUrl: "", tags: [], source: "Canvas", data: { url: node.metadata.content, storageKey: node.metadata.storageKey, width: node.width, height: node.height, bytes: node.metadata.bytes || 0, mimeType: node.metadata.mimeType || "video/mp4" }, metadata: { source: "canvas", nodeId: node.id, prompt: node.metadata?.prompt } });
-                message.success("已加入我的素材");
-                return;
-            }
-            if (!node.metadata?.content) return message.error("没有可保存的图片");
-            try {
-                const stored = !node.metadata.storageKey && node.metadata.content.startsWith("blob:") ? await uploadImage(node.metadata.content, { localOnly: true }) : null;
-                const imageUrl = stored?.url || node.metadata.content;
-                const storageKey = stored?.storageKey || node.metadata.storageKey;
-                const dataUrl = storageKey ? "" : imageUrl;
-                addAsset({
-                    kind: "image",
-                    title: node.metadata?.prompt?.slice(0, 24) || "画布图片",
-                    coverUrl: imageUrl,
-                    tags: [],
-                    source: "Canvas",
-                    data: {
-                        dataUrl,
-                        storageKey,
-                        width: stored?.width || node.metadata.naturalWidth || node.width,
-                        height: stored?.height || node.metadata.naturalHeight || node.height,
-                        bytes: stored?.bytes || node.metadata.bytes || getDataUrlByteSize(dataUrl),
-                        mimeType: stored?.mimeType || node.metadata.mimeType || "image/png",
-                    },
-                    metadata: { source: "canvas", nodeId: node.id, prompt: node.metadata?.prompt },
-                });
-                message.success("已加入我的素材");
-            } catch (error) {
-                message.error(error instanceof Error ? `图片加入素材失败：${error.message}` : "图片加入素材失败");
-            }
-        },
-        [addAsset, message],
-    );
+    }, [message, projectId, router]);
 
     const createImageReversePromptNodes = useCallback(
         (node: CanvasNodeData) => {
@@ -4528,8 +4440,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     onTrimAudio={(node) => setAudioTrimNodeId(node.id)}
                     onDownload={downloadNodeImage}
                     onSaveAsset={(node) => void saveNodeAsset(node)}
-                    onUploadMediaToCloud={(node) => void uploadNodeMediaToCloud(node)}
-                    onUploadImageToCloud={(node) => void uploadNodeImageToCloud(node)}
+                    assetSaving={Boolean(toolbarNode && savingAssetIds.has(toolbarNode.id))}
                     onMaskEdit={(node) => {
                         const nodeConfig = buildGenerationConfig(effectiveConfig, node, "image");
                         setMaskEditModel(nodeConfig.model);
@@ -4588,6 +4499,9 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     <CanvasNodeContextMenu
                         menu={contextMenu}
                         canCaptureVideoFrame={contextMenuNode?.type === CanvasNodeType.Video && Boolean(contextMenuNode.metadata?.content)}
+                        node={contextMenuNode}
+                        saving={Boolean(contextMenuNode && savingAssetIds.has(contextMenuNode.id))}
+                        onSaveAsset={() => { if (contextMenuNode) void saveNodeAsset(contextMenuNode); setContextMenu(null); }}
                         onClose={() => setContextMenu(null)}
                         onCaptureVideoFrame={(position) => {
                             if (contextMenu.type !== "node") return;
@@ -5260,11 +5174,11 @@ function audioExtension(mimeType?: string) {
 }
 
 function imageMetadata(image: UploadedImage): CanvasNodeMetadata {
-    return { content: image.url, storageKey: image.storageKey, status: "success", naturalWidth: image.width, naturalHeight: image.height, bytes: image.bytes, mimeType: image.mimeType };
+    return { content: image.url, storageKey: image.storageKey, accountSaveError: image.accountSaveError, status: "success", naturalWidth: image.width, naturalHeight: image.height, bytes: image.bytes, mimeType: image.mimeType };
 }
 
 function videoMetadata(video: UploadedFile): CanvasNodeMetadata {
-    return { content: video.url, storageKey: video.storageKey, status: "success", naturalWidth: video.width, naturalHeight: video.height, bytes: video.bytes, mimeType: video.mimeType || "video/mp4", durationMs: video.durationMs };
+    return { content: video.url, storageKey: video.storageKey, accountSaveError: video.accountSaveError, status: "success", naturalWidth: video.width, naturalHeight: video.height, bytes: video.bytes, mimeType: video.mimeType || "video/mp4", durationMs: video.durationMs };
 }
 
 function buildImportedVideoNode(video: UploadedFile, title: string, center: Position): CanvasNodeData {
@@ -5295,7 +5209,7 @@ function getNextDirectorOutputY(
 }
 
 function audioMetadata(audio: UploadedFile): CanvasNodeMetadata {
-    return { content: audio.url, storageKey: audio.storageKey, status: "success", bytes: audio.bytes, mimeType: audio.mimeType || "audio/mpeg", durationMs: audio.durationMs };
+    return { content: audio.url, storageKey: audio.storageKey, accountSaveError: audio.accountSaveError, status: "success", bytes: audio.bytes, mimeType: audio.mimeType || "audio/mpeg", durationMs: audio.durationMs };
 }
 
 function buildImageGenerationMetadata(type: CanvasImageGenerationType, config: AiConfig, count: number, references: ReferenceImage[]): CanvasNodeMetadata {
@@ -5511,6 +5425,7 @@ function applyCanvasVideoTaskUpdate(nodes: CanvasNodeData[], nodeId: string, tas
                 ...metadata,
                 content: url,
                 storageKey: task.storageKey || "",
+                accountSaveError: task.accountSaveError,
                 status: NODE_STATUS_SUCCESS,
                 naturalWidth: taskSize.width,
                 naturalHeight: taskSize.height,
@@ -5567,6 +5482,7 @@ function applyCanvasImageTaskUpdate(nodes: CanvasNodeData[], nodeId: string, tas
                 ...metadata,
                 content: url,
                 storageKey: task.storageKey || "",
+                accountSaveError: task.accountSaveError,
                 status: NODE_STATUS_SUCCESS,
                 naturalWidth: stored?.width || naturalWidth,
                 naturalHeight: stored?.height || naturalHeight,
@@ -5616,6 +5532,7 @@ function applyCanvasImageTaskUpdate(nodes: CanvasNodeData[], nodeId: string, tas
                     ...targetNode.metadata,
                     content: url,
                     storageKey: stored?.storageKey || "",
+                accountSaveError: stored?.accountSaveError,
                     mimeType: stored?.mimeType || "image/png",
                     bytes: stored?.bytes || 0,
                     naturalWidth,
@@ -5710,6 +5627,7 @@ function applyCanvasImageTaskUpdate(nodes: CanvasNodeData[], nodeId: string, tas
                 status: NODE_STATUS_SUCCESS,
                 progress: 100,
                 storageKey: stored?.storageKey || "",
+                accountSaveError: stored?.accountSaveError,
                 mimeType: stored?.mimeType || "image/png",
                 bytes: stored?.bytes || 0,
                 naturalWidth: stored?.width || root.metadata?.naturalWidth,
@@ -5779,6 +5697,7 @@ function applyCanvasAudioTaskUpdate(nodes: CanvasNodeData[], nodeId: string, tas
                 ...metadata,
                 content: url,
                 storageKey: task.storageKey || "",
+                accountSaveError: task.accountSaveError,
                 status: NODE_STATUS_SUCCESS,
                 bytes: task.bytes || 0,
                 mimeType: task.mimeType || "audio/mpeg",
@@ -5999,30 +5918,25 @@ async function submitCanvasWorkflowTask(ref: WorkflowRef, config: AiConfig, mode
 
 async function workflowImageTask(task: WorkflowGenerationTask, token = useUserStore.getState().token): Promise<CanvasImageTask> {
     if (!token || useUserStore.getState().token !== token) throw new Error("登录状态已变化");
-    const images = task.status === "succeeded" ? await Promise.all((task.urls || []).map((url) => {
-        const storageKey = comfyOutputStorageKey(url);
-        return storageKey ? { url, storageKey, width: 0, height: 0, bytes: 0, mimeType: "image/png" } : uploadImage(url, { token });
-    })) : [];
+    const images = task.status === "succeeded" ? await Promise.all((task.urls || []).map((url, index) => uploadImage(url, { token, syncId: `workflow-image:${task.id}:${index}` }))) : [];
     if (useUserStore.getState().token !== token) throw new Error("登录状态已变化");
-    return { id: task.id, source: "workflow", status: task.status === "succeeded" ? "completed" : task.status, progress: task.progress, image_url: images[0]?.url, image_urls: images.map((image) => image.url), imageStorage: images, storageKey: images[0]?.storageKey, width: images[0]?.width, height: images[0]?.height, mimeType: images[0]?.mimeType, bytes: images[0]?.bytes, error: task.error ? { message: task.error } : undefined };
+    return { id: task.id, source: "workflow", status: task.status === "succeeded" ? "completed" : task.status, progress: task.progress, image_url: images[0]?.url, image_urls: images.map((image) => image.url), imageStorage: images, storageKey: images[0]?.storageKey, width: images[0]?.width, height: images[0]?.height, mimeType: images[0]?.mimeType, bytes: images[0]?.bytes, accountSaveError: images[0]?.accountSaveError, error: task.error ? { message: task.error } : undefined };
 }
 
 async function workflowVideoTask(task: WorkflowGenerationTask, token = useUserStore.getState().token): Promise<VideoResponse> {
     if (!token || useUserStore.getState().token !== token) throw new Error("登录状态已变化");
     const url = task.status === "succeeded" ? task.urls?.[0] || "" : "";
-    const storageKey = comfyOutputStorageKey(url);
-    const video = url && !storageKey ? await uploadMediaFile(await downloadRemoteMedia(url), "workflow-video", undefined, token) : null;
+    const video = url ? await uploadMediaFile(url, "workflow-video", `workflow-video:${task.id}`, token) : null;
     if (useUserStore.getState().token !== token) throw new Error("登录状态已变化");
-    return { id: task.id, task_id: task.id, status: task.status === "succeeded" ? "completed" : task.status, progress: task.progress, video_url: video?.url || url, url: video?.url || url, storageKey: video?.storageKey || storageKey, error: task.error ? { message: task.error } : undefined };
+    return { id: task.id, task_id: task.id, status: task.status === "succeeded" ? "completed" : task.status, progress: task.progress, video_url: video?.url || url, url: video?.url || url, storageKey: video?.storageKey || "", accountSaveError: video?.accountSaveError, error: task.error ? { message: task.error } : undefined };
 }
 
 async function workflowAudioTask(task: WorkflowGenerationTask, token = useUserStore.getState().token): Promise<CanvasAudioTask> {
     if (!token || useUserStore.getState().token !== token) throw new Error("登录状态已变化");
     const url = task.status === "succeeded" ? task.urls?.[0] || "" : "";
-    const storageKey = comfyOutputStorageKey(url);
-    const audio = url && !storageKey ? await uploadMediaFile(await downloadRemoteMedia(url), "workflow-audio", undefined, token) : null;
+    const audio = url ? await uploadMediaFile(url, "workflow-audio", `workflow-audio:${task.id}`, token) : null;
     if (useUserStore.getState().token !== token) throw new Error("登录状态已变化");
-    return { id: task.id, status: task.status === "succeeded" ? "completed" : task.status, progress: task.progress, audio_url: audio?.url || url, url: audio?.url || url, storageKey: audio?.storageKey || storageKey, mimeType: audio?.mimeType || "audio/mpeg", bytes: audio?.bytes || 0, error: task.error ? { message: task.error } : undefined };
+    return { id: task.id, status: task.status === "succeeded" ? "completed" : task.status, progress: task.progress, audio_url: audio?.url || url, url: audio?.url || url, storageKey: audio?.storageKey || "", accountSaveError: audio?.accountSaveError, mimeType: audio?.mimeType || "audio/mpeg", bytes: audio?.bytes || 0, error: task.error ? { message: task.error } : undefined };
 }
 
 function findRetrySourceNode(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {

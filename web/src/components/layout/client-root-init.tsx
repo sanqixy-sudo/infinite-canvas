@@ -26,7 +26,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     useEffect(() => {
         const onSyncFailed = (event: Event) => {
             const detail = (event as CustomEvent<string>).detail;
-            message.warning({ key: STORAGE_SYNC_FAILED_EVENT, content: `云端同步失败，已保留原始素材${detail ? `：${detail}` : ""}` });
+            message.warning({ key: STORAGE_SYNC_FAILED_EVENT, content: detail || "素材尚未完成保存，请检查存储状态并重试。" });
         };
         window.addEventListener(STORAGE_SYNC_FAILED_EVENT, onSyncFailed);
         return () => window.removeEventListener(STORAGE_SYNC_FAILED_EVENT, onSyncFailed);

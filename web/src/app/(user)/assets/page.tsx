@@ -1,6 +1,7 @@
 "use client";
 
-import { Copy, Download, PencilLine, Search, Trash2 } from "lucide-react";
+import { Cloud, Copy, Download, Monitor, PencilLine, Search, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Card, Drawer, Empty, Image, Input, Modal, Pagination, Select, Space, Tag, Typography } from "antd";
 import { saveAs } from "file-saver";
@@ -11,6 +12,8 @@ import { cn } from "@/lib/utils";
 import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-store";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
 import { AssetFormModal } from "@/components/assets/asset-form-modal";
+import { saveAssetToAccountLibrary } from "@/services/account-asset-save";
+import { useUserStore } from "@/stores/use-user-store";
 
 const kindOptions = [
     { label: "全部", value: "all" },
@@ -22,12 +25,21 @@ const kindOptions = [
 
 export default function AssetsPage() {
     const { message } = App.useApp();
+    const token = useUserStore((state) => state.token);
     const copyText = useCopyText();
     const assetInputRef = useRef<HTMLInputElement>(null);
     const assets = useAssetStore((state) => state.assets);
+    const cloudAssets = useAssetStore((state) => state.cloudAssets);
+    const legacyAssets = useAssetStore((state) => state.legacyBrowserAssets);
+    const restoreLegacyAssets = useAssetStore((state) => state.restoreLegacyAssetsToCurrentBrowser);
+    const assetError = useAssetStore((state) => state.error);
+    const cloudIds = useMemo(() => new Set(cloudAssets.map((asset) => asset.id)), [cloudAssets]);
     const addAsset = useAssetStore((state) => state.addAsset);
     const removeAsset = useAssetStore((state) => state.removeAsset);
     const [keyword, setKeyword] = useState("");
+    const [scope, setScope] = useState("all");
+    const [savingIds, setSavingIds] = useState(new Set<string>());
+    const [deleting, setDeleting] = useState(false);
     const [kindFilter, setKindFilter] = useState<AssetKind | "all">("all");
     const [categoryFilter, setCategoryFilter] = useState("");
     const [tagFilters, setTagFilters] = useState<string[]>([]);
@@ -41,16 +53,22 @@ export default function AssetsPage() {
     const categories = useMemo(() => Array.from(new Set(validAssets.flatMap((asset) => asset.category ? [asset.category] : []))), [validAssets]);
     const tags = useMemo(() => Array.from(new Set(validAssets.flatMap((asset) => asset.tags))), [validAssets]);
 
+    useEffect(() => {
+        setEditingAsset(null); setIsAssetOpen(false); setPreviewAsset(null); setDeletingAsset(null);
+        setSavingIds(new Set()); setDeleting(false); setPage(1);
+    }, [token]);
+
     const filteredAssets = useMemo(() => {
         const query = keyword.trim().toLowerCase();
         return validAssets.filter((asset) => {
+            if (scope === "cloud" && !cloudIds.has(asset.id) || scope === "local" && cloudIds.has(asset.id)) return false;
             if (kindFilter !== "all" && asset.kind !== kindFilter) return false;
             if (categoryFilter && asset.category !== categoryFilter) return false;
             if (tagFilters.length && !tagFilters.some((tag) => asset.tags.includes(tag))) return false;
             if (!query) return true;
             return assetSearchText(asset).includes(query);
         });
-    }, [validAssets, keyword, kindFilter, categoryFilter, tagFilters]);
+    }, [validAssets, keyword, kindFilter, categoryFilter, tagFilters, scope, cloudIds]);
 
     const visibleAssets = useMemo(() => {
         const start = (page - 1) * pageSize;
@@ -110,11 +128,26 @@ export default function AssetsPage() {
         }
     };
 
-    const confirmDelete = () => {
+    const saveToAccount = async (asset: Asset) => {
+        if (savingIds.has(asset.id)) return;
+        const requestToken = token;
+        setSavingIds((ids) => new Set(ids).add(asset.id));
+        try { await saveAssetToAccountLibrary(asset, requestToken); if (useUserStore.getState().token === requestToken) message.success("已存入账号素材库"); }
+        catch (error) { if (useUserStore.getState().token === requestToken) message.error(error instanceof Error ? error.message : "未存入账号素材库，原内容保留，请重试"); }
+        finally { if (useUserStore.getState().token === requestToken) setSavingIds((ids) => { const next = new Set(ids); next.delete(asset.id); return next; }); }
+    };
+
+    const confirmDelete = async () => {
         if (!deletingAsset) return;
-        removeAsset(deletingAsset.id);
-        message.success("素材已删除");
-        setDeletingAsset(null);
+        const requestToken = token;
+        setDeleting(true);
+        try {
+            await removeAsset(deletingAsset.id);
+            if (useUserStore.getState().token !== requestToken) return;
+            message.success("素材已移除");
+            setDeletingAsset(null);
+        } catch (error) { if (useUserStore.getState().token === requestToken) message.error(error instanceof Error ? error.message : "移除失败，请重试"); }
+        finally { if (useUserStore.getState().token === requestToken) setDeleting(false); }
     };
 
     return (
@@ -123,7 +156,7 @@ export default function AssetsPage() {
                 <div className="pb-8">
                     <div className="mx-auto max-w-5xl text-center">
                         <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">我的素材</h1>
-                        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">收藏和管理常用素材，按类型、标题、分类和标签快速查找。</p>
+                        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">账号素材可跨设备使用，当前浏览器里的素材可按需入库。</p><Link href="/account/storage" className="mt-3 inline-block text-xs text-muted-foreground underline underline-offset-4">存储设置与空间用量</Link>
                     </div>
 
                     <div className="mx-auto mt-8 w-full max-w-2xl">
@@ -146,6 +179,9 @@ export default function AssetsPage() {
                     </div>
 
                     <div className="mx-auto mt-6 grid max-w-6xl gap-3 text-left">
+                        {legacyAssets.length ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4"><div className="max-w-2xl"><p className="text-sm font-medium">此浏览器保留了旧版本素材</p><p className="mt-1 text-xs leading-6 text-muted-foreground">旧记录没有可靠的账号归属，未自动合入当前列表。确认属于你后，可导入到当前浏览器；不会自动上传到账号。</p></div><button type="button" className="rounded-lg border border-border px-3 py-2 text-xs hover:bg-muted" onClick={() => { try { const count = restoreLegacyAssets(); message.success(`已导入 ${count} 份旧素材到当前浏览器列表`); } catch (error) { message.error(error instanceof Error ? error.message : "导入失败，原记录仍保留"); } }}>导入旧浏览器素材</button></div> : null}
+                        {assetError ? <p role="alert" className="text-sm text-destructive">账号素材读取失败，已有本地内容保留。<button type="button" className="ml-2 underline underline-offset-4" onClick={() => { if (token) void useAssetStore.getState().hydrateAccountAssets(token).catch(() => undefined); }}>重新读取</button></p> : null}
+                        <div className="mb-2 flex flex-wrap gap-2" aria-label="素材保存位置">{[{ value: "all", label: "全部素材" }, { value: "cloud", label: "账号素材库" }, { value: "local", label: "当前浏览器" }].map((item) => <button key={item.value} type="button" aria-pressed={scope === item.value} onClick={() => { setScope(item.value); setPage(1); }} className={`rounded-lg px-3 py-2 text-xs transition ${scope === item.value ? "bg-primary font-medium text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}>{item.label}</button>)}</div>
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="grid gap-2 sm:grid-cols-[56px_minmax(0,1fr)] sm:items-center">
                                 <div className="text-xs font-medium text-stone-500 dark:text-stone-400">类型</div>
@@ -227,7 +263,7 @@ export default function AssetsPage() {
                 <div className="mx-auto flex max-w-7xl flex-col gap-5">
                     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {visibleAssets.map((asset) => (
-                            <AssetCard key={asset.id} asset={asset} onOpen={() => setPreviewAsset(asset)} onEdit={() => openEdit(asset)} onCopy={copyAssetText} onDownload={downloadAsset} onDelete={() => setDeletingAsset(asset)} />
+                            <AssetCard key={asset.id} asset={asset} isCloud={cloudIds.has(asset.id)} saving={savingIds.has(asset.id)} onSave={() => void saveToAccount(asset)} onOpen={() => setPreviewAsset(asset)} onEdit={() => openEdit(asset)} onCopy={copyAssetText} onDownload={downloadAsset} onDelete={() => setDeletingAsset(asset)} />
                         ))}
                     </div>
 
@@ -255,14 +291,14 @@ export default function AssetsPage() {
 
             <input ref={assetInputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importAssetZip(event.target.files?.[0])} />
 
-            <Modal title="删除素材" open={Boolean(deletingAsset)} onCancel={() => setDeletingAsset(null)} onOk={confirmDelete} okText="删除" okButtonProps={{ danger: true }} cancelText="取消">
-                确定删除「{deletingAsset?.title}」吗？删除后会从我的素材中移除。
+            <Modal title="移除素材" open={Boolean(deletingAsset)} onCancel={() => { if (!deleting) setDeletingAsset(null); }} onOk={() => void confirmDelete()} confirmLoading={deleting} cancelButtonProps={{ disabled: deleting }} closable={!deleting} mask={{ closable: !deleting }} okText="移除素材" okButtonProps={{ danger: true }} cancelText="取消">
+                确定从{deletingAsset && cloudIds.has(deletingAsset.id) ? "账号素材库" : "当前浏览器素材列表"}移除「{deletingAsset?.title}」吗？画布中已有的引用保留；此操作不清理仍在使用的文件，也不会立即释放对应空间。
             </Modal>
         </div>
     );
 }
 
-function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { asset: Asset; onOpen: () => void; onEdit: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void; onDelete: () => void }) {
+function AssetCard({ asset, isCloud, saving, onSave, onOpen, onEdit, onCopy, onDownload, onDelete }: { asset: Asset; isCloud: boolean; saving: boolean; onSave: () => void; onOpen: () => void; onEdit: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void; onDelete: () => void }) {
     const cover = asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "");
     const summary = assetSummary(asset);
     return (
@@ -297,6 +333,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                         {summary}
                     </Typography.Paragraph>
                     <div className="mt-3 flex flex-wrap gap-1.5">
+                        <span className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">{isCloud ? <Cloud className="size-3" /> : <Monitor className="size-3" />}{isCloud ? "已存入账号" : "当前浏览器"}</span>
                         {(asset.tags || []).slice(0, 3).map((tag) => (
                             <Tag key={tag} className="m-0 text-[11px]">
                                 {tag}
@@ -306,7 +343,8 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                     </div>
                 </div>
             </button>
-            <div className="flex items-center gap-2 px-4 pb-4">
+            <div className="flex flex-wrap items-center gap-2 px-4 pb-4">
+                {!isCloud ? <Button size="small" loading={saving} icon={<Cloud className="size-3.5" />} onClick={onSave}>存入账号素材库</Button> : null}
                 <Button size="small" onClick={onOpen}>
                     查看
                 </Button>

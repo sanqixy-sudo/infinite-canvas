@@ -32,7 +32,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     const openConfig = useConfigStore((state) => state.openConfigDialog);
     const [menuOpen, setMenuOpen] = useState(false);
     const active = (href: string) => href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
-    const pageTitle = navigation.flatMap((group) => group.links).find((link) => active(link.href))?.label || (pathname.startsWith("/account/recharge") ? "我的钱包" : pathname === "/account" ? "个人中心" : pathname === "/models" ? "模型与价格" : "小盟视频工作台");
+    const pageTitle = navigation.flatMap((group) => group.links).find((link) => active(link.href))?.label || (pathname.startsWith("/account/storage") ? "存储设置" : pathname.startsWith("/account/recharge") ? "我的钱包" : pathname === "/account" ? "个人中心" : pathname === "/models" ? "模型与价格" : "小盟视频工作台");
     const menu = <>
         <Link href="/" onClick={() => setMenuOpen(false)} className="flex h-[100px] shrink-0 items-center gap-3.5 px-6">
             <span className="flex size-10 items-center justify-center rounded-[13px] bg-primary text-primary-foreground"><Clapperboard className="size-[21px]" strokeWidth={1.7} /></span>

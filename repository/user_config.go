@@ -48,7 +48,9 @@ func PatchUserConfig(userID, timestamp string, patch func(*model.UserConfig) err
 // PatchUserConfigWithStorage 同时读取当前用户拥有的文件索引，供素材保存校验。
 func PatchUserConfigWithStorage(userID, timestamp, storageID string, patch func(*model.UserConfig, *model.StorageObject) error) (model.UserConfig, error) {
 	db, err := DB()
-	if err != nil { return model.UserConfig{}, err }
+	if err != nil {
+		return model.UserConfig{}, err
+	}
 	return patchUserConfig(db, userID, timestamp, storageID, patch)
 }
 
@@ -56,25 +58,42 @@ func patchUserConfig(db *gorm.DB, userID, timestamp, storageID string, patch fun
 	var config model.UserConfig
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var user model.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil { return err }
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
+			return err
+		}
 		err := tx.First(&config, "user_id = ?", userID).Error
 		missing := errors.Is(err, gorm.ErrRecordNotFound)
-		if err != nil && !missing { return err }
-		if missing { config = model.UserConfig{UserID: userID, CreatedAt: timestamp} }
+		if err != nil && !missing {
+			return err
+		}
+		if missing {
+			config = model.UserConfig{UserID: userID, CreatedAt: timestamp}
+		}
 		before := config
 		var object *model.StorageObject
 		if storageID != "" {
 			object = &model.StorageObject{}
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND created_by = ? AND (deleted_at = '' OR deleted_at IS NULL)", storageID, userID).First(object).Error; err != nil { return err }
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND created_by = ? AND (deleted_at = '' OR deleted_at IS NULL)", storageID, userID).First(object).Error; err != nil {
+				return err
+			}
 		}
-		if err := patch(&config, object); err != nil { return err }
+		if err := patch(&config, object); err != nil {
+			return err
+		}
 		config.UserID = userID
-		if missing { config.UpdatedAt = timestamp; return tx.Create(&config).Error }
+		if missing {
+			config.UpdatedAt = timestamp
+			return tx.Create(&config).Error
+		}
 		updates := map[string]any{}
 		for column, values := range map[string][2]string{"model_config": {before.ModelConfig, config.ModelConfig}, "storage_provider": {before.StorageProvider, config.StorageProvider}, "image_history": {before.ImageHistory, config.ImageHistory}, "asset_data": {before.AssetData, config.AssetData}} {
-			if values[0] != values[1] { updates[column] = values[1] }
+			if values[0] != values[1] {
+				updates[column] = values[1]
+			}
 		}
-		if len(updates) == 0 { return nil }
+		if len(updates) == 0 {
+			return nil
+		}
 		config.UpdatedAt = timestamp
 		updates["updated_at"] = timestamp
 		return tx.Model(&model.UserConfig{}).Where("user_id = ?", userID).Updates(updates).Error

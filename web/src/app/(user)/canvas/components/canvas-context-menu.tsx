@@ -2,15 +2,19 @@
 
 import { useEffect } from "react";
 import type { ReactNode } from "react";
-import { BetweenHorizontalStart, GalleryHorizontal, GalleryHorizontalEnd, Plus, Trash2 } from "lucide-react";
+import { BetweenHorizontalStart, FolderPlus, GalleryHorizontal, GalleryHorizontalEnd, Plus, Trash2 } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
-import type { ContextMenuState } from "../types";
+import { CanvasNodeType, type CanvasNodeData, type ContextMenuState } from "../types";
+import { isCanvasImageNodeType } from "../utils/canvas-panorama";
+import { useCanvasAssetSaveState } from "../hooks/use-canvas-asset-save-state";
 import type { VideoFramePosition } from "../utils/canvas-video-frame";
 
-export function CanvasNodeContextMenu({ menu, canCaptureVideoFrame, onClose, onCaptureVideoFrame, onDuplicate, onDelete }: { menu: ContextMenuState; canCaptureVideoFrame: boolean; onClose: () => void; onCaptureVideoFrame: (position: VideoFramePosition) => void; onDuplicate: () => void; onDelete: () => void }) {
+export function CanvasNodeContextMenu({ menu, node, saving, onSaveAsset, canCaptureVideoFrame, onClose, onCaptureVideoFrame, onDuplicate, onDelete }: { menu: ContextMenuState; node: CanvasNodeData | null; saving: boolean; onSaveAsset: () => void; canCaptureVideoFrame: boolean; onClose: () => void; onCaptureVideoFrame: (position: VideoFramePosition) => void; onDuplicate: () => void; onDelete: () => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const storage = useCanvasAssetSaveState(node, saving);
+    const canSave = Boolean(node?.metadata?.content && (node.type === CanvasNodeType.Text || node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio || isCanvasImageNodeType(node.type)));
 
     useEffect(() => {
         const close = (event: PointerEvent) => {
@@ -28,6 +32,7 @@ export function CanvasNodeContextMenu({ menu, canCaptureVideoFrame, onClose, onC
             style={{ left: menu.x, top: menu.y, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onPointerDown={(event) => event.stopPropagation()}
         >
+            {canSave ? <><p className="px-3 py-2 text-[10px]" style={{ color: theme.node.muted }} title={storage.detail}>{storage.label}</p><MenuButton icon={<FolderPlus className="size-4" />} label={storage.saved ? "已存入账号素材库" : "存入账号素材库"} onClick={onSaveAsset} disabled={saving || storage.saved} /><div className="my-1 border-t" style={{ borderColor: theme.toolbar.border }} /></> : null}
             {canCaptureVideoFrame ? (
                 <>
                     <MenuButton icon={<BetweenHorizontalStart className="size-4" />} label="截取首帧" onClick={() => onCaptureVideoFrame("first")} />
@@ -42,11 +47,11 @@ export function CanvasNodeContextMenu({ menu, canCaptureVideoFrame, onClose, onC
     );
 }
 
-function MenuButton({ icon, label, onClick, danger = false }: { icon: ReactNode; label: string; onClick?: () => void; danger?: boolean }) {
+function MenuButton({ icon, label, onClick, danger = false, disabled = false }: { icon: ReactNode; label: string; onClick?: () => void; danger?: boolean; disabled?: boolean }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
     return (
-        <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:opacity-80" style={{ color: danger ? "#f87171" : theme.node.text }} onClick={onClick}>
+        <button type="button" disabled={disabled} className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50" style={{ color: danger ? "#f87171" : theme.node.text }} onClick={onClick}>
             {icon}
             <span>{label}</span>
         </button>

@@ -2,7 +2,7 @@
 
 import type { InsertAssetPayload } from "@/app/(user)/canvas/types";
 import { fetchAssetLibraryItem } from "@/services/api/assets";
-import { downloadRemoteMedia, uploadMediaBlob, uploadMediaFile } from "@/services/file-storage";
+import { downloadRemoteMedia, uploadMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -25,7 +25,7 @@ export async function copyLibraryAsset(id: string) {
             const image = await uploadImage(blob, { localOnly: !token, token });
             payload = { ...base, ...image, kind: "image", dataUrl: image.url };
         } else {
-            const file = token ? await uploadMediaBlob(blob, asset.title, token) : await uploadMediaFile(blob, asset.type, undefined, token, true);
+            const file = await uploadMediaFile(blob, asset.type, undefined, token, !token);
             payload = asset.type === "video" ? { ...base, ...file, kind: "video" } : { ...base, ...file, kind: "audio" };
         }
     }

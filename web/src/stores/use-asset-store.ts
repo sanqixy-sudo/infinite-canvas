@@ -2,12 +2,11 @@
 
 import { create } from "zustand";
 import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
-
 import { nanoid } from "nanoid";
 import { localForageStorage } from "@/lib/localforage-storage";
-import { cleanupUnusedImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { cleanupUnusedImages, resolveImageUrl } from "@/services/image-storage";
 import { cleanupUnusedMedia, resolveMediaUrl } from "@/services/file-storage";
-import { fetchUserAssetData, syncUserAssetData } from "@/services/api/user-config";
+import { deleteUserAssetItem, fetchUserAssetData, saveUserAssetItem } from "@/services/api/user-config";
 import { useUserStore } from "@/stores/use-user-store";
 
 export type AssetKind = "text" | "image" | "video" | "audio";
@@ -16,6 +15,8 @@ export type ImageAsset = AssetBase<"image"> & { data: { dataUrl: string; storage
 export type VideoAsset = AssetBase<"video"> & { data: { url: string; storageKey?: string; width: number; height: number; bytes: number; mimeType: string } };
 export type AudioAsset = AssetBase<"audio"> & { data: { url: string; storageKey?: string; bytes?: number; mimeType: string; durationMs?: number } };
 export type Asset = TextAsset | ImageAsset | VideoAsset | AudioAsset;
+export type AssetInput = Asset extends infer T ? T extends Asset ? Omit<T, "id" | "createdAt" | "updatedAt"> & { id?: string } : never : never;
+type AssetPatch = Partial<Omit<Asset, "id" | "createdAt">>;
 
 type AssetBase<T extends AssetKind> = {
     id: string;
@@ -32,181 +33,253 @@ type AssetBase<T extends AssetKind> = {
 
 type AssetStore = {
     assets: Asset[];
-    addAsset: (asset: Omit<Asset, "id" | "createdAt" | "updatedAt">) => string;
-    updateAsset: (id: string, patch: Partial<Omit<Asset, "id" | "createdAt">>) => void;
-    removeAsset: (id: string) => void;
+    localAssets: Asset[];
+    cloudAssets: Asset[];
+    legacyBrowserAssets: Asset[];
+    localAssetsByOwner: Record<string, Asset[]>;
+    owner: string;
+    hydrated: boolean;
+    cloudLoading: boolean;
+    error: string;
+    addAsset: (asset: AssetInput) => string;
+    updateAsset: (id: string, patch: AssetPatch) => Promise<void>;
+    removeAsset: (id: string) => Promise<void>;
+    saveCloudAsset: (asset: AssetInput, token?: string) => Promise<string>;
+    updateCloudAsset: (id: string, patch: AssetPatch, token?: string) => Promise<void>;
+    removeCloudAsset: (id: string, token?: string) => Promise<void>;
+    selectAssetSession: (resolveLocal?: boolean) => void;
     hydrateAccountAssets: (token: string, syncEnabled?: boolean) => Promise<void>;
     syncAccountAssets: (token: string) => Promise<void>;
     stopAccountAssetSync: () => void;
+    restoreLegacyAssetsToCurrentBrowser: () => number;
     cleanupImages: (extra?: unknown, storageKeys?: ReadonlyMap<string, string>, ownerToken?: string) => void;
 };
 
+type AssetSnapshot = { assets: Asset[] };
+type LocalAssetSnapshot = AssetSnapshot & { localAssetsByOwner: Record<string, Asset[]> };
 const ASSET_STORE_KEY = "infinite-canvas:asset_store";
 let activeAssetSyncToken = "";
-let accountAssetSyncEnabled = false;
-let isHydratingAccountAssets = false;
-let syncTimer: number | null = null;
+let assetSessionVersion = 0;
+let cloudQueue: Promise<void> = Promise.resolve();
+let localStorageReady = false;
+const resolvedAssetURLTimes = new Map<string, number>();
 
-type AssetSnapshot = { assets: Asset[] };
-
-async function resolveStoredAsset(asset: Asset): Promise<Asset> {
-    if (asset.kind === "video" && asset.data.storageKey) return { ...asset, data: { ...asset.data, url: await resolveMediaUrl(asset.data.storageKey, asset.data.url) } };
-    if (asset.kind === "audio" && asset.data.storageKey) return { ...asset, data: { ...asset.data, url: await resolveMediaUrl(asset.data.storageKey, asset.data.url) } };
-    if (asset.kind !== "image") return asset;
-    if (asset.data.storageKey)
-        return {
-            ...asset,
-            coverUrl: asset.coverUrl.startsWith("blob:") ? await resolveImageUrl(asset.data.storageKey, asset.coverUrl) : asset.coverUrl,
-            data: { ...asset.data, dataUrl: await resolveImageUrl(asset.data.storageKey, asset.data.dataUrl) },
-        };
-    if (!asset.data.dataUrl.startsWith("data:image/")) return asset;
-    const image = await uploadImage(asset.data.dataUrl);
-    return { ...asset, coverUrl: asset.coverUrl.startsWith("data:image/") ? image.url : asset.coverUrl, data: { ...asset.data, dataUrl: image.url, storageKey: image.storageKey, bytes: image.bytes, mimeType: image.mimeType } };
+function assetOwner() {
+    const { token, user } = useUserStore.getState();
+    return token ? user?.id ? `user:${user.id}` : "pending" : "guest";
 }
 
-const assetStorage: PersistStorage<AssetStore> = {
+async function resolveStoredAsset(asset: Asset): Promise<Asset> {
+    try {
+        if (asset.kind === "video" && asset.data.storageKey) return { ...asset, data: { ...asset.data, url: await resolveMediaUrl(asset.data.storageKey, asset.data.url) } };
+        if (asset.kind === "audio" && asset.data.storageKey) return { ...asset, data: { ...asset.data, url: await resolveMediaUrl(asset.data.storageKey, asset.data.url) } };
+        if (asset.kind === "image" && asset.data.storageKey) {
+            const url = await resolveImageUrl(asset.data.storageKey, asset.data.dataUrl);
+            return { ...asset, coverUrl: asset.coverUrl === asset.data.dataUrl || /^(blob:|data:image\/)/.test(asset.coverUrl) ? url : asset.coverUrl, data: { ...asset.data, dataUrl: url } };
+        }
+    } catch { /* 保留旧记录，不因无法读取本机文件而丢弃素材。 */ }
+    return asset;
+}
+
+const assetStorage: PersistStorage<LocalAssetSnapshot> = {
     getItem: async (name) => {
-        const value = await localForageStorage.getItem(name);
-        if (!value) return null;
-        const parsed = JSON.parse(value) as StorageValue<AssetStore>;
-        parsed.state.assets = await Promise.all(parsed.state.assets.map(resolveStoredAsset));
-        return parsed;
+        try {
+            const value = await localForageStorage.getItem(name);
+            return value ? JSON.parse(value) as StorageValue<LocalAssetSnapshot> : null;
+        } finally { localStorageReady = true; }
     },
-    setItem: (name, value) => localForageStorage.setItem(name, JSON.stringify(value)),
+    setItem: (name, value) => localStorageReady ? localForageStorage.setItem(name, JSON.stringify(value)) : undefined,
     removeItem: (name) => localForageStorage.removeItem(name),
 };
 
+function cloudMediaKey(asset: Asset | AssetInput) {
+    return asset.kind === "text" ? "" : asset.data.storageKey || "";
+}
+
+function isAccountAsset(asset: Asset) {
+    return asset.kind === "text" || /^server:[^:/\s]+$/.test(cloudMediaKey(asset));
+}
+
+function legacyAssetsForOwner(buckets: Record<string, Asset[]>, owner: string) {
+    return mergeAssets(buckets.legacy || [], buckets[`legacy:${owner}`] || []);
+}
+
+function currentAssetSession(token: string, version: number) {
+    return version === assetSessionVersion && activeAssetSyncToken === token && useUserStore.getState().token === token && assetOwner() === useAssetStore.getState().owner;
+}
+
+function requireAssetSession(token: string) {
+    const { user, token: currentToken } = useUserStore.getState();
+    if (!token || token !== currentToken || !user?.id) throw new Error("登录状态已变化，请重新登录后保存素材");
+    useAssetStore.getState().selectAssetSession();
+}
+
+function runCloudAssetOperation<T>(token: string, operation: () => Promise<T>) {
+    requireAssetSession(token);
+    const version = assetSessionVersion;
+    const check = () => { if (!currentAssetSession(token, version)) throw new Error("登录状态已变化，未应用旧账号素材"); };
+    const task = cloudQueue.then(async () => {
+        check();
+        const value = await operation();
+        check();
+        return value;
+    });
+    cloudQueue = task.then(() => undefined, () => undefined);
+    return task;
+}
+
+function localReference(value: string) {
+    return /^(image:|file:|video:|blob:|data:)/i.test(value.trim());
+}
+
+function containsLocalReference(value: unknown): boolean {
+    if (!value || typeof value !== "object") return false;
+    return Object.entries(value).some(([key, item]) => /^(url|dataUrl|coverUrl|storageKey)$/i.test(key) && typeof item === "string" ? localReference(item) : containsLocalReference(item));
+}
+
+function cloudAssetPayload(input: AssetInput): Asset {
+    const now = new Date().toISOString();
+    const existing = useAssetStore.getState().cloudAssets.find((asset) => asset.id === input.id || Boolean(cloudMediaKey(input) && cloudMediaKey(asset) === cloudMediaKey(input)));
+    const key = cloudMediaKey(input);
+    if (input.kind !== "text" && !/^server:[^:]+$/.test(key)) throw new Error("请先将素材文件保存到账号存储，再登记云素材");
+    const id = existing?.id || (input.kind === "text" ? input.id?.startsWith("cloud-") ? input.id : `cloud-text-${input.id || nanoid()}` : `cloud-${key.slice(7)}`);
+    const contentURL = input.kind === "text" ? "" : `/api/files/${encodeURIComponent(key.slice(7))}/content`;
+    const payload = { ...input, id, createdAt: existing?.createdAt || now, updatedAt: now, coverUrl: localReference(input.coverUrl) ? input.kind === "image" ? contentURL : "" : input.coverUrl } as Asset;
+    if (payload.kind === "image") payload.data = { ...payload.data, dataUrl: contentURL };
+    else if (payload.kind !== "text") payload.data = { ...payload.data, url: contentURL };
+    if (containsLocalReference(payload.metadata)) throw new Error("素材元数据仍包含本机引用，请先移除本机文件引用后保存");
+    return payload;
+}
+
+async function resolveAssetSnapshot(result: AssetSnapshot, token: string): Promise<AssetSnapshot> {
+    if (activeAssetSyncToken !== token || useUserStore.getState().token !== token) return result;
+    const previous = new Map(useAssetStore.getState().cloudAssets.map((asset) => [`${asset.id}:${cloudMediaKey(asset)}`, asset]));
+    return { assets: await Promise.all((Array.isArray(result?.assets) ? result.assets : []).map(async (asset) => {
+        if (asset.kind === "text") return asset;
+        const key = `${asset.id}:${cloudMediaKey(asset)}`;
+        const cached = previous.get(key);
+        if (cached?.kind === "image" && asset.kind === "image" && (resolvedAssetURLTimes.get(key) || 0) > Date.now()) {
+            return { ...asset, coverUrl: asset.coverUrl === asset.data.dataUrl ? cached.data.dataUrl : asset.coverUrl, data: { ...asset.data, dataUrl: cached.data.dataUrl } };
+        }
+        if (cached && cached.kind !== "text" && cached.kind !== "image" && asset.kind === cached.kind && (resolvedAssetURLTimes.get(key) || 0) > Date.now()) return { ...asset, data: { ...asset.data, url: cached.data.url } } as Asset;
+        const resolved = await resolveStoredAsset(asset);
+        const url = resolved.kind === "image" ? resolved.data.dataUrl : resolved.kind !== "text" ? resolved.data.url : "";
+        if (url && url !== `/api/files/${encodeURIComponent(cloudMediaKey(asset).slice(7))}/content` && activeAssetSyncToken === token && useUserStore.getState().token === token) resolvedAssetURLTimes.set(key, Date.now() + 50 * 60 * 1000);
+        return resolved;
+    })) };
+}
+
 export const useAssetStore = create<AssetStore>()(
     persist(
-        (set, get) => ({
-            assets: [],
-            addAsset: (asset) => {
+        (set, get) => {
+            const setLocalAssets = (assets: Asset[]) => set((state) => ({ localAssets: assets, localAssetsByOwner: { ...state.localAssetsByOwner, [state.owner]: assets }, assets: mergeAssets(state.cloudAssets, assets) }));
+            const setCloudAssets = (response: Asset[], removeLocalId?: string) => set((state) => {
+                const cloudAssets = response.filter(isAccountAsset);
+                const localAssets = removeLocalId ? state.localAssets.filter((asset) => asset.id !== removeLocalId) : state.localAssets;
+                const legacyKey = `legacy:${state.owner}`;
+                const localAssetsByOwner = { ...state.localAssetsByOwner, [state.owner]: localAssets, [legacyKey]: mergeAssets(response.filter((asset) => !isAccountAsset(asset)), state.localAssetsByOwner[legacyKey] || []) };
+                return { cloudAssets, localAssets, localAssetsByOwner, legacyBrowserAssets: legacyAssetsForOwner(localAssetsByOwner, state.owner), assets: mergeAssets(cloudAssets, localAssets), error: "" };
+            });
+            return {
+            assets: [], localAssets: [], cloudAssets: [], legacyBrowserAssets: [], localAssetsByOwner: {}, owner: assetOwner(), hydrated: false, cloudLoading: false, error: "",
+            addAsset: (input) => {
+                get().selectAssetSession();
+                if (get().owner === "pending") throw new Error("账号信息正在加载，请稍后保存素材");
                 const now = new Date().toISOString();
                 const id = nanoid();
-                set((state) => ({ assets: [{ ...asset, id, createdAt: now, updatedAt: now } as Asset, ...state.assets] }));
-                scheduleAssetSync(get);
+                setLocalAssets([{ ...input, id, createdAt: now, updatedAt: now } as Asset, ...get().localAssets]);
                 return id;
             },
-            updateAsset: (id, patch) =>
-                set((state) => {
-                    const assets = state.assets.map((asset) => (asset.id === id ? ({ ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset) : asset));
-                    window.setTimeout(() => scheduleAssetSync(get), 0);
-                    return { assets };
-                }),
-            removeAsset: (id) =>
-                set((state) => {
-                    const deletedAsset = state.assets.find((asset) => asset.id === id);
-                    const assets = state.assets.filter((asset) => asset.id !== id);
-
-                    if (deletedAsset && deletedAsset.kind !== "text" && deletedAsset.data.storageKey) {
-                        const key = deletedAsset.data.storageKey;
-                        window.setTimeout(async () => {
-                            const { useCanvasStore } = await import("@/app/(user)/canvas/stores/use-canvas-store");
-                            const usedKeys = new Set<string>();
-                            // 收集其余资产的 storageKey
-                            assets.forEach((a) => {
-                                if (a.kind !== "text" && a.data.storageKey) usedKeys.add(a.data.storageKey);
-                            });
-                            // 收集画布中引用的 storageKey
-                            const projects = useCanvasStore.getState().projects;
-                            const { collectImageStorageKeys } = await import("@/services/image-storage");
-                            const { collectMediaStorageKeys } = await import("@/services/file-storage");
-                            collectImageStorageKeys(projects, usedKeys);
-                            collectMediaStorageKeys(projects, usedKeys);
-
-                            // 收集本地/云端生图历史与视频历史中的 storageKey，避免生成结果卡片失效
-                            try {
-                                const localforage = (await import("localforage")).default;
-                                const imageLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
-                                await imageLogStore.iterate((log: any) => {
-                                    if (log) {
-                                        if (Array.isArray(log.images)) {
-                                            log.images.forEach((img: any) => {
-                                                if (img && img.storageKey) usedKeys.add(img.storageKey);
-                                            });
-                                        }
-                                        if (Array.isArray(log.references)) {
-                                            log.references.forEach((ref: any) => {
-                                                if (ref && ref.storageKey) usedKeys.add(ref.storageKey);
-                                            });
-                                        }
-                                    }
-                                });
-                            } catch (e) {
-                                console.error("Error iterating image_generation_logs", e);
-                            }
-
-                            try {
-                                const localforage = (await import("localforage")).default;
-                                const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
-                                await videoLogStore.iterate((log: any) => {
-                                    if (log) {
-                                        if (log.video && log.video.storageKey) {
-                                            usedKeys.add(log.video.storageKey);
-                                        }
-                                        if (Array.isArray(log.references)) {
-                                            log.references.forEach((ref: any) => {
-                                                if (ref && ref.storageKey) usedKeys.add(ref.storageKey);
-                                            });
-                                        }
-                                    }
-                                });
-                            } catch (e) {
-                                console.error("Error iterating video_generation_logs", e);
-                            }
-
-                            // 若全站没有其他地方再引用此 storageKey，则执行真正的物理删除
-                            if (!usedKeys.has(key)) {
-                                if (key.startsWith("image:") || key.startsWith("server:")) {
-                                    const { deleteStoredImages } = await import("@/services/image-storage");
-                                    await deleteStoredImages([key]);
-                                }
-                                if (key.startsWith("file:") || key.startsWith("video:") || key.startsWith("server:")) {
-                                    const { deleteStoredMedia } = await import("@/services/file-storage");
-                                    await deleteStoredMedia([key]);
-                                }
-                            }
-                        }, 0);
-                    }
-
-                    window.setTimeout(() => scheduleAssetSync(get), 0);
-                    return { assets };
-                }),
-            hydrateAccountAssets: async (token, syncEnabled = false) => {
-                if (!token) return;
-                activeAssetSyncToken = token;
-                accountAssetSyncEnabled = syncEnabled;
-                isHydratingAccountAssets = true;
+            updateAsset: async (id, patch) => {
+                get().selectAssetSession();
+                if (get().cloudAssets.some((asset) => asset.id === id)) return get().updateCloudAsset(id, patch);
+                setLocalAssets(get().localAssets.map((asset) => asset.id === id ? { ...asset, ...patch, id, createdAt: asset.createdAt, updatedAt: new Date().toISOString() } as Asset : asset));
+            },
+            removeAsset: async (id) => {
+                get().selectAssetSession();
+                if (get().cloudAssets.some((asset) => asset.id === id)) return get().removeCloudAsset(id);
+                setLocalAssets(get().localAssets.filter((asset) => asset.id !== id));
+            },
+            selectAssetSession: (resolveLocal = false) => {
+                const owner = assetOwner();
+                const token = useUserStore.getState().token;
+                const sameSession = get().owner === owner && activeAssetSyncToken === token;
+                if (sameSession && !resolveLocal) return;
+                if (!sameSession) {
+                    assetSessionVersion++;
+                    activeAssetSyncToken = token;
+                    cloudQueue = Promise.resolve();
+                    resolvedAssetURLTimes.clear();
+                }
+                const localAssets = get().localAssetsByOwner[owner] || [];
+                if (!sameSession) set({ owner, localAssets, cloudAssets: [], legacyBrowserAssets: legacyAssetsForOwner(get().localAssetsByOwner, owner), assets: localAssets, cloudLoading: false, error: "" });
+                const version = assetSessionVersion;
+                void Promise.all(localAssets.map(resolveStoredAsset)).then((resolved) => {
+                    if (version !== assetSessionVersion || assetOwner() !== owner || get().localAssets !== localAssets) return;
+                    setLocalAssets(resolved);
+                });
+            },
+            saveCloudAsset: async (asset, token = useUserStore.getState().token) => {
+                requireAssetSession(token);
+                const payload = cloudAssetPayload(asset);
+                const version = assetSessionVersion;
+                const result = await runCloudAssetOperation(token, async () => resolveAssetSnapshot(await saveUserAssetItem(token, payload), token));
+                if (!currentAssetSession(token, version)) throw new Error("登录状态已变化，未应用旧账号素材");
+                const saved = (cloudMediaKey(payload) ? result.assets.find((item) => cloudMediaKey(item) === cloudMediaKey(payload)) : undefined) || result.assets.find((item) => item.id === payload.id);
+                if (!saved) throw new Error("云素材没有返回保存记录，请刷新后确认");
+                setCloudAssets(result.assets, asset.id);
+                return saved.id;
+            },
+            updateCloudAsset: async (id, patch, token = useUserStore.getState().token) => {
+                requireAssetSession(token);
+                const asset = get().cloudAssets.find((item) => item.id === id);
+                if (!asset) throw new Error("云素材不存在，请刷新后重试");
+                await get().saveCloudAsset({ ...asset, ...patch, id } as AssetInput, token);
+            },
+            removeCloudAsset: async (id, token = useUserStore.getState().token) => {
+                requireAssetSession(token);
+                const version = assetSessionVersion;
+                const result = await runCloudAssetOperation(token, async () => resolveAssetSnapshot(await deleteUserAssetItem(token, id), token));
+                if (!currentAssetSession(token, version)) throw new Error("登录状态已变化，未应用旧账号素材");
+                if (result.assets.some((asset) => asset.id === id)) throw new Error("云素材尚未删除，请刷新后重试");
+                setCloudAssets(result.assets);
+            },
+            hydrateAccountAssets: async (token) => {
+                requireAssetSession(token);
+                const version = assetSessionVersion;
+                set({ cloudLoading: true });
                 try {
-                    const remote = await fetchUserAssetData<AssetSnapshot>(token);
-                    const remoteAssets = await Promise.all(
-                        (Array.isArray(remote?.assets) ? remote.assets : []).map((asset) =>
-                            asset.kind === "image" && asset.data.storageKey?.startsWith("image:") ? resolveStoredAsset(asset) : asset,
-                        ),
-                    );
-                    if (syncEnabled) {
-                        set({ assets: remoteAssets });
-                    } else {
-                        const localHasAssets = get().assets.length > 0;
-                        if (!localHasAssets && remoteAssets.length) {
-                            set({ assets: remoteAssets });
-                        }
-                    }
+                    const result = await runCloudAssetOperation(token, async () => resolveAssetSnapshot(await fetchUserAssetData<AssetSnapshot>(token), token));
+                    if (currentAssetSession(token, version)) setCloudAssets(Array.isArray(result?.assets) ? result.assets : []);
+                } catch (error) {
+                    if (currentAssetSession(token, version)) set({ error: error instanceof Error ? error.message : "读取账号素材失败" });
+                    throw error;
                 } finally {
-                    isHydratingAccountAssets = false;
+                    if (currentAssetSession(token, version)) set({ cloudLoading: false });
                 }
             },
-            syncAccountAssets: async (token) => {
-                if (!token || !accountAssetSyncEnabled) return;
-                await syncUserAssetData(token, { assets: get().assets });
-            },
+            syncAccountAssets: async (token) => get().hydrateAccountAssets(token),
             stopAccountAssetSync: () => {
+                assetSessionVersion++;
                 activeAssetSyncToken = "";
-                if (syncTimer) window.clearTimeout(syncTimer);
-                syncTimer = null;
+                cloudQueue = Promise.resolve();
+                resolvedAssetURLTimes.clear();
+                set({ cloudAssets: [], assets: get().localAssets, cloudLoading: false, error: "" });
+            },
+            restoreLegacyAssetsToCurrentBrowser: () => {
+                get().selectAssetSession();
+                if (!get().hydrated || get().owner === "pending") throw new Error("素材仍在加载，请稍后导入");
+                const legacy = get().legacyBrowserAssets;
+                setLocalAssets(mergeAssets(get().localAssets, legacy));
+                get().selectAssetSession(true);
+                return legacy.length;
             },
             cleanupImages: (extra, storageKeys, ownerToken) => {
+                const sessionToken = ownerToken ?? useUserStore.getState().token;
+                const sessionVersion = assetSessionVersion;
                 window.setTimeout(async () => {
+                    const currentSession = () => sessionVersion === assetSessionVersion && useUserStore.getState().token === sessionToken;
+                    if (!currentSession()) return;
                     const { useCanvasStore } = await import("@/app/(user)/canvas/stores/use-canvas-store");
                     const { loadLocalAgentSkills, useAgentSkillStore } = await import("@/stores/use-agent-skill-store");
                     const logKeys: string[] = [];
@@ -248,37 +321,46 @@ export const useAssetStore = create<AssetStore>()(
                         await useAgentSkillStore.getState().loadSkills();
                         const skillStore = useAgentSkillStore.getState();
                         const localSkills = useUserStore.getState().token ? await loadLocalAgentSkills() : [];
-                        await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, skills: [...skillStore.systemSkills, ...skillStore.userSkills, ...localSkills], extra, logKeys }, storageKeys, ownerToken);
+                        if (!currentSession()) return;
+                        const protectedAssets = [...Object.values(get().localAssetsByOwner).flat(), ...get().cloudAssets];
+                        await cleanupUnusedImages({ assets: protectedAssets, projects: useCanvasStore.getState().projects, skills: [...skillStore.systemSkills, ...skillStore.userSkills, ...localSkills], extra, logKeys }, storageKeys, sessionToken);
                     } catch (error) {
                         console.error("Error gathering Skill keys in cleanupImages", error);
                     }
-                    await cleanupUnusedMedia({ assets: get().assets, projects: useCanvasStore.getState().projects, extra, logKeys });
+                    if (!currentSession()) return;
+                    await cleanupUnusedMedia({ assets: [...Object.values(get().localAssetsByOwner).flat(), ...get().cloudAssets], projects: useCanvasStore.getState().projects, extra, logKeys });
                 }, 0);
             },
-        }),
+        };
+        },
         {
             name: ASSET_STORE_KEY,
             storage: assetStorage,
-            partialize: (state) => ({ assets: state.assets }) as StorageValue<AssetStore>["state"],
+            partialize: (state) => ({ assets: state.localAssetsByOwner.legacy || [], localAssetsByOwner: state.localAssetsByOwner }),
+            merge: (persisted, current) => {
+                const saved = persisted as Partial<LocalAssetSnapshot> | undefined;
+                const buckets: Record<string, Asset[]> = saved?.localAssetsByOwner ? { ...saved.localAssetsByOwner } : { legacy: Array.isArray(saved?.assets) ? saved.assets : [] };
+                for (const [owner, assets] of Object.entries(current.localAssetsByOwner)) buckets[owner] = mergeAssets(assets, buckets[owner] || []);
+                const owner = assetOwner();
+                const localAssets = buckets[owner] || [];
+                return { ...current, owner, localAssetsByOwner: buckets, localAssets, legacyBrowserAssets: legacyAssetsForOwner(buckets, owner), assets: mergeAssets(current.cloudAssets, localAssets), hydrated: true };
+            },
+            onRehydrateStorage: () => (state) => {
+                state?.selectAssetSession(true);
+            },
         },
     ),
 );
 
-function scheduleAssetSync(get: () => AssetStore) {
-    if (isHydratingAccountAssets || !activeAssetSyncToken || !accountAssetSyncEnabled || typeof window === "undefined") return;
-    if (syncTimer) window.clearTimeout(syncTimer);
-    syncTimer = window.setTimeout(() => {
-        void get().syncAccountAssets(activeAssetSyncToken).catch(() => {});
-    }, 600);
-}
+useUserStore.subscribe((state, previous) => {
+    if (state.token !== previous.token || state.user?.id !== previous.user?.id) useAssetStore.getState().selectAssetSession();
+});
 
 export function mergeAssets(remoteAssets: Asset[], localAssets: Asset[]) {
     const records = new Map<string, Asset>();
-    [...localAssets, ...remoteAssets].forEach((asset) => {
+    for (const asset of [...localAssets, ...remoteAssets]) {
         const previous = records.get(asset.id);
-        if (!previous || Date.parse(asset.updatedAt || "") >= Date.parse(previous.updatedAt || "")) {
-            records.set(asset.id, asset);
-        }
-    });
-    return Array.from(records.values()).sort((a, b) => Date.parse(b.updatedAt || "") - Date.parse(a.updatedAt || ""));
+        if (!previous || Date.parse(asset.updatedAt || "") >= Date.parse(previous.updatedAt || "")) records.set(asset.id, asset);
+    }
+    return [...records.values()].sort((a, b) => Date.parse(b.updatedAt || "") - Date.parse(a.updatedAt || ""));
 }

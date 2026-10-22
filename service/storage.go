@@ -159,11 +159,23 @@ func SaveCurrentUserStorageProvider(ctx context.Context, incoming UserStoragePro
 	}
 	_, err := repository.PatchUserConfig(user.ID, now(), func(config *model.UserConfig) error {
 		providers := readUserStorageProviders(config.StorageProvider)
-		if incoming.S3 != nil { provider := *incoming.S3; provider.Type = model.StorageProviderTypeS3; providers.S3 = &provider }
-		if incoming.WebDAV != nil { provider := *incoming.WebDAV; provider.Type = model.StorageProviderTypeWebDAV; providers.WebDAV = &provider }
-		if err := validateUserStorageProviderTypes(providers); err != nil { return err }
+		if incoming.S3 != nil {
+			provider := *incoming.S3
+			provider.Type = model.StorageProviderTypeS3
+			providers.S3 = &provider
+		}
+		if incoming.WebDAV != nil {
+			provider := *incoming.WebDAV
+			provider.Type = model.StorageProviderTypeWebDAV
+			providers.WebDAV = &provider
+		}
+		if err := validateUserStorageProviderTypes(providers); err != nil {
+			return err
+		}
 		raw, err := json.Marshal(providers)
-		if err == nil { config.StorageProvider = string(raw) }
+		if err == nil {
+			config.StorageProvider = string(raw)
+		}
 		return err
 	})
 	if err != nil {

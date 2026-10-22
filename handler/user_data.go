@@ -95,40 +95,69 @@ func SaveUserAssetData(w http.ResponseWriter, r *http.Request) {
 func UserStoragePreferences(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, no-store")
 	result, err := service.CurrentUserStoragePreferences(r.Context())
-	if err != nil { FailError(w, err); return }
+	if err != nil {
+		FailError(w, err)
+		return
+	}
 	OK(w, result)
 }
 
 func SaveUserStoragePreferences(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, no-store")
-	var request struct { AutoSaveAssetsToCloud *bool `json:"autoSaveAssetsToCloud"` }
-	if !decodeUserDataBody(w, r, &request, 4096) { return }
-	if request.AutoSaveAssetsToCloud == nil { Fail(w, "请提供布尔类型的存储设置"); return }
+	var request struct {
+		AutoSaveAssetsToCloud *bool `json:"autoSaveAssetsToCloud"`
+	}
+	if !decodeUserDataBody(w, r, &request, 4096) {
+		return
+	}
+	if request.AutoSaveAssetsToCloud == nil {
+		Fail(w, "请提供布尔类型的存储设置")
+		return
+	}
 	result, err := service.SaveCurrentUserStoragePreferences(r.Context(), *request.AutoSaveAssetsToCloud)
-	if err != nil { FailError(w, err); return }
+	if err != nil {
+		FailError(w, err)
+		return
+	}
 	OK(w, result)
 }
 
 func SaveUserAssetItem(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, no-store")
-	var request struct { Asset json.RawMessage `json:"asset"` }
-	if !decodeUserDataBody(w, r, &request, 1<<20) { return }
+	var request struct {
+		Asset json.RawMessage `json:"asset"`
+	}
+	if !decodeUserDataBody(w, r, &request, 1<<20) {
+		return
+	}
 	result, err := service.SaveCurrentUserAssetItem(r.Context(), request.Asset)
-	if err != nil { FailError(w, err); return }
+	if err != nil {
+		FailError(w, err)
+		return
+	}
 	OK(w, result)
 }
 
 func DeleteUserAssetItem(w http.ResponseWriter, r *http.Request, id string) {
 	w.Header().Set("Cache-Control", "private, no-store")
 	result, err := service.DeleteCurrentUserAssetItem(r.Context(), id)
-	if err != nil { FailError(w, err); return }
+	if err != nil {
+		FailError(w, err)
+		return
+	}
 	OK(w, result)
 }
 
 func decodeUserDataBody(w http.ResponseWriter, r *http.Request, value any, limit int64) bool {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(value); err != nil { Fail(w, "参数格式错误"); return false }
-	if decoder.Decode(new(any)) != io.EOF { Fail(w, "请求内容无效"); return false }
+	if err := decoder.Decode(value); err != nil {
+		Fail(w, "参数格式错误")
+		return false
+	}
+	if decoder.Decode(new(any)) != io.EOF {
+		Fail(w, "请求内容无效")
+		return false
+	}
 	return true
 }

@@ -5,9 +5,12 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { App, AutoComplete, Button, Form, Input, Modal, Select, Space, Tag, Typography } from "antd";
 
 import { formatBytes, readFileAsDataUrl } from "@/lib/image-utils";
-import { uploadAssetMediaFile } from "@/services/file-storage";
+import { uploadMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
-import { useAssetStore, type Asset, type AssetKind, type AudioAsset, type ImageAsset, type VideoAsset } from "@/stores/use-asset-store";
+import { saveAssetToAccountLibrary } from "@/services/account-asset-save";
+import { useAssetStore, type Asset, type AssetInput, type AssetKind, type AudioAsset, type ImageAsset, type VideoAsset } from "@/stores/use-asset-store";
+import { useStoragePreferencesStore } from "@/stores/use-storage-preferences-store";
+import { useUserStore } from "@/stores/use-user-store";
 
 type AssetFormValues = {
     kind: AssetKind;
@@ -34,12 +37,16 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
     const coverInputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
     const mediaInputRef = useRef<HTMLInputElement>(null);
+    const sessionRef = useRef({ version: 0, token: "", userId: "" });
+    const busyRef = useRef(false);
     const assets = useAssetStore((state) => state.assets);
     const addAsset = useAssetStore((state) => state.addAsset);
     const updateAsset = useAssetStore((state) => state.updateAsset);
     const [formKind, setFormKind] = useState<AssetKind>("text");
     const [imageDraft, setImageDraft] = useState<ImageDraft>(null);
     const [mediaDraft, setMediaDraft] = useState<MediaDraft>(null);
+    const [saving, setSaving] = useState(false);
+    const [uploading, setUploading] = useState(false);
     const coverUrl = Form.useWatch("coverUrl", form) || "";
     const title = Form.useWatch("title", form) || "";
     const tags = Form.useWatch("tags", form) || [];
@@ -47,6 +54,11 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
 
     useLayoutEffect(() => {
         if (!open) return;
+        const { token, user } = useUserStore.getState();
+        sessionRef.current = { version: sessionRef.current.version + 1, token, userId: user?.id || "" };
+        busyRef.current = false;
+        setSaving(false);
+        setUploading(false);
         setFormKind(asset?.kind || "text");
         setImageDraft(asset?.kind === "image" ? asset.data : null);
         setMediaDraft(asset?.kind === "video" || asset?.kind === "audio" ? asset.data : null);
@@ -59,10 +71,27 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
             source: asset.source,
             content: asset.kind === "text" ? asset.data.content : asset.kind === "image" ? asset.data.dataUrl : asset.data.url,
         } : { kind: "text", title: "", coverUrl: "", tags: [], category: "", source: "手动添加", content: "" });
+        return () => { sessionRef.current.version++; };
     }, [asset, form, open]);
 
+    const currentSession = (session: typeof sessionRef.current) => {
+        const { token, user } = useUserStore.getState();
+        return session.version === sessionRef.current.version && session.token === token && session.userId === (user?.id || "");
+    };
+
+    const assertSession = (session: typeof sessionRef.current) => {
+        if (!currentSession(session)) throw new Error("登录状态或素材窗口已变化，请重新打开后保存");
+    };
+
     const saveAsset = async () => {
+        if (busyRef.current) return;
+        const session = { ...sessionRef.current };
+        busyRef.current = true;
+        setSaving(true);
+        try {
+        assertSession(session);
         const values = await form.validateFields();
+        assertSession(session);
         const base = {
             title: values.title.trim(),
             coverUrl: values.coverUrl?.trim() || (values.kind === "image" && imageDraft ? imageDraft.dataUrl : ""),
@@ -72,81 +101,108 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
             metadata: asset?.metadata || { source: "manual" },
         };
 
+        const url = (values.content || "").trim();
+        let nextAsset: AssetInput;
         if (values.kind === "text") {
-            const nextAsset = { ...base, kind: "text" as const, data: { content: (values.content || "").trim() } };
-            asset ? updateAsset(asset.id, nextAsset) : addAsset(nextAsset);
+            nextAsset = { ...base, kind: "text", data: { content: url } };
         } else if (values.kind === "image") {
-            const url = (values.content || "").trim();
-            if (!imageDraft && !url) {
-                message.error("请选择图片文件或填写图片 URL");
-                return;
+            if (!url) throw new Error("请选择图片文件或填写图片 URL");
+            let data = imageDraft?.dataUrl === url && imageDraft.storageKey ? imageDraft : null;
+            if (!data) {
+                const image = await uploadImage(url, { localOnly: true, token: session.token });
+                assertSession(session);
+                if (!image.storageKey) throw new Error(image.accountSaveError || "图片未能保存到浏览器，请重试");
+                data = { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType };
+                setImageDraft(data);
+                form.setFieldValue("content", data.dataUrl);
             }
-            let data = imageDraft || { dataUrl: url, width: 0, height: 0, bytes: 0, mimeType: "image/*" };
-            if (!imageDraft) {
-                try {
-                    const blob = await (await fetch(url)).blob();
-                    const bitmap = await createImageBitmap(blob);
-                    data = { dataUrl: url, width: bitmap.width, height: bitmap.height, bytes: blob.size, mimeType: blob.type || "image/*" };
-                    bitmap.close();
-                } catch {}
-            }
-            const nextAsset = { ...base, coverUrl: base.coverUrl || data.dataUrl, kind: "image" as const, data };
-            asset ? updateAsset(asset.id, nextAsset) : addAsset(nextAsset);
-        } else if (values.kind === "video") {
-            const url = (values.content || "").trim();
-            if (!mediaDraft && !url) {
-                message.error("请选择视频文件或填写视频 URL");
-                return;
-            }
-            const data = (mediaDraft as VideoAsset["data"] | null) || { url, width: 0, height: 0, bytes: 0, mimeType: "video/mp4" };
-            const nextAsset = { ...base, kind: "video" as const, data };
-            asset ? updateAsset(asset.id, nextAsset) : addAsset(nextAsset);
+            nextAsset = { ...base, coverUrl: base.coverUrl || data.dataUrl, kind: "image", data };
         } else {
-            const url = (values.content || "").trim();
-            if (!mediaDraft && !url) {
-                message.error("请选择音频文件或填写音频 URL");
-                return;
+            if (!url) throw new Error(values.kind === "video" ? "请选择视频文件或填写视频 URL" : "请选择音频文件或填写音频 URL");
+            let data = mediaDraft?.url === url && mediaDraft.storageKey ? mediaDraft : null;
+            if (!data) {
+                const media = await uploadMediaFile(url, values.kind === "audio" ? "asset-audio" : "asset-video", undefined, session.token, true);
+                assertSession(session);
+                if (!media.storageKey) throw new Error(media.accountSaveError || "媒体未能保存到浏览器，请重试");
+                data = { url: media.url, storageKey: media.storageKey, bytes: media.bytes, mimeType: media.mimeType, width: media.width || 0, height: media.height || 0 };
+                setMediaDraft(data);
+                form.setFieldValue("content", data.url);
             }
-            const data = (mediaDraft as AudioAsset["data"] | null) || { url, mimeType: "audio/mpeg" };
-            const nextAsset = { ...base, kind: "audio" as const, data };
-            asset ? updateAsset(asset.id, nextAsset) : addAsset(nextAsset);
+            nextAsset = values.kind === "video" ? { ...base, kind: "video", data: data as VideoAsset["data"] } : { ...base, kind: "audio", data };
         }
-
+        assertSession(session);
+        const preferences = useStoragePreferencesStore.getState();
+        const isCloud = asset && useAssetStore.getState().cloudAssets.some((item) => item.id === asset.id);
+        const serverMedia = nextAsset.kind !== "text" && /^server:[^:]+$/.test(nextAsset.data.storageKey || "");
+        const autoCloud = !asset && session.token && preferences.token === session.token && preferences.ready && preferences.autoSaveAssetsToCloud;
+        if (isCloud || serverMedia || autoCloud) await saveAssetToAccountLibrary({ ...nextAsset, ...(asset ? { id: asset.id } : {}) }, session.token);
+        else if (asset) await updateAsset(asset.id, nextAsset);
+        else addAsset(nextAsset);
+        assertSession(session);
         message.success(asset ? "素材已更新" : "素材已保存");
         onClose();
+        } catch (error) {
+            if (currentSession(session) && !(error && typeof error === "object" && "errorFields" in error)) message.error(error instanceof Error ? error.message : "素材保存失败，请重试");
+        } finally {
+            if (session.version === sessionRef.current.version) { busyRef.current = false; setSaving(false); }
+        }
+    };
+
+    const readFile = async (read: (token: string) => Promise<void>) => {
+        if (busyRef.current) return;
+        const session = { ...sessionRef.current };
+        busyRef.current = true;
+        setUploading(true);
+        try { assertSession(session); await read(session.token); }
+        catch (error) { if (currentSession(session)) message.error(error instanceof Error ? error.message : "读取文件失败"); }
+        finally { if (session.version === sessionRef.current.version) { busyRef.current = false; setUploading(false); } }
     };
 
     const readCoverFile = async (file?: File) => {
         if (!file) return;
-        const dataUrl = await readFileAsDataUrl(file);
-        form.setFieldValue("coverUrl", dataUrl);
+        const session = { ...sessionRef.current };
+        await readFile(async () => {
+            const dataUrl = await readFileAsDataUrl(file);
+            assertSession(session);
+            form.setFieldValue("coverUrl", dataUrl);
+        });
     };
 
     const readImageFile = async (file?: File) => {
         if (!file || !file.type.startsWith("image/")) return;
-        const image = await uploadImage(file);
+        const session = { ...sessionRef.current };
+        await readFile(async (token) => {
+        const image = await uploadImage(file, { localOnly: true, token });
+        assertSession(session);
+        if (!image.storageKey) throw new Error(image.accountSaveError || "图片未能保存到浏览器，请重试");
         const draft = { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType };
         setImageDraft(draft);
         form.setFieldValue("content", draft.dataUrl);
         if (!form.getFieldValue("coverUrl")) form.setFieldValue("coverUrl", draft.dataUrl);
         if (!form.getFieldValue("title")) form.setFieldValue("title", file.name);
+        });
     };
 
     const readMediaFile = async (file?: File) => {
         if (!file) return;
         if (formKind === "video" && !file.type.startsWith("video/")) return;
         if (formKind === "audio" && !file.type.startsWith("audio/") && !/\.(mp3|wav)$/i.test(file.name)) return;
-        const media = await uploadAssetMediaFile(file, formKind === "audio" ? "asset-audio" : "asset-video");
+        const session = { ...sessionRef.current };
+        await readFile(async (token) => {
+        const media = await uploadMediaFile(file, formKind === "audio" ? "asset-audio" : "asset-video", undefined, token, true);
+        assertSession(session);
+        if (!media.storageKey) throw new Error(media.accountSaveError || "媒体未能保存到浏览器，请重试");
         const draft = formKind === "audio" ? { url: media.url, storageKey: media.storageKey, bytes: media.bytes, mimeType: media.mimeType } : { url: media.url, storageKey: media.storageKey, width: media.width || 0, height: media.height || 0, bytes: media.bytes, mimeType: media.mimeType };
         setMediaDraft(draft);
         form.setFieldValue("content", media.url);
         if (!form.getFieldValue("title")) form.setFieldValue("title", file.name);
+        });
     };
 
     return (
-            <Modal title={asset ? "编辑素材" : "新增素材"} open={open} width={980} onCancel={onClose} onOk={() => void saveAsset()} okText="保存" cancelText="取消" destroyOnHidden>
+            <Modal title={asset ? "编辑素材" : "新增素材"} open={open} width={980} onCancel={() => { if (!busyRef.current) onClose(); }} onOk={() => void saveAsset()} confirmLoading={saving} okButtonProps={{ disabled: uploading }} cancelButtonProps={{ disabled: saving || uploading }} closable={!saving && !uploading} maskClosable={!saving && !uploading} keyboard={!saving && !uploading} okText="保存" cancelText="取消" destroyOnHidden>
                 <div className="grid gap-6 pt-1 lg:grid-cols-[minmax(0,1fr)_320px]">
-                    <Form form={form} layout="vertical" requiredMark={false} initialValues={{ kind: "text", tags: [] }}>
+                    <Form form={form} layout="vertical" disabled={saving || uploading} requiredMark={false} initialValues={{ kind: "text", tags: [] }}>
                         <Form.Item name="kind" label="类型">
                             <Select
                                 options={[
@@ -166,9 +222,9 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
                         <Form.Item name="title" label="标题" rules={[{ required: true, message: "请输入标题" }]}>
                             <Input size="large" placeholder="给素材起一个容易检索的名字" />
                         </Form.Item>
-                        <Form.Item name="coverUrl" label="封面 URL">
+                        <Form.Item label="封面 URL">
                             <Space.Compact className="w-full">
-                                <Input placeholder="可粘贴图片 URL，也可以上传本地封面" />
+                                <Form.Item name="coverUrl" noStyle><Input placeholder="可粘贴图片 URL，也可以上传本地封面" /></Form.Item>
                                 <Button icon={<Upload className="size-3.5" />} onClick={() => coverInputRef.current?.click()}>
                                     上传
                                 </Button>
@@ -190,10 +246,10 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
                                 <Input.TextArea rows={8} placeholder="保存提示词、说明文案、参考描述等文本素材" />
                             </Form.Item>
                         ) : (
-                            <Form.Item name="content" label={formKind === "image" ? "图片内容" : formKind === "video" ? "视频内容" : "音频内容"} required>
+                            <Form.Item label={formKind === "image" ? "图片内容" : formKind === "video" ? "视频内容" : "音频内容"} required>
                                 <div className="rounded-lg border border-dashed border-stone-300 p-4 dark:border-stone-700">
                                     <Space.Compact className="w-full">
-                                        <Input placeholder={formKind === "image" ? "填写图片 URL，或选择本地图片文件" : formKind === "video" ? "填写视频 URL，或选择本地视频文件" : "填写音频 URL，或选择本地音频文件"} />
+                                        <Form.Item name="content" noStyle><Input placeholder={formKind === "image" ? "填写图片 URL，或选择本地图片文件" : formKind === "video" ? "填写视频 URL，或选择本地视频文件" : "填写音频 URL，或选择本地音频文件"} /></Form.Item>
                                         <Button icon={<Upload className="size-4" />} onClick={() => (formKind === "image" ? imageInputRef.current?.click() : mediaInputRef.current?.click())}>
                                             上传
                                         </Button>
@@ -209,7 +265,7 @@ export function AssetFormModal({ open, asset = null, onClose }: AssetFormModalPr
                                             </Typography.Text>
                                         ) : (
                                             <Typography.Text type="secondary" className="text-xs">
-                                                未选择文件
+                                                {uploading ? "正在读取并保存文件…" : "未选择文件"}
                                             </Typography.Text>
                                         )}
                                     </div>

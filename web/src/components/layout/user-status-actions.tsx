@@ -43,6 +43,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         { key: "user", disabled: true, label: <span className="block max-w-[200px] truncate font-medium text-current">{userName}</span> },
         { key: "account", icon: <UserRound className="size-4" />, label: <Link href="/account">个人中心</Link> },
         { key: "wallet", icon: <Wallet className="size-4" />, label: <Link href="/account#wallet">我的钱包</Link> },
+        { key: "storage-settings", icon: <HardDrive className="size-4" />, label: <Link href="/account/storage">存储设置</Link> },
         { key: "recharge", icon: <CirclePlus className="size-4" />, label: <Link href="/account/recharge?kind=credits">算力充值</Link> },
         { key: "storage", icon: <HardDrive className="size-4" />, label: <Link href="/account/recharge?kind=storage">空间扩容</Link> },
         ...(user?.role === "admin" ? [{ key: "admin", icon: <Shield className="size-4" />, label: <Link href="/admin">管理后台</Link> }] : []),

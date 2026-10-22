@@ -143,12 +143,20 @@ func SaveCurrentUserModelConfig(ctx context.Context, raw json.RawMessage) (UserC
 	}
 	_, err := repository.PatchUserConfig(user.ID, now(), func(config *model.UserConfig) error {
 		saved, err := userModelPreferenceMap(config.ModelConfig)
-		if err != nil { return err }
-		for _, key := range privateModelConfigKeys { if value, exists := saved[key]; exists { incoming[key] = value } }
+		if err != nil {
+			return err
+		}
+		for _, key := range privateModelConfigKeys {
+			if value, exists := saved[key]; exists {
+				incoming[key] = value
+			}
+		}
 		incoming["channelMode"] = json.RawMessage(`"remote"`)
 		incoming["autoSaveAssetsToCloud"], _ = json.Marshal(storagePreferencesFromMap(saved).AutoSaveAssetsToCloud)
 		value, err := json.Marshal(incoming)
-		if err == nil { config.ModelConfig = string(value) }
+		if err == nil {
+			config.ModelConfig = string(value)
+		}
 		return err
 	})
 	if err != nil {
