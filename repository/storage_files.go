@@ -70,10 +70,20 @@ type StorageReferenceData struct {
 	ImageTasks   []model.CanvasImageTask
 	AudioTasks   []model.CanvasAudioTask
 	VideoTasks   []model.VideoTask
+	ProductionRenders []model.ProductionRenderJob
+	ProductionReviews []model.ProductionReview
+	TeamAssets []model.TeamAsset
+	ProductionDelivery []ProductionDeliveryReference
 	Assets       []model.Asset
 	Prompts      []model.Prompt
 	Skills       []model.AgentSkill
 	OtherConfigs []model.UserConfig
+}
+
+type ProductionDeliveryReference struct {
+	ID string
+	UserID string
+	Delivery *model.ProductionDeliveryEdit `gorm:"serializer:json"`
 }
 
 type StorageFileRemoval struct {
@@ -99,6 +109,9 @@ func storageReferenceData(tx *gorm.DB, userID string) (StorageReferenceData, err
 		{&data.ImageTasks, "1 = 1", nil},
 		{&data.AudioTasks, "1 = 1", nil},
 		{&data.VideoTasks, "1 = 1", nil},
+		{&data.ProductionRenders, "status IN ?", []any{[]string{"queued", "running"}}},
+		{&data.ProductionReviews, "revoked_at = ''", nil},
+		{&data.TeamAssets, "revoked_at = ''", nil},
 		{&data.Assets, "1 = 1", nil},
 		{&data.Prompts, "1 = 1", nil},
 		{&data.Skills, "1 = 1", nil},
@@ -110,6 +123,7 @@ func storageReferenceData(tx *gorm.DB, userID string) (StorageReferenceData, err
 	if err := tx.Select("user_id", "asset_data", "image_history").Where("user_id <> ?", userID).Find(&data.OtherConfigs).Error; err != nil {
 		return data, err
 	}
+	if err:=tx.Table("production_episodes").Select("production_episodes.id, production_projects.user_id, production_episodes.delivery").Joins("JOIN production_projects ON production_projects.id = production_episodes.project_id").Where("production_episodes.delivery IS NOT NULL").Find(&data.ProductionDelivery).Error;err!=nil{return data,err}
 	return data, nil
 }
 

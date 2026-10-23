@@ -83,6 +83,7 @@ func AIVideo(w http.ResponseWriter, r *http.Request, id string) {
 }
 
 func AIVideoContent(w http.ResponseWriter, r *http.Request, id string) {
+	if serveGatewayVideoContent(w,r,id){return}
 	for _, adapter := range builtinAIProtocols {
 		if adapter.videoContent != nil && adapter.videoContent(w, r, id) {
 			return
@@ -165,6 +166,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		}
 		credits *= float64(count)
 	}
+	if !service.TaskCreditWithinLimit(r.Context(),credits) { Fail(w,"模型价格已超过本次确认算力，未扣费，请重新查看价格后生成");return }
 	if serveParameterTranslation(w, r, body, path, channel, user, credits, startedAt) {
 		return
 	}
@@ -200,8 +202,9 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
-	if credits > 0 {
-		if err := service.ConsumeUserCredits(user.ID, modelName, credits, upstreamPath); err != nil {
+	creditTask := service.TaskCreditFromContext(r.Context())
+	if credits > 0 || creditTask.ID != "" {
+		if err := service.ConsumeUserCredits(user.ID, modelName, credits, upstreamPath, creditTask); err != nil {
 			FailError(w, err)
 			return
 		}
@@ -218,7 +221,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		RequestBody:     summarizeAIRequest(body, contentType),
 	}, func() {
 		if credits > 0 && ctx.Err() == nil {
-			if err := service.RefundUserCredits(user.ID, modelName, credits, upstreamPath); err != nil {
+			if err := service.RefundUserCredits(user.ID, modelName, credits, upstreamPath, creditTask.LedgerID()); err != nil {
 				log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%g err=%v", user.ID, modelName, credits, err)
 			}
 		}

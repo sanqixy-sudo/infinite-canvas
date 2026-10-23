@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	gm "github.com/tigerowo/infinite-canvas/gateway/model"
 	"github.com/tigerowo/infinite-canvas/model"
 	"github.com/tigerowo/infinite-canvas/repository"
 )
@@ -39,6 +41,7 @@ type VideoTaskCreateInput struct {
 	WorkflowRef                  string
 	Source                       string
 	SourceID                     string
+	CanvasID                     string
 	ClientTaskID                 string
 	UpstreamTaskID               string
 	UpstreamVideoID              string
@@ -57,6 +60,7 @@ type VideoTaskCreateInput struct {
 }
 
 type VideoTaskPollUpdate struct {
+	GatewayResult *gm.TaskResult
 	ParameterTranslationSnapshot string
 	Status                       string
 	Progress                     int
@@ -88,6 +92,7 @@ func CreateVideoTask(input VideoTaskCreateInput) (model.VideoTask, error) {
 		WorkflowRef:                  input.WorkflowRef,
 		Source:                       normalizeVideoTaskSource(input.Source),
 		SourceID:                     strings.TrimSpace(input.SourceID),
+		CanvasID:                     strings.TrimSpace(input.CanvasID),
 		UpstreamTaskID:               strings.TrimSpace(input.UpstreamTaskID),
 		UpstreamVideoID:              strings.TrimSpace(input.UpstreamVideoID),
 		Status:                       status,
@@ -125,14 +130,36 @@ func CreateVideoTask(input VideoTaskCreateInput) (model.VideoTask, error) {
 	} else {
 		saved, err = repository.SaveVideoTask(task, ids...)
 	}
+	if errors.Is(err, repository.ErrVideoTaskOriginConflict) { return saved, safeMessageError{message: err.Error()} }
 	if err == nil && input.WorkflowRef == "" && !IsCompletedVideoTaskStatus(saved.Status) && !IsFailedVideoTaskStatus(saved.Status) {
 		WakeVideoTaskPoller()
 	}
 	return saved, storageReferenceError(err)
 }
 
+func PrepareCanvasVideoSubmission(input VideoTaskCreateInput, requestBody []byte) (model.VideoTask, bool, error) {
+	stamp := now()
+	task := model.VideoTask{ID: input.ClientTaskID, UserID: input.UserID, Model: input.Model, ChannelID: input.ChannelID, ChannelName: input.ChannelName, Source: input.Source, SourceID: input.SourceID, CanvasID: input.CanvasID, Status: "submitting", CreatedAt: stamp, UpdatedAt: stamp, RequestBody: input.RequestBody}
+	task.SubmissionHash = gatewayHash([]any{input.Model, input.ChannelID, string(requestBody), input.Source, input.SourceID, input.CanvasID})
+	saved, created, err := repository.PrepareCanvasVideoSubmission(task)
+	if errors.Is(err, repository.ErrProductionTaskReplay) || errors.Is(err, repository.ErrVideoTaskOriginConflict) { return saved, created, safeMessageError{message: err.Error()} }
+	return saved, created, err
+}
+
+func FinishCanvasVideoSubmission(userID, id string) {
+	// A process/transport failure is not proof that the provider never accepted the request.
+	_ = repository.MarkUncertainVideoSubmission(userID, id, now())
+}
+
 func GetUserVideoTask(userID string, id string) (model.VideoTask, bool, error) {
 	return repository.GetUserVideoTask(strings.TrimSpace(userID), strings.TrimSpace(id))
+}
+
+func CheckVideoTaskOrigin(userID, id, source, sourceID, canvasID string) error {
+	task, found, err := GetUserVideoTask(userID, id)
+	if err != nil || !found { return err }
+	if task.Source != normalizeVideoTaskSource(source) || task.SourceID != strings.TrimSpace(sourceID) || task.CanvasID != strings.TrimSpace(canvasID) { return safeMessageError{message: repository.ErrVideoTaskOriginConflict.Error()} }
+	return nil
 }
 
 func ListUserVideoTasks(userID string, source string, limit int) ([]map[string]any, error) {
@@ -148,6 +175,10 @@ func ListUserVideoTasks(userID string, source string, limit int) ([]map[string]a
 }
 
 func DeleteUserVideoTask(userID string, id string) error {
+	if task, found, err := repository.GetUserVideoTask(userID, id); err != nil { return err } else if found {
+		if task.GatewaySnapshot != "" { return safeMessageError{message:"模型任务账务记录需保留，可在画布移除节点"} }
+		if task.Status != "completed" && task.Status != "failed" && task.Status != "cancelled" { return safeMessageError{message: "任务仍在执行或结果未知，请先等待或核对原任务"} }
+	}
 	return repository.DeleteUserVideoTask(strings.TrimSpace(userID), strings.TrimSpace(id))
 }
 
@@ -161,6 +192,7 @@ func VideoTaskResponse(task model.VideoTask) map[string]any {
 		"channelName":   task.ChannelName,
 		"source":        task.Source,
 		"source_id":     task.SourceID,
+		"canvasId":      task.CanvasID,
 		"status":        task.Status,
 		"progress":      task.Progress,
 		"task_id":       firstVideoTaskValue(task.UpstreamTaskID, task.ID),
@@ -174,11 +206,25 @@ func VideoTaskResponse(task model.VideoTask) map[string]any {
 		"createdAt":     task.CreatedAt,
 		"updatedAt":     task.UpdatedAt,
 		"request_body":  task.RequestBody,
+		"retryOf":       task.RetryOf,
+		"attempt":       max(1, task.Attempt),
 	}
 	if task.VideoURL != "" {
 		result["url"] = task.VideoURL
 		result["video_url"] = task.VideoURL
 		result["data"] = []map[string]any{{"url": task.VideoURL}}
+	}
+	if task.GatewaySnapshot != "" {
+		result["billingStatus"] = task.BillingStatus
+		result["billingUnit"] = task.BillingUnit
+		result["actualUnits"] = task.ActualUnits
+		result["actualTokens"] = task.ActualTokens
+		result["actualInputTokens"] = task.ActualInputTokens
+		result["actualOutputTokens"] = task.ActualOutputTokens
+		var snapshot gatewayTaskSnapshot
+		if json.Unmarshal([]byte(task.GatewaySnapshot), &snapshot) == nil { result["tokenMode"] = snapshot.TokenMode }
+		result["reservedCredits"] = task.ReservedCredits
+		result["settledCredits"] = task.SettledCredits
 	}
 	if task.WorkflowRef != "" {
 		result["workflowRef"] = task.WorkflowRef
@@ -201,6 +247,7 @@ func StartVideoTaskPoller(poll VideoTaskPollFunc) {
 	videoTaskPoller = poll
 	videoTaskPollerMu.Unlock()
 	videoTaskPollerOnce.Do(func() {
+		if err := repository.MarkInterruptedProductionTasks(now()); err != nil { log.Printf("mark interrupted production tasks failed: %v", err) }
 		go runVideoTaskPoller()
 	})
 	WakeVideoTaskPoller()
@@ -356,6 +403,7 @@ func waitForNextVideoTaskPoll() {
 }
 
 func UpdateVideoTaskFromPoll(task model.VideoTask, update VideoTaskPollUpdate) error {
+	if task.GatewaySnapshot!="" { return applyGatewayPoll(task,update) }
 	if update.ParameterTranslationSnapshot != "" {
 		task.ParameterTranslationSnapshot = update.ParameterTranslationSnapshot
 	}

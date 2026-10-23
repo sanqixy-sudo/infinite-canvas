@@ -464,7 +464,11 @@ func DownloadStorageObject(ctx context.Context, id string, rangeHeader string, a
 	if !storageObjectOwnedBy(ctx, object) && !validStorageContentToken(object, accessToken) {
 		return DownloadedStorageObject{}, ErrStorageAccessDenied
 	}
+	return downloadStoredObject(object, rangeHeader)
+}
 
+// Call only after the owning feature has checked access to this exact object.
+func downloadStoredObject(object model.StorageObject, rangeHeader string) (DownloadedStorageObject, error) {
 	providers := []model.StorageProvider{localStorageProvider()}
 	if object.CreatedBy != "" && object.CreatedBy != "anonymous" {
 		if config, found, loadErr := repository.GetUserConfig(object.CreatedBy); loadErr == nil && found {

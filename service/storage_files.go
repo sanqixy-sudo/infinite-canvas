@@ -219,6 +219,20 @@ func storageFileReferences(object model.StorageObject, data repository.StorageRe
 	for _, task := range data.VideoTasks {
 		checkTask(task, task.ID, task.UserID, task.Status)
 	}
+	for _, task := range data.ProductionRenders {
+		check(task.SnapshotJSON, "activeTask", task.ID, "分集合成任务正在使用此文件", task.UserID)
+	}
+	for _, episode := range data.ProductionDelivery {
+		check(productionDeliveryJSON(episode.Delivery), "production", episode.ID, "制作计划交付音轨", episode.UserID)
+	}
+	for _, review := range data.ProductionReviews {
+		for _, id := range review.MediaObjectIDs {
+			if id == object.ID {
+				result.Blockers = append(result.Blockers, model.StorageFileBlocker{Type: "published", ID: review.ID, Title: "团队审片版本：" + review.Title})
+				break
+			}
+		}
+	}
 	for _, asset := range data.Assets {
 		raw, _ := json.Marshal(asset)
 		check(string(raw), "published", asset.ID, "公共素材："+asset.Title, "")
@@ -231,6 +245,7 @@ func storageFileReferences(object model.StorageObject, data repository.StorageRe
 		raw, _ := json.Marshal(skill)
 		check(string(raw), "published", skill.ID, "技能封面："+skill.Name, skill.OwnerUserID)
 	}
+	for _,asset:=range data.TeamAssets{if asset.ObjectID==object.ID{result.Blockers=append(result.Blockers,model.StorageFileBlocker{Type:"published",ID:asset.ID,Title:"团队共享素材："+asset.Title})}}
 	result.CanDelete = len(result.Blockers) == 0
 	if !result.CanDelete {
 		result.Reason = "文件仍被使用，请先解除列出的引用后再删除"

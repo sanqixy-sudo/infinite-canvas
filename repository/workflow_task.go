@@ -14,18 +14,22 @@ func InsertWorkflowTask(task any, storageIDs ...string) error {
 	if err != nil {
 		return err
 	}
-	userID := ""
+	userID, taskID := "", ""
 	switch task := task.(type) {
 	case *model.CanvasImageTask:
-		userID = task.UserID
+		userID, taskID = task.UserID, task.ID
 	case *model.CanvasAudioTask:
-		userID = task.UserID
+		userID, taskID = task.UserID, task.ID
 	case *model.VideoTask:
-		userID = task.UserID
+		userID, taskID = task.UserID, task.ID
 	default:
 		return errors.New("工作流任务类型无效")
 	}
-	return withUserStorageLock(db, userID, storageIDs, func(tx *gorm.DB) error { return tx.Create(task).Error })
+	return withUserStorageLock(db, userID, storageIDs, func(tx *gorm.DB) error {
+		if err := rejectProductionTaskReplay(tx, userID, taskID); err != nil { return err }
+		if err := tx.Create(task).Error; err != nil { return err }
+		return captureProductionTask(tx, task, true)
+	})
 }
 
 type RunningHubWorkflowTask struct {
@@ -167,7 +171,7 @@ func CompleteWorkflowTask(taskID, status string, urls []string, failure string, 
 			return errors.New("工作流任务 ID 无效")
 		}
 		if status != "failed" || credits <= 0 {
-			return nil
+			return RefreshProductionTask(tx, strings.SplitN(taskID, "-", 3)[1], userID, taskID)
 		}
 		if newRefundLog == nil {
 			return errors.New("工作流退款信息缺失")
@@ -187,7 +191,9 @@ func CompleteWorkflowTask(taskID, status string, urls []string, failure string, 
 		refundLog.Type = model.CreditLogTypeAIRefund
 		refundLog.Amount = credits
 		refundLog.Balance = user.Credits
-		return tx.Save(&refundLog).Error
+		refundLog.RelatedID = strings.SplitN(taskID, "-", 3)[1] + ":" + taskID
+		if err := tx.Save(&refundLog).Error; err != nil { return err }
+		return RefreshProductionTask(tx, strings.SplitN(taskID, "-", 3)[1], userID, taskID)
 	})
 	return changed, credits, workflowRef, userID, err
 }

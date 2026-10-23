@@ -27,6 +27,7 @@ func PublicSettings() (model.PublicSetting, error) {
 	settings, err := repository.GetSettings()
 	settings = normalizeSettings(settings)
 	settings.Public.ModelChannel.Channels = publicChannelInfos(settings.Private.Channels, settings.Public.ModelChannel.AvailableModels, settings.Public.ModelChannel.AvailableWorkflows)
+	appendGatewayPublic(&settings.Public, settings.Private.Gateway)
 	return settings.Public, err
 }
 
@@ -59,6 +60,9 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	keepPrivateAPIKeys(&settings, saved)
 	keepPrivateAuthSecrets(&settings, saved)
 	keepPrivateStorageSecrets(&settings, saved)
+	// Gateway configuration has its own administrator endpoint.
+	settings.Private.Gateway = saved.Private.Gateway
+	if err:=validateGatewayChannelConflicts(settings);err!=nil{return model.Settings{},err}
 	settings.Public = normalizePublicSettingWithChannels(settings.Public, settings.Private.Channels)
 	settings.Public.Storage = publicStorageSetting(settings.Private.Storage)
 	for _, channel := range settings.Private.Channels {
@@ -306,6 +310,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 }
 
 func hidePrivateAPIKeys(settings model.Settings) model.Settings {
+	settings.Private.Gateway = publicGatewayConfig(settings.Private.Gateway)
 	for i := range settings.Private.Channels {
 		settings.Private.Channels[i].APIKey = ""
 		settings.Private.Channels[i].UploadAPIKey = ""

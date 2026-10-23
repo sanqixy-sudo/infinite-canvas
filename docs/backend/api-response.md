@@ -23,6 +23,102 @@ description: 业务接口统一响应结构与前端处理约定
 
 接口连接失败、服务不可达、返回体不是约定 JSON 时，前端按网络或接口异常处理。
 
+## 短剧制作接口（工作区实现，待验收）
+
+均在现有用户鉴权的`/api/v1`路由下，沿用`{code,data,msg}`。本轮未执行接口验收。
+
+| 方法 | 路径 | 入参与返回 |
+| --- | --- | --- |
+| GET | `/api/v1/productions?workspaceId=根画布ID` | 当前账号制作文档；无计划返回`data:null` |
+| POST | `/api/v1/productions` | `{workspaceId,title}`；创建后返回文档；同账号同项目重复创建返回已有计划 |
+| POST | `/api/v1/productions/save` | 完整文档含`id/workspaceId/revision/title/synopsis/styleGuide/createdAt/updatedAt/episodes/scenes/assets/shots`；成功返回revision+1文档 |
+| DELETE | `/api/v1/productions?id=计划ID&revision=版本` | CAS删除计划及四类子记录，成功`data:null`；保留画布/媒体 |
+| GET | `/api/v1/productions/tasks` | `workspaceId/episodeId/status/page/pageSize`；持久图/视频/逐镜配音历史，返回`items,total,page,pageSize,hasMore,summary,shotCosts,historyScope,costScope` |
+| POST | `/api/v1/productions/tasks/retry` | `{workspaceId,recordId,requestId,quoteId?}`；无quoteId先报价，带quoteId确认提交；已受理的同requestId直接恢复原任务 |
+| GET | `/api/v1/productions/renders?workspaceId=根画布ID` | 本人合成任务，最多50条，在途优先 |
+| GET | `/api/v1/productions/renders/request?requestId=请求ID` | 本人同requestId合成任务；未受理为null，不代表旧提交以后不会到达 |
+| POST | `/api/v1/productions/renders` | `{workspaceId,episodeId,revision,requestId,audioStorageKey,audioGain}`；冻结已保存计划并返回合成任务 |
+| POST | `/api/v1/productions/renders/action` | `{id,action:'retry'或'cancel'}`；未知提交用`{requestId,action:'cancel-request'}`阻挡晚到POST |
+
+子记录字段采用camelCase，定义见`model/production.go`和`web/src/app/(user)/canvas/lib/production-types.ts`。主表的账号、创建时间和更新时间由服务器管理；子记录project_id不从客户端采信。仅允许一份完整JSON，请求最多4MiB；未知字段、额外JSON文档、非整数时长/排序被拒绝。
+
+保存先校验全部关联和限制，再在事务中查账号画布、验证本项目节点存在/类型。revision冲突返回可读业务失败，不自动覆盖。前端保留草稿并允许导出完整JSON；重新读取账号版本须明确确认。保存画布接口若返回比本地新的内容，制作页停止继续保存并提示同步冲突。
+
+镜头新增`candidates[]`与`selectedImageCandidateId/selectedVideoCandidateId`；候选字段`id/title/kind/canvasId/nodeId/storageKey/content`。候选文件身份必须与事务内读取的节点一致，有storageKey时content必须空，无storageKey时只允许HTTP/HTTPS链接；每镜20、每计划1000。采用ID须为本镜对应类型候选，已删除/换文件/运行中/失败候选不能保存。
+
+任务历史独立于短期图/视频/音频任务表，冻结首次提交时已保存镜头的归属，不回填更早任务。`status=all/running/failed/billing`，每页最多100。项包含`recordId/id/kind/shotIds/episodeIds/shotTitles/canvasId/nodeId/model/status/progress`、重试链及账务字段，不返回请求正文、密钥、原始错误或媒体URL。`kind=image/video/audio`；音频仅包含经账号与镜头归属校验的`production_voice_*`任务，其canvasId保存workspaceId、nodeId为shotId，前端进入该镜头配音区而非构造图/视频节点链接。`chargedCredits/refundedCredits/netCredits/settledCredits`来自服务端账本，缺失为null；明确免费为0。`actualInputTokens/actualOutputTokens`同样保留缺失与零；`billingUnit`为second/call时使用`actualUnits`，不拿Token字段当秒数。summary和shotCosts汇总本次分集全部已记录任务，不受状态筛选和页码影响；共享任务在总额中只计一次。
+
+重试仅支持明确失败且账务settled/released的网关任务；当前保存计划仍需绑定原镜头。首次返回`accepted:false`及`quoteId/requestId/model/reserveCredits/expiresAt`；确认提交或重复查询已受理请求返回`{accepted:true,task}`。requestId须在请求前保存，报价过期可以原requestId重新报价；不能换新ID盲重试未知提交。父任务已有后继时禁止再分叉，新的失败操作最新后继。普通图/视频回画布确认后生成，配音回镜头配音区；音频历史的canRetry为false，不通过此接口重放。
+
+合成任务含`id/requestId/workspaceId/episodeId/episodeTitle/revision/status/progress/seconds/shotCount/attempts/error/outputStorageKey/outputBytes/createdAt/updatedAt`，不返回私有素材快照、存储配置或workerID。状态为queued/running/completed/failed/cancelled；提交用`user_id+request_id`去重并校验请求摘要。cancel-request在尚未受理时创建取消墓碑，晚到提交不得入队。只有已完成输出可按现有账号文件权限下载。
+
+合成只接受本人账号文件和已采用结果；最多60镜头/300秒，单镜1～60秒，输入512MiB、音轨64MiB、输出256MiB，每账号2在途。输出720×1280/24fps MP4；短视频拒绝，保持原比例补边。audioGain为0～1；可选音轨从片头铺入，不提供字幕烧录或逐镜配音。运行环境需ffmpeg/ffprobe，本轮未执行真实合成。
+
+`POST /api/v1/canvas/projects/delete`新增制作引用保护：计划根画布、资产节点来源画布、镜头及候选关联画布被引用时，整批拒绝；必须先解除引用或删除制作计划。此操作不会自动移除计划内容。
+
+AI拆镜使用既有平台文字接口，不新增绕过服务端计费的模型直连。返回经严格结构/引用校验后在浏览器展示可编辑草案；人工确认才追加镜头，成功持久化制作草稿后再清除已采用的拆镜草案。
+
+## 团队协作与审片接口（工作区实现，待验收）
+
+写入和业务查询使用现有UserAuth、统一JSON结构。只读媒体另用ReadUserAuth，支持Bearer或同源HttpOnly阅读Cookie，不接受分享码作为媒体凭证。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET / POST | `/api/v1/teams` | 分页本人团队 / `{name}`创建团队 |
+| POST | `/api/v1/teams/join` | `{code}`消费一次性邀请码，返回teamId |
+| GET / POST / DELETE | `/api/v1/teams/:teamId` | 成员详情 / `{name}`改名 / 所有者删除团队 |
+| POST | `/api/v1/teams/:teamId/members` | `{userId,role}`；只有所有者能设置admin/member |
+| DELETE | `/api/v1/teams/:teamId/members/:userId` | 按角色移除或本人退出，所有者不可直接退出 |
+| GET / POST | `/api/v1/teams/:teamId/invites` | 管理者查看邀请状态 / 生成24小时单次邀请码，明文仅生成响应返回 |
+| DELETE | `/api/v1/teams/:teamId/invites/:inviteId` | 管理者撤销未使用邀请 |
+| GET / POST | `/api/v1/teams/:teamId/reviews` | 分页分享列表 / `{workspaceId,revision,episodeIds,includeScript}`发布本人保存计划中的分集快照 |
+| GET / DELETE | `/api/v1/team-reviews/:reviewId` | 成员只读详情 / 发布者或管理者撤销 |
+| GET / POST | `/api/v1/team-reviews/:reviewId/comments` | 按shotId分页 / `{shotId,body}`逐镜留言，正文最多2000字 |
+| DELETE | `/api/v1/team-reviews/:reviewId/comments/:commentId` | 本人、发布者或管理者删除意见 |
+| GET / HEAD | `/api/team-reviews/:reviewId/media/:shotId/:kind` | kind=image/video；按当前成员身份读取该镜采用文件，支持Range |
+
+发布快照由服务器在团队和发布者锁内从保存计划生成，默认includeScript=false；不采信客户端自造镜头快照。返回仅分集/镜头文字、相对鉴权媒体路径和可撤销权限，不包含canvasId/nodeId/storageKey、文件对象ID、账单或供应商地址。列表沿用page/pageSize（上限50）。成员DTO仅公开身份显示字段和团队角色，不返回用户钱包。
+
+写操作在团队事务内重新验证owner/admin/member。移除成员同时撤销其分享和未使用邀请；删除团队撤销全部分享；后续详情/媒体请求重新校验当前权限。返回private/no-store，不能撤回已经下载或已授权在途流。未撤销审片的mediaObjectIDs与在途合成素材参与文件删除引用检查，不授予普通文件API跨账号访问权。基础审片不含团队钱包、共同画布编辑、公开链接或实时协同。
+
+### 共享项目、素材与团队管理
+
+| 方法 | 路径 | 请求与结果 |
+| --- | --- | --- |
+| GET / POST | `/api/v1/teams/:teamId/projects` | 分页共享项目 / `{workspaceId,revision,editAllowed}`明确共享本人已保存计划 |
+| GET / POST / DELETE | `/api/v1/team-projects/:projectId` | `{project,team,myRole,canEdit,canViewCosts,plan}`详情 / 提交完整TeamPlan白名单CAS保存 / 按权限撤销共享 |
+| POST | `/api/v1/team-projects/:projectId/permissions` | `{editAllowed}`调整协作编辑权限 |
+| GET / POST | `/api/v1/teams/:teamId/assets` | 分页明确共享的素材 / `{objectId,title}`共享本账号图片、视频或音频 |
+| DELETE | `/api/v1/team-assets/:assetId` | 文件原拥有者或管理者撤销共享，不删除原文件 |
+| GET / HEAD | `/api/team-assets/:assetId/media` | ReadUserAuth + 当前团队授权读取媒体，支持Range，不返回私有storageKey或签名链接 |
+| POST | `/api/v1/teams/:teamId/members/:userId/cost-permission` | `{canViewCosts}`；仅团队所有者可调整普通成员权限 |
+| POST | `/api/v1/teams/:teamId/transfer` | `{userId,confirmation}`；目标必须为当前成员，确认文字为`转移团队所有权：团队名称` |
+| GET | `/api/v1/teams/:teamId/audits` | owner/admin分页查看操作审计 |
+
+TeamPlan包含`revision/title/synopsis/styleGuide/episodes/scenes/assets/shots`。分集仅`id/title/script/order`；资产仅`id/kind/title/description/variantOf`；镜头仅`id/episodeId/sceneId/order/title/description/dialogue/camera/seconds/assetIds/status`。私有canvas/node、候选、媒体引用和交付字段不接受客户端提交，由服务端从当前计划保留。请求最多4MiB，拒绝未知字段；CAS冲突保留前端草稿。允许新增和修改，已有条目删除及镜头跨集移动由原拥有者在个人计划处理。
+
+当前共享项目每个原拥有者/workspace只允许一份活跃授权。活跃team_projects阻止删除个人制作计划；活跃team_assets阻止删除原文件。移除素材或项目拥有者即撤销其共享，不能通过再次使用旧ID继续访问。所有权转移只改变团队角色，原项目与文件所有权、个人钱包保持不变。
+
+### 生成审批与项目预算
+
+| 方法 | 路径 | 请求与结果 |
+| --- | --- | --- |
+| GET | `/api/v1/team-projects/:projectId/generation` | `page/pageSize`，返回`{canApprove,canViewCosts,budget?,requests,total,page,pageSize}` |
+| POST | 同上 | `{requestId,shotId,model,parameters,assetIds,prompt}`发起申请，不扣费；模型与素材能力由服务端校验 |
+| PUT | `/api/v1/team-projects/:projectId/generation/budget` | `{limitCredits}`；仅原项目拥有者设置，0～1亿、最多两位小数，不低于已有held+spent |
+| POST | `/api/v1/team-projects/:projectId/generation/:approvalId/action` | `{action,quoteId?,reason?}`，action为`quote/submit/reject/withdraw` |
+
+申请冻结当时模型revision、已保存镜头及视频节点绑定，参数不含上游Key。参考素材只接受本团队明确共享assetId，报价阶段由服务器读取授权文件并换成临时任务素材，不把私人文件凭据返回成员。`prompt`最多10000字，参考ID最多50个，还须满足所选模型实际输入上限。报价或提交时模型能力版本变化要求撤回后重新申请。
+
+`quote`仅原项目拥有者可调用，返回网关冻结报价`{quoteId,expiresAt,reserveCredits,unit,...}`，Token分项显示输入/输出各自单价，秒/次按对应费率显示。`submit`必须带有效quoteId，由原拥有者明确确认扣自己的个人钱包；返回`{accepted:true,task}`。重复受理返回原任务，不发起第二笔扣费；请求内容变化不能复用原编号。`reject`仅原拥有者，`withdraw`仅申请者，均只能处理pending申请，不扣费。
+
+列表请求项包含`id/shotId/shotTitle/requesterId/model/revision/prompt/parameters/assetIds/state/reason/taskId`；只有具备成本权限时才有`reservedCredits/actualCredits`，以及`budget={limitCredits,heldCredits,spentCredits}`。团队所有者/管理员、原项目拥有者或明确授予成本权限的成员可见金额；普通成员不获得个人钱包、私有节点ID、请求快照或上游地址。
+
+受理在事务内再次检查成员、共享授权、镜头节点、素材、预算和个人余额；预扣、预算占用、流水、任务及原视频节点任务元数据共同成功或回滚。节点已有prompt/media/layout保持，执行字段及本次参数更新；活跃团队任务不会被旧画布保存覆盖，复制/导入节点不继承审批任务身份。状态从pending到running，再由真实任务结算为settled/released/pending_balance；缺失用量继续等待，不能按零收费。
+
+预算仅统计此审批入口任务，普通个人画布生成不计入。最终实际费可高于预扣和预算，超支会阻止后续批准，不保证费用硬封顶。结算按原冻结规则多退少补、终态幂等；成员或共享撤销不会取消已经发生的费用。详情与列表每次按当前权限返回，任务结果仍由原项目拥有者在私人画布/制作任务中查看，再明确发布审片。
+
+
 ## 访问门禁与登录会话（当前分支，部分验证）
 
 后续排版提交 `697ca4b` 与 `016f30f81e8a0aae62ef86b1866bb0b0485f7f381` 只改首页/登录 UI 与私有 CSS，不新增或调整本节 API、响应、鉴权及媒体权限。697 独立类型顺序重跑及 697/016 完整构建通过，016 多尺寸/主题/滚动检查和阶段部署已完成。当前媒体版 `2d9910e075cf36fa2d3d438b984e27493f47dedc` 的独立类型、完整构建和浏览器普通播放检查通过，已部署且原数据一致；静态 MP4/JPG 不新增业务接口，不能当成模型调用或账号文件。Go 与 38 项回归沿用原功能检查点，不冒称布局或媒体后重跑。
@@ -187,3 +283,49 @@ Go 全量、`1115c6f` 独立 TypeScript 与 32 项 Bun 回归、`86b07b0` 完整
 - `_parameterTranslation` 是系统内部负载。后端只按已授权的平台渠道读取管理员保存的协议原文，转译后只向供应商发送配置里的方法、地址、请求头、查询参数和请求体；不读取用户个人协议，不允许浏览器回退直连。
 - 图片 JSON 结果归一为 `{ data: [{ url }] }`；音频 URL 归一为 `{ provider: "parameter-translation", audio_url }`。配置直接返回文件时沿用二进制响应及 MIME。失败仍用现有 `Fail` 业务结构。
 - 视频沿用现有任务响应，增加 `parameter_translation: true` 标记；私有查询快照和公共渠道脚本不随响应返回。创建、查询、完成和失败均进入现有任务管理，失败不重发默认请求。
+# 模型中间件接口补充
+
+画布专用接口仍使用`{code,data,msg}`。管理员`GET/PUT /api/admin/model-gateway`读取/保存连接及售价，`POST /api/admin/model-gateway/sync`同步目录。密钥不回传，空字符串保留；中间件目录只能同步获得。公开`/api/settings`追加`protocol=gateway`渠道，`gatewayModels`含能力、原价档位、零售`sale.tiers`和展示备注，`modelCosts.billingUnit=token`不能再乘时长。
+
+计费模式由已发布模型的`pricing.tokenMode`决定，不由浏览器自行指定价格或用量：
+
+- `total_tokens`：总Token单价，`reserveTokens`预扣；`sale.tiers`的`withoutVideoCreditsPerMillion/withVideoCreditsPerMillion`分别为无/有参考视频价格。
+- `input_output_tokens`：输入、输出不同价，`reserveInputTokens/reserveOutputTokens`分别预扣；`sale.tiers`按分辨率提供`withoutVideoInputCreditsPerMillion/withoutVideoOutputCreditsPerMillion/withVideoInputCreditsPerMillion/withVideoOutputCreditsPerMillion`四个独立单价。参考视频档位不等于输入/输出分项。
+- 公开`modelCosts`同时携带`tokenMode`、对应预扣数量和`tiers`；其`credits/reserveCredits`是所有已发布分辨率与参考视频档位的最大预扣概览，具体任务以报价为准，不是最终费用。分项计费不能再读取总量单价展示成唯一售价。
+
+登录用户`POST /api/v1/model-gateway/quote`和`POST /api/v1/model-gateway/tasks`使用统一请求`requestId/model/revision/variantId?/prompt/parameters/inputs`，任务提交额外携带`quoteId`和可选`source/sourceId/canvasId`。多规格模型须由参数匹配唯一规格；若提供variantId，它必须与服务端解析结果一致。报价返回以下字段，Token模式未参与的数量与价格为0：
+
+| 字段 | 说明 |
+| --- | --- |
+| `quoteId` / `expiresAt` | 服务端签名报价，5分钟有效，绑定用户、请求和能力版本 |
+| `variantId` | 解析得到的真实规格ID；无variants的单规格模型为空 |
+| `unit` / `quantitySource` | token/second/call；秒/次分别指定request_duration、response_duration或successful_task |
+| `reserveUnits` / `unitPriceCredits` | 秒/次的预扣数量及算力/单位单价；Token模式使用下列专属字段 |
+| `tokenMode` | 总量或输入/输出分项模式 |
+| `reserveCredits` | 本次参数对应的预扣算力 |
+| `unitPriceCreditsPerMillion` / `reserveTokens` | 总量模式的锁定单价与预扣量 |
+| `inputPriceCreditsPerMillion` / `outputPriceCreditsPerMillion` | 分项模式各自锁定的算力/百万Token单价 |
+| `reserveInputTokens` / `reserveOutputTokens` | 分项模式各自锁定的预扣数量 |
+
+报价与持久化任务快照锁定规格、计费单位、数量来源及单价。Token分项完成时按实际输入×输入价加实际输出×输出价，合计后以十进制有理数统一half-up到0.01算力，再与已落账预扣额比较退补；不可分项分别舍入或将`totalTokens`再次计费。按秒采用冻结的请求时长或成功响应中的整数duration，按成功次计1；缺实际数量不假设为0或改用估算。提交重新计算规则并比较签名报价，规则改变时要求重新报价。配置后续改变不影响已有任务；已存在requestId优先恢复原记录，即使报价过期也不再提交上游。
+
+查询`GET /api/v1/model-gateway/tasks/by-request/:requestId`用于断线恢复，不存在返回HTTP404；已知平台任务ID沿用`GET /api/v1/videos/:id`，附`billingUnit/tokenMode/billingStatus/actualTokens/actualInputTokens/actualOutputTokens/actualUnits/reservedCredits/settledCredits`。用户必须拥有该任务。`actualInputTokens/actualOutputTokens`未取得真实分项时返回`null`，实际为零时返回`0`；不能用默认零代替缺失用量。秒/次的实际数量在actualUnits中，缺失同样为null。
+
+分项结算只接受完整的`input_tokens/output_tokens`或`prompt_tokens/completion_tokens`。同时出现两组必须对应一致；若有总数须等于两项之和，未给总数则可以完整两项相加。缺项、负数、非整数、字符串或总和冲突保持`pending_usage`，保留已有视频，不从总量减输出推算输入。画布仅在中间件标记`usage_available`且用量校验通过时结算；失败退款须无用量且明确标记`not_billable`，未知状态不推断免费。余额不足进入`pending_balance`，补扣重试使用持久化用量，不重复生成或重复扣费。配套0.2.0插件的画布与中间件契约已部署，真实渠道计价仍待验证。
+
+`POST /api/v1/model-gateway/media`接收multipart的`file`字段，返回临时签名`url/expiresAt`，不创建账号素材条目。公开读取`GET/HEAD /api/model-gateway/media/:id/content?token=...`须有效文件专用签名，不能用登录Token替代。生成结果内容`GET /api/v1/videos/:id/content`按账号鉴权代理，遵循现有公网地址访问限制。
+
+当前源码将四个Seedance模型收窄为特殊分组，每个模型仅接受`resolution: "720p"`、`ratio: "9:16"`（720×1280），并保留各自Token单价、时长和素材数量上限。中间件配置保存、业务目录读取和任务提交均校验该限制；已发布无效能力会阻止目录同步，需管理员重新保存后再由画布同步发布。配套插件为0.2.2，本轮固定规格与模型弹窗修改尚未构建或部署，不属于上面的历史部署记录。
+
+### P5 多规格公开目录与真实路由
+
+- 公开模型增加`variants[]`，每项为`{id,name,referenceModes,generateAudio?,capabilities,pricing}`。referenceModes为空表示不限制，支持text/image/video/audio；同时有多类素材时video优先、其次image、audio。generateAudio省略为不限制，布尔值为固定条件。参数必须匹配唯一规格，重叠条件不发布。
+- capabilities含该规格的分辨率、比例、整数时长区间、参考图片/视频/音频及合计上限、首尾帧、纯音频参考支持，`watermark:false`表示不接受水印。模型顶层能力仅供聚合概览，不代表可以任意组合所有选项；提交必须使用规格能力。
+- `pricing.unit=token/second/call`，`per=1000000/1/1`，原价以CNY整数分存储。Token沿用总量或输入/输出四档字段；秒/次使用各分辨率有/无参考视频的withoutVideoCents/withVideoCents，并声明quantitySource。
+- 多规格公开`sale.unit="variants"`、`sale.variants=[{id,sale}]`；每个子sale含自己的unit和tiers。秒/次售价为`withoutVideoCredits/withVideoCredits`，Token仍使用*CreditsPerMillion字段。固定售价策略按variantId+resolution配置；`modelCosts.gateway`携带完整公开目录和售价，具体预扣使用quote结果。
+- 中间件管理员保存`routes:[{variantId,channelId,upstreamModel,adapter}]`；这些私有字段和密钥不在业务`/v1/models`或画布公开配置下发。能力/价格/路由变更须新revision，画布同步新版本后须重新核对发布；旧任务保留已解析的渠道、上游ID和计费快照。
+- 当前支持原四模型专用插件、Seedance原生任务协议与NewToken第三方`/v1/videos`按秒协议。第三方协议使用reference_*与ratio，每个规格只允许一个720p/1080p、4～15秒和文档比例，固定生成音频条件且不开放水印；不等同于官方extra_*混合计费协议。新协议需单独开发和部署，同协议新增规格在后台即可完成。
+
+本轮P5协议扩展正在集中验证，真实渠道用量/计价和实际输出尚待联调；不以文档或源码完成代替验收通过。
+
+独立中间件自身契约、服务认证、管理端口和插件原生路由见[gateway/README](../../gateway/README.md)。任务最终Token只来自生成任务响应，不查询供应商消费账单。

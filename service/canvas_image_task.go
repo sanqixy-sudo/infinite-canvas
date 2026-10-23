@@ -8,6 +8,9 @@ import (
 	"github.com/tigerowo/infinite-canvas/repository"
 )
 
+var ErrCanvasImageTaskConflict = repository.ErrImageTaskConflict
+var ErrProductionTaskReplay = repository.ErrProductionTaskReplay
+
 type CanvasImageTaskCreateInput struct {
 	UserID          string
 	UserDisplayName string
@@ -101,6 +104,9 @@ func BatchUserCanvasImageTasks(userID string, ids []string) ([]map[string]any, e
 }
 
 func DeleteUserCanvasImageTask(userID string, id string) error {
+	if task, found, err := repository.GetUserCanvasImageTask(userID, id); err != nil { return err } else if found && task.Status != "completed" && task.Status != "failed" && task.Status != "cancelled" {
+		return safeMessageError{message: "任务仍在执行或结果未知，请先等待或核对原任务"}
+	}
 	return repository.DeleteUserCanvasImageTask(strings.TrimSpace(userID), strings.TrimSpace(id))
 }
 

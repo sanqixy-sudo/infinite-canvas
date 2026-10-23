@@ -14,6 +14,9 @@
 
 ## 开发文档
 
+- [短剧制作开发路线与阶段进度](plans/short-drama-production.md)
+- [Seedance 分组、中间件与 Token 结算](plans/seedance-model-gateway.md)
+
 - [本地开发](backend/local-development.md)
 - [接口响应约定](backend/api-response.md)
 - [系统配置数据结构](backend/system-settings.md)

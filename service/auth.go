@@ -338,22 +338,25 @@ func ConsumeUserCredits(userID string, modelName string, credits float64, path s
 	if len(task) > 0 {
 		workflowTask = task[0]
 	}
+	relatedID := ""
+	switch value := workflowTask.(type) {
+	case TaskCreditReference: relatedID, workflowTask = value.LedgerID(), nil
+	case *model.CanvasImageTask: relatedID = "image:" + value.ID
+	case *model.CanvasAudioTask: relatedID = "audio:" + value.ID
+	case *model.VideoTask: relatedID = "video:" + value.ID
+	}
 	ids, err := currentTaskStorageReferenceIDs(workflowTask)
 	if err != nil {
 		return err
 	}
-	if credits <= 0 {
-		if workflowTask != nil {
-			return storageReferenceError(repository.InsertWorkflowTask(workflowTask, ids...))
-		}
-		return nil
-	}
+	if credits <= 0 && workflowTask == nil && relatedID == "" { return nil }
 	timestamp := now()
 	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
 	_, ok, err := repository.ConsumeUserCredits(userID, credits, timestamp, model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
 		Type:      model.CreditLogTypeAIConsume,
+		RelatedID: relatedID,
 		Amount:    -credits,
 		Remark:    "调用模型 " + modelName,
 		Extra:     string(extra),
@@ -368,17 +371,20 @@ func ConsumeUserCredits(userID string, modelName string, credits float64, path s
 	return nil
 }
 
-func RefundUserCredits(userID string, modelName string, credits float64, path string) error {
+func RefundUserCredits(userID string, modelName string, credits float64, path string, taskID ...string) error {
 	credits = normalizeCredits(credits)
 	if credits <= 0 {
 		return nil
 	}
 	timestamp := now()
 	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
+	relatedID := ""
+	if len(taskID) > 0 { relatedID = taskID[0] }
 	_, ok, err := repository.RefundUserCredits(userID, credits, timestamp, model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
 		Type:      model.CreditLogTypeAIRefund,
+		RelatedID: relatedID,
 		Amount:    credits,
 		Remark:    "模型调用失败返还 " + modelName,
 		Extra:     string(extra),

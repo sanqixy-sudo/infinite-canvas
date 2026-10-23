@@ -217,9 +217,20 @@ export type AdminPublicModelChannelSettings = {
 export type AdminModelCost = {
     model: string;
     credits: number;
+    billingUnit?: "token" | "second" | "call" | "variants";
+    gateway?: import("@/lib/model-gateway").PublishedGatewayModel;
+    tokenMode?: import("@/lib/model-gateway").GatewayTokenMode;
+    reserveCredits?: number;
+    withoutVideoCreditsPerMillion?: number;
+    withVideoCreditsPerMillion?: number;
+    reserveTokens?: number;
+    reserveInputTokens?: number;
+    reserveOutputTokens?: number;
+    tiers?: import("@/lib/model-gateway").GatewaySaleTier[];
 };
 
 export type AdminPublicModelChannelInfo = {
+	 gatewayModels?: import("@/lib/model-gateway").PublishedGatewayModel[];
 	parameterTranslationModels?: string[];
     id: string;
     protocol: AdminModelChannel["protocol"];

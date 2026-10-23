@@ -27,6 +27,7 @@
         "clsx": "^2.1.1",
         "copy-to-clipboard": "^4.0.2",
         "dayjs": "^1.11.20",
+        "dequal": "^2.0.3",
         "fflate": "^0.8.3",
         "file-saver": "^2.0.5",
         "jsonrepair": "^3.15.0",

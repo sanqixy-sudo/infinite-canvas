@@ -200,6 +200,80 @@ func TestStorageFileManagement(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("published review protects media until revoked", func(t *testing.T) {
+		file := makeFile("review-media", "file-owner")
+		team := model.Team{ID: "storage-review-team", Name: "审片团队", OwnerID: "file-owner"}
+		if err := repository.CreateTeam(team, model.TeamMember{TeamID: team.ID, UserID: "file-owner", Role: "owner"}); err != nil {
+			t.Fatal(err)
+		}
+		review := model.ProductionReview{ID: "storage-review", TeamID: team.ID, PublisherID: "file-owner", Title: "第一版审片", MediaObjectIDs: []string{file.ID}}
+		if err := db.Create(&review).Error; err != nil {
+			t.Fatal(err)
+		}
+		refs, err := CurrentUserStorageFileReferences(owner, file.ID)
+		if err != nil || refs.CanDelete || len(refs.Blockers) != 1 || refs.Blockers[0].Type != "published" || refs.Blockers[0].ID != review.ID {
+			t.Fatalf("review media protection: %+v %v", refs, err)
+		}
+		if _, err := DeleteCurrentUserStorageFile(owner, file.ID, true, nil); err == nil {
+			t.Fatal("unrevoked review media deleted")
+		}
+		if err := RevokeCurrentProductionReview(owner, review.ID); err != nil {
+			t.Fatal(err)
+		}
+		refs, err = CurrentUserStorageFileReferences(owner, file.ID)
+		if err != nil || !refs.CanDelete || len(refs.Blockers) != 0 {
+			t.Fatalf("revoked review retained media protection: %+v %v", refs, err)
+		}
+		if result, err := DeleteCurrentUserStorageFile(owner, file.ID, true, nil); err != nil || result.FreedBytes != file.Bytes {
+			t.Fatalf("revoked review media release: %+v %v", result, err)
+		}
+	})
+	t.Run("queued and running renders protect clip and audio inputs", func(t *testing.T) {
+		for _, state := range []struct{ active, terminal string }{{"queued", "cancelled"}, {"running", "failed"}} {
+			clip := makeFile("render-clip-"+state.active, "file-owner")
+			audio := makeFile("render-audio-"+state.active, "file-owner")
+			raw, err := json.Marshal(map[string]any{"clips": []any{map[string]any{"storageKey": "server:" + clip.ID}}, "delivery": map[string]any{"audioTracks": []any{map[string]any{"storageKey":"server:"+audio.ID}}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			job := model.ProductionRenderJob{ID: "storage-render-" + state.active, UserID: "file-owner", RequestID: "storage-render-" + state.active, Status: state.active, SnapshotJSON: string(raw)}
+			if err := db.Create(&job).Error; err != nil {
+				t.Fatal(err)
+			}
+			for _, file := range []model.StorageObject{clip, audio} {
+				refs, err := CurrentUserStorageFileReferences(owner, file.ID)
+				if err != nil || refs.CanDelete || len(refs.Blockers) != 1 || refs.Blockers[0].Type != "activeTask" || refs.Blockers[0].ID != job.ID {
+					t.Fatalf("%s render input %s: %+v %v", state.active, file.ID, refs, err)
+				}
+				if _, err := DeleteCurrentUserStorageFile(owner, file.ID, true, nil); err == nil {
+					t.Fatalf("%s render input deleted: %s", state.active, file.ID)
+				}
+			}
+			if err := db.Model(&job).Update("status", state.terminal).Error; err != nil {
+				t.Fatal(err)
+			}
+			for _, file := range []model.StorageObject{clip, audio} {
+				refs, err := CurrentUserStorageFileReferences(owner, file.ID)
+				if err != nil || !refs.CanDelete || len(refs.Blockers) != 0 {
+					t.Fatalf("%s render retained input %s: %+v %v", state.terminal, file.ID, refs, err)
+				}
+				if result, err := DeleteCurrentUserStorageFile(owner, file.ID, true, nil); err != nil || result.FreedBytes != file.Bytes {
+					t.Fatalf("%s render input release %s: %+v %v", state.terminal, file.ID, result, err)
+				}
+			}
+		}
+	})
+	t.Run("saved episode delivery protects audio until detached",func(t *testing.T){
+		file:=makeFile("delivery-audio","file-owner")
+		project:=model.ProductionProject{ID:"delivery-plan",UserID:"file-owner",WorkspaceID:"delivery-workspace",Revision:1}
+		if err:=db.Create(&project).Error;err!=nil{t.Fatal(err)}
+		episode:=model.ProductionEpisode{ID:"delivery-episode",ProjectID:project.ID,Delivery:&model.ProductionDeliveryEdit{OriginalGain:1,AudioTracks:[]model.ProductionAudioTrack{{ID:"track",StorageKey:"server:"+file.ID,Label:"本集音轨",DurationSeconds:3,Gain:1}}}}
+		if err:=db.Create(&episode).Error;err!=nil{t.Fatal(err)}
+		if refs,err:=CurrentUserStorageFileReferences(owner,file.ID);err!=nil||refs.CanDelete||len(refs.Blockers)!=1{t.Fatalf("saved audio not protected: %+v %v",refs,err)}
+		if _,err:=DeleteCurrentUserStorageFile(owner,file.ID,true,nil);err==nil{t.Fatal("saved audio physically deleted")}
+		if err:=db.Model(&episode).Update("delivery",nil).Error;err!=nil{t.Fatal(err)}
+		if result,err:=DeleteCurrentUserStorageFile(owner,file.ID,true,nil);err!=nil||result.FreedBytes!=file.Bytes{t.Fatalf("detached audio not released: %+v %v",result,err)}
+	})
 	t.Run("physical and final database failures retain charged retryable indexes", func(t *testing.T) {
 		provider := model.StorageProvider{ID: "test-r2", Type: model.StorageProviderTypeS3, Endpoint: "https://r2.invalid", Bucket: "test", AccessKeyID: "test-only", SecretAccessKey: "test-only", Enabled: true}
 		if _, err := repository.SaveSettings(model.Settings{Private: model.PrivateSetting{Storage: model.PrivateStorageSetting{Mode: "local", Providers: []model.StorageProvider{provider}}}}, "test"); err != nil {

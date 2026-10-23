@@ -42,7 +42,7 @@ func storageMediaValues(raw string) ([]string, error) {
 			case "preview":
 				values = append(values, strings.TrimSpace(value))
 				values = append(values, extractMarkdownImages("", value)...)
-			case "storagekey", "coverstoragekey", "url", "urls", "dataurl", "imageurl", "imageurls", "videourl", "audiourl", "coverurl", "thumbnailurl", "thumbnail", "src", "references", "referenceimages", "referencevideos", "referenceaudios", "referenceimage", "referencevideo", "referenceaudio", "inputreference", "inputreferences", "mask", "maskurl", "inputimage", "firstframeurl", "lastframeurl", "images", "image", "video", "audio", "fileurl", "imageid":
+			case "storagekey", "audiostoragekey", "coverstoragekey", "url", "urls", "dataurl", "imageurl", "imageurls", "videourl", "audiourl", "coverurl", "thumbnailurl", "thumbnail", "src", "references", "referenceimages", "referencevideos", "referenceaudios", "referenceimage", "referencevideo", "referenceaudio", "inputreference", "inputreferences", "mask", "maskurl", "inputimage", "firstframeurl", "lastframeurl", "images", "image", "video", "audio", "fileurl", "imageid":
 				values = append(values, strings.TrimSpace(value))
 			}
 		}

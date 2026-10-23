@@ -6,6 +6,7 @@ import { Input, Switch } from "antd";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { useAutoDLWorkflow } from "@/hooks/use-autodl-workflow";
 import { isAutoDLConfig, normalizeAutoDLDuration } from "@/lib/autodl";
+import { gatewayInputError, gatewayModel, gatewayParameters, gatewayReferenceMode, gatewayVariants, type GatewayInput } from "@/lib/model-gateway";
 import { boolConfig, isSeedanceFastOrMiniModel, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptions, seedancePixelLabel, seedanceRatioOptions, seedanceResolutionOptions } from "@/lib/seedance-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { COGVIDEOX3_DURATIONS, isCogVideoX3Model, modelKey, normalizeCogVideoX3Duration, supportsVideoAudioGeneration } from "@/lib/video-model-capabilities";
@@ -43,12 +44,49 @@ type VideoSettingsPanelProps = {
     className?: string;
     hideNegativePrompt?: boolean;
     visualOnly?: boolean;
+    referenceInputs?: Array<Pick<GatewayInput, "kind" | "role">>;
 };
 
-export function VideoSettingsPanel({ config, modelName, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", hideNegativePrompt = false, visualOnly = false }: VideoSettingsPanelProps) {
+export function VideoSettingsPanel({ config, modelName, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", hideNegativePrompt = false, visualOnly = false, referenceInputs }: VideoSettingsPanelProps) {
     const model = modelName || config.model || config.videoModel;
     const autodl = isAutoDLConfig(config, model);
     const { data: workflow } = useAutoDLWorkflow(config, model);
+    const gateway = gatewayModel(config, model);
+    if (gateway) {
+        const parameters = gatewayParameters(config);
+        const mode = referenceInputs ? gatewayReferenceMode(referenceInputs) : undefined;
+        const scoped = gatewayVariants(gateway, {}, mode);
+        const candidates = gatewayVariants(gateway, { resolution: parameters.resolution, ratio: parameters.ratio, generateAudio: parameters.generateAudio }, mode);
+        const matching = gatewayVariants(gateway, parameters, mode);
+        const caps = matching.length === 1 ? matching[0].capabilities : gateway.capabilities;
+        const resolutions = gateway.variants?.length ? [...new Set(scoped.flatMap((v) => v.capabilities.resolutions))] : caps.resolutions;
+        const ratios = gateway.variants?.length ? [...new Set(gatewayVariants(gateway, { resolution: parameters.resolution }, mode).flatMap((v) => v.capabilities.ratios))] : caps.ratios;
+        const audioSpecs = gatewayVariants(gateway, { resolution: parameters.resolution, ratio: parameters.ratio, duration: parameters.duration }, mode);
+        const fixedAudio = audioSpecs.length && audioSpecs.every((v) => v.generateAudio !== undefined && v.generateAudio === audioSpecs[0].generateAudio) ? audioSpecs[0].generateAudio : undefined;
+        const durationCaps = candidates.length ? { minDuration: Math.min(...candidates.map((v) => v.capabilities.minDuration)), maxDuration: Math.max(...candidates.map((v) => v.capabilities.maxDuration)) } : caps;
+        const changeSpec = (resolution: string, ratio?: string) => {
+            const possible = gatewayVariants(gateway, { resolution, ...(ratio ? { ratio } : {}) }, mode);
+            const chosen = possible.find((v) => v.capabilities.ratios.includes(ratio || parameters.ratio) && (v.generateAudio === undefined || v.generateAudio === parameters.generateAudio)) || possible[0];
+            onConfigChange("vquality", resolution);
+            if (chosen) {
+                onConfigChange("size", chosen.capabilities.ratios.includes(ratio || parameters.ratio) ? ratio || parameters.ratio : chosen.capabilities.ratios[0]);
+                onConfigChange("videoSeconds", String(Math.max(chosen.capabilities.minDuration, Math.min(chosen.capabilities.maxDuration, parameters.duration || chosen.capabilities.minDuration))));
+                if (chosen.generateAudio !== undefined) onConfigChange("videoGenerateAudio", String(chosen.generateAudio));
+            } else if (ratio) onConfigChange("size", ratio);
+        };
+        const fixedPortrait = gateway.capabilities.resolutions.length === 1 && gateway.capabilities.resolutions[0] === "720p" && gateway.capabilities.ratios.length === 1 && gateway.capabilities.ratios[0] === "9:16";
+        const invalid = referenceInputs ? gatewayInputError(gateway, referenceInputs, parameters) : gateway.variants?.length ? matching.length ? "" : "当前参数没有可用规格，请重新选择" : gatewayInputError(gateway, [], parameters);
+        return <ImageSettingsTheme theme={theme}><div className={className}>
+            {showTitle ? <div className="text-lg font-semibold">视频设置</div> : null}
+            {gateway.remark ? <div className="text-xs leading-5" style={{ color: theme.node.muted }}>{gateway.remark}</div> : null}
+            {fixedPortrait ? <SettingGroup title="画面规格" color={theme.node.muted}><div className="text-sm font-medium">720 × 1280 · 9:16 竖屏</div><div className="mt-1 text-xs" style={{ color: theme.node.muted }}>当前渠道固定规格</div></SettingGroup> : <><SettingGroup title="分辨率" color={theme.node.muted}><div className="grid grid-cols-3 gap-2">{resolutions.map((value) => <OptionPill key={value} selected={parameters.resolution === value} theme={theme} onClick={() => changeSpec(value)}>{value}</OptionPill>)}</div></SettingGroup>
+            <SettingGroup title="画面比例" color={theme.node.muted}><div className="grid grid-cols-3 gap-2">{ratios.map((value) => <OptionPill key={value} selected={parameters.ratio === value} theme={theme} onClick={() => changeSpec(parameters.resolution, value)}>{value === "adaptive" ? "自适应" : value}</OptionPill>)}</div></SettingGroup></>}
+            {!visualOnly ? <><SettingGroup title={`时长 · ${durationCaps.minDuration}～${durationCaps.maxDuration} 秒`} color={theme.node.muted}><NumberInput value={config.videoSeconds} min={durationCaps.minDuration} max={durationCaps.maxDuration} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} /></SettingGroup>{fixedAudio === undefined ? <AudioGenerationSetting checked={parameters.generateAudio} theme={theme} onChange={(value) => onConfigChange("videoGenerateAudio", String(value))} /> : <SettingGroup title="生成音频" color={theme.node.muted}><button type="button" onClick={() => onConfigChange("videoGenerateAudio", String(fixedAudio))} className="text-sm">此规格固定{fixedAudio ? "带音频" : "不带音频"}{parameters.generateAudio !== fixedAudio ? " · 点击应用" : ""}</button></SettingGroup>}{caps.watermark === false ? parameters.watermark ? <button type="button" className="text-xs" onClick={() => onConfigChange("videoWatermark", "false")}>此规格不支持水印 · 点击关闭</button> : null : <SwitchRow label="添加水印" checked={parameters.watermark} theme={theme} onChange={(value) => onConfigChange("videoWatermark", String(value))} />}</> : null}
+            {gateway.variants?.length ? <div className="text-xs leading-5" style={{ color: theme.node.muted }}>{matching.length === 1 ? `当前规格：${matching[0].name}` : "连接素材并选择参数后确定具体规格"}{candidates.length > 1 ? ` · 可用时长 ${candidates.map((v) => `${v.capabilities.minDuration}–${v.capabilities.maxDuration}`).join(" / ")} 秒` : ""}</div> : null}
+            <div className="text-xs leading-5" style={{ color: theme.node.muted }}>{gateway.variants?.length && matching.length !== 1 ? "按具体规格限制；目录最大值：" : "最多 "} {caps.maxImages} 张图片、{caps.maxVideos} 段视频、{caps.maxAudios} 段音频{caps.maxTotal > 0 ? `，共 ${caps.maxTotal} 个素材` : ""}。首尾帧与普通参考素材分别使用。</div>
+            {invalid ? <div role="alert" className="rounded-lg border p-2 text-xs" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>{invalid}</div> : null}
+        </div></ImageSettingsTheme>;
+    }
     if (isAPIMartKlingV26Config(config, modelName || config.model || config.videoModel) || isAPIMartKlingV3Config(config, modelName || config.model || config.videoModel) || isKIEKlingV3Config(config, modelName || config.model || config.videoModel)) {
         return <KlingV26VideoSettingsPanel config={config} modelName={modelName} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} hideNegativePrompt={hideNegativePrompt} visualOnly={visualOnly} />;
     }

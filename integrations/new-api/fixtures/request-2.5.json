@@ -1,0 +1,11 @@
+{
+  "model": "doubao-seedance-2-5-260628",
+  "content": [
+    { "type": "text", "text": "参考视频的运镜，创作新的山间日出镜头" },
+    { "type": "video_url", "video_url": { "url": "https://media.example.com/reference.mp4" }, "role": "reference_video" }
+  ],
+  "resolution": "720p",
+  "duration": 30,
+  "ratio": "9:16",
+  "omni_reference_task_type": "reference"
+}

@@ -6,6 +6,7 @@ import { Button, Segmented } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
 import { isAutoDLConfig } from "@/lib/autodl";
+import { withFixedGatewayVideoSize, gatewayModel } from "@/lib/model-gateway";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -34,11 +35,14 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, videoFram
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = node.metadata?.generationMode || "image";
     const config = buildNodeConfig(globalConfig, node, mode);
+    const gateway = mode === "video" ? gatewayModel(config) : undefined;
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const workflowRef = node.metadata?.workflowRef;
     const billingMode = workflowRef ? workflowRef.scope === "system" ? "remote" : "local" : config.channelMode;
     const billingModel = workflowRef ? `workflow:${workflowRef.scope}:${workflowRef.channelId}:${workflowRef.kind}:${workflowRef.workflowId}` : config.model;
-    const credits = requestCreditCost({ channelMode: billingMode, modelCosts, model: billingModel, count: !workflowRef && mode === "image" ? count : 1, seconds: !workflowRef && mode === "video" ? config.videoSeconds : undefined });
+    const tokenBilling = modelCosts?.some((item) => item.model === billingModel && (item.billingUnit === "token" || Boolean(item.gateway)));
+    const splitBilling = tokenBilling && modelCosts?.some((item) => item.model === billingModel && item.tokenMode === "input_output_tokens");
+    const credits = requestCreditCost({ channelMode: billingMode, modelCosts, model: billingModel, count: !workflowRef && mode === "image" ? count : 1, seconds: !workflowRef && mode === "video" ? config.videoSeconds : undefined, resolution: mode === "video" ? config.vquality : undefined });
     const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };
     const hasAnyInput = Boolean(inputSummary.textCount || inputSummary.imageCount || inputSummary.videoCount || inputSummary.audioCount);
     const hasComposerContent = Boolean((node.metadata?.composerContent ?? node.metadata?.prompt ?? "").trim());
@@ -98,9 +102,9 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, videoFram
 
             <div className="mb-2 flex flex-wrap gap-1.5">
                 <InputChip label="提示词" value={`${inputSummary.textCount} 个`} style={chipStyle} />
-                <InputChip label="参考图" value={`${inputSummary.imageCount} 张`} style={chipStyle} />
-                <InputChip label="参考视频" value={`${inputSummary.videoCount} 个`} style={chipStyle} />
-                <InputChip label="参考音频" value={`${inputSummary.audioCount} 个`} style={chipStyle} />
+                <InputChip label="参考图" value={gateway ? `${inputSummary.imageCount}/${gateway.capabilities.maxImages}` : `${inputSummary.imageCount} 张`} style={chipStyle} />
+                <InputChip label="参考视频" value={gateway ? `${inputSummary.videoCount}/${gateway.capabilities.maxVideos}` : `${inputSummary.videoCount} 个`} style={chipStyle} />
+                <InputChip label="参考音频" value={gateway ? `${inputSummary.audioCount}/${gateway.capabilities.maxAudios}` : `${inputSummary.audioCount} 个`} style={chipStyle} />
                 <button type="button" className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border px-2 text-[11px]" style={chipStyle} onMouseDown={(event) => event.stopPropagation()} onClick={onComposerToggle}>
                     <Settings2 className="size-3.5" />
                     组装提示词
@@ -125,13 +129,13 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, videoFram
                 type="primary"
                 className="mt-auto !h-9 !w-full !cursor-pointer !rounded-lg"
                 disabled={isRunning || !canGenerate || credits === null}
-                title={credits === null ? "平台模型尚未配置价格或参数无效，请联系管理员" : "预计扣点，实际以任务流水为准；自动视频时长按 15 秒预估"}
+                title={credits === null ? "平台模型尚未配置价格或参数无效，请联系管理员" : splitBilling ? "显示当前分辨率的最高预扣额度，输入与输出分别计价后相加；完成后按接口实际分项用量多退少补" : tokenBilling ? "显示当前分辨率的最高预扣额度，按实际引用素材匹配价格；完成后按该规格的 Token、秒或次规则多退少补" : "预计扣点，实际以任务流水为准；自动视频时长按 15 秒预估"}
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={() => onGenerate(node.id)}
             >
                 <span className="inline-flex items-center gap-1.5">
                     <span className="inline-flex items-center gap-1">
-                        {billingMode === "local" ? "自有渠道" : credits === null ? "未定价" : <><CreditSymbol />{credits.toLocaleString()}</>}
+                        {billingMode === "local" ? "自有渠道" : credits === null ? "未定价" : <>{tokenBilling ? "预扣≤" : null}<CreditSymbol />{credits.toLocaleString()}</>}
                     </span>
                     {isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />}
                     <span>开始生成</span>
@@ -158,7 +162,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
     const textChannelId = mode === "text" ? channelId || globalConfig.textChannelId : globalConfig.textChannelId;
     const audioChannelId = mode === "audio" ? channelId || globalConfig.audioChannelId : globalConfig.audioChannelId;
     const activeChannelId = mode === "image" ? imageChannelId : mode === "video" ? videoChannelId : mode === "text" ? textChannelId : mode === "audio" ? audioChannelId || globalConfig.activeChannelId : globalConfig.activeChannelId;
-    return {
+    const result: AiConfig = {
         ...globalConfig,
         model: node.metadata?.model || defaultModel || (mode === "audio" ? defaultConfig.audioModel : globalConfig.model || defaultConfig.model),
         activeChannelId,
@@ -194,6 +198,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         geminiTtsVoice: node.metadata?.geminiTtsVoice || globalConfig.geminiTtsVoice || defaultConfig.geminiTtsVoice,
         count: String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
     };
+    return mode === "video" ? withFixedGatewayVideoSize(result) : result;
 }
 
 function modelChannelId(config: AiConfig, mode: CanvasGenerationMode) {

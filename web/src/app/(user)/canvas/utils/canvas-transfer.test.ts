@@ -3,7 +3,8 @@ import test from "node:test";
 import { createZip, readZip } from "@/lib/zip";
 import type { CanvasExportFile } from "../export-types";
 import type { CanvasProject } from "../stores/use-canvas-store";
-import { buildCanvasArchive, importCanvasProjectGroups, prepareCanvasImport } from "./canvas-transfer";
+import { buildCanvasArchive, importCanvasProjectGroups, prepareCanvasImport, prepareCanvasBundleImport, remapCanvasBundle, remapProductionCanvases } from "./canvas-transfer";
+import type { ProductionDocument } from "../lib/production-types";
 
 const imageKey = "server:image-old";
 const imageUrl = "/api/files/image-old/content?access=old";
@@ -12,8 +13,8 @@ const audioUrl = "https://storage.example.test/audio.mp3";
 
 function projects() {
     return [
-        { id: "root", title: "画布 1", workspaceTitle: "项目", nodes: [{ id: "image", metadata: { storageKey: imageKey, content: imageUrl } }], references: [imageUrl] },
-        { id: "child", workspaceId: "root", title: "画布 2", nodes: [{ id: "audio", metadata: { storageKey: audioKey, content: audioUrl, imageStorage: [{ storageKey: imageKey, url: imageUrl }] } }] },
+        { id: "root", title: "画布 1", workspaceTitle: "项目", connections: [], nodes: [{ id: "image", title: "参考图", type: "image", position: {x:0,y:0}, metadata: { storageKey: imageKey, content: imageUrl } }], references: [imageUrl] },
+        { id: "child", workspaceId: "root", title: "画布 2", connections: [], nodes: [{ id: "audio", title: "配音", type: "audio", position: {x:0,y:0}, metadata: { storageKey: audioKey, content: audioUrl, imageStorage: [{ storageKey: imageKey, url: imageUrl }] } }] },
     ] as unknown as CanvasProject[];
 }
 
@@ -52,6 +53,32 @@ test("服务端素材经过真实 ZIP 导出导入后使用新本地键，嵌套
 
 test("导出任一素材下载失败时拒绝产出导出包", async () => {
     await assert.rejects(buildCanvasArchive(projects(), async ({ storageKey }) => { if (storageKey === audioKey) throw new Error("远程文件已失效"); return new Blob(["image"], { type: "image/png" }); }), /远程文件已失效/);
+});
+
+test("制作计划、候选、音轨与字幕完整打包，新任务身份不会继承", async () => {
+    const canvases = projects();
+    canvases[0].nodes[0].metadata!.videoTaskId = "old-task";
+    canvases[0].pendingAgentRequest = { prompt: "不可自动重跑", assets: [], skills: [] };
+    canvases[0].chatSessions = [{ id: "old-chat", title: "创作记录", messages: [{id:"message",role:"user",text:"保留剧本"}], agentState:{phase:"video",approvedNodeIds:[],referenceNodeIds:[],pendingTaskIds:["old-task"],completedTaskIds:[]}, protocolMessages:[],createdAt:"",updatedAt:"" }];
+    canvases[0].activeChatId = "old-chat";
+    const doc = { id: "plan", workspaceId: "root", episodes: [{ id: "ep", title: "一", order: 0, script: "对白", delivery: { originalGain: 1, burnSubtitles: true, audioTracks: [{ id:"track",shotId:"shot",storageKey:audioKey,label:"配音",startSeconds:0,trimStartSeconds:0,durationSeconds:2,gain:1 }], subtitles: [{id:"sub",shotId:"shot",startSeconds:0,endSeconds:2,text:"对白"}] } }], scenes: [], assets: [{id:"asset",references:[{canvasId:"root",nodeId:"image"}]}], shots: [{id:"shot",episodeId:"ep",sceneId:"",assetIds:["asset"],canvasId:"",textNodeId:"",imageNodeId:"",videoNodeId:"",candidates:[{id:"candidate",canvasId:"root",nodeId:"image",storageKey:imageKey,content:"",kind:"image"}],selectedImageCandidateId:"candidate"}] } as unknown as ProductionDocument;
+    const files = await buildCanvasArchive(canvases, async ({storageKey}) => new Blob([storageKey], {type:storageKey===audioKey?"audio/mpeg":"image/png"}), [doc]);
+    const zip = await readZip(await createZip(files)); const data = JSON.parse(await zip.get("projects.json")!.text()) as CanvasExportFile;
+    const restored = await prepareCanvasBundleImport(data,zip,async(file)=>({storageKey:`server:import-${file.storageKey}`,url:`blob:import-${file.storageKey}`}));
+    const bundle=remapCanvasBundle(restored.projects,restored.productions);
+    const result=remapProductionCanvases(bundle.productions[0],new Map([["root","new-root"],["child","new-child"]]));
+    assert.equal(result.workspaceId,"new-root"); assert.equal(result.assets[0].references[0].nodeId,bundle.projects[0].nodes[0].id);
+    assert.equal(result.shots[0].candidates[0].nodeId,bundle.projects[0].nodes[0].id);
+    assert.equal(result.shots[0].selectedImageCandidateId,result.shots[0].candidates[0].id);
+    assert.equal(result.episodes[0].delivery!.audioTracks[0].shotId,result.shots[0].id);
+    assert.equal(result.episodes[0].delivery!.subtitles[0].shotId,result.shots[0].id);
+    assert.equal(result.episodes[0].delivery!.audioTracks[0].storageKey,`server:import-${audioKey}`);
+    assert.equal(bundle.projects[0].nodes[0].metadata!.videoTaskId,undefined);
+    assert.equal(bundle.projects[0].pendingAgentRequest,undefined);
+    assert.equal(bundle.projects[0].chatSessions[0].messages[0].text,"保留剧本");
+    assert.deepEqual(bundle.projects[0].chatSessions[0].agentState.pendingTaskIds,[]);
+    assert.notEqual(bundle.projects[0].activeChatId,"old-chat");
+    assert.notEqual(bundle.projects[0].nodes[0].id,"image"); assert.notEqual(result.shots[0].id,"shot");
 });
 
 test("导入 ZIP 缺文件或文件被截断时，在写入任何素材前停止", async () => {

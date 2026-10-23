@@ -1,0 +1,11 @@
+{
+  "id": "ultra720_fixture_001",
+  "doubao-id": "cgt-private-fixture",
+  "model": "doubao-seedance-2-0-fast-260128",
+  "status": "succeeded",
+  "content": { "video_url": "https://media.example.com/result.mp4" },
+  "resolution": "720p",
+  "duration": 6,
+  "ratio": "9:16",
+  "usage": { "completion_tokens": 90000, "total_tokens": 93366 }
+}

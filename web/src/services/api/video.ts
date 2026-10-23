@@ -3,6 +3,7 @@ import { requireCloudModelAccess } from "./cloud-model-access";
 import { assertStorageSession } from "@/services/automatic-media-save";
 import { nanoid } from "nanoid";
 import { WorkflowRequestError } from "./workflow-generation";
+import { createGatewayVideoTask } from "./model-gateway";
 import { BrowserParameterTranslation, findParameterTranslation, normalizeTranslationAspectRatio, translationBody, translationHeaders, translationMediaAddress, type MatchedTranslation, type TranslationInput, type TranslationResult } from "./channel-parameter-translation";
 
 import { dataUrlToFile, readFileAsDataUrl } from "@/lib/image-utils";
@@ -22,14 +23,14 @@ import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
-export type VideoResponse = { parameter_translation?: boolean; translationSnapshot?: LocalVideoTranslationSnapshot; id: string; task_id?: string; video_id?: string; source_id?: string; sourceId?: string; channelId?: string; userChannelId?: string; channelName?: string; workflowRef?: string; channel_id?: string; user_channel_id?: string; channel_name?: string; status?: string; video_url?: string; url?: string; storageKey?: string; accountSaveError?: string; progress?: number; error?: { message?: string }; size?: string; seconds?: string; model?: string; created_at?: string | number; createdAt?: string | number; started_at?: string | number; startedAt?: string | number; request_body?: string };
+export type VideoResponse = { billingStatus?: string; billingUnit?: string; actualUnits?: number | null; tokenMode?: import("@/lib/model-gateway").GatewayTokenMode; actualTokens?: number; actualInputTokens?: number | null; actualOutputTokens?: number | null; reservedCredits?: number; settledCredits?: number; parameter_translation?: boolean; translationSnapshot?: LocalVideoTranslationSnapshot; id: string; task_id?: string; video_id?: string; source?: string; source_id?: string; sourceId?: string; canvasId?: string; channelId?: string; userChannelId?: string; channelName?: string; workflowRef?: string; channel_id?: string; user_channel_id?: string; channel_name?: string; status?: string; video_url?: string; url?: string; storageKey?: string; accountSaveError?: string; progress?: number; error?: { message?: string }; size?: string; seconds?: string; model?: string; created_at?: string | number; createdAt?: string | number; started_at?: string | number; startedAt?: string | number; request_body?: string };
 type ApiVideoEnvelope = { code: number; data?: VideoResponse | VideoResponse[] | null; msg?: string; message?: string };
 type ApiVideoResponse = VideoResponse | ApiVideoEnvelope;
 export type VideoGenerationResult = { id: string; url: string; durationMs: number; width: number; height: number; bytes: number; mimeType: string; task: VideoResponse };
 type LocalVideoTranslationSnapshot = { match:MatchedTranslation; input:TranslationInput; baseUrl:string; protocol:AiConfig["localChannels"][number]["protocol"]; taskIds:string[]; completed:Record<string,TranslationResult> };
 export type CreatedVideoGenerationTask = { task: VideoResponse; pollId: string; startedAt: number; requestBody: unknown };
 export type VideoProgressHandler = (progress: number, task: VideoResponse) => void;
-export type VideoTaskCreateOptions = { signal?: AbortSignal; onServerTask?: () => void; clientTaskId?: string; source?: "video-workbench" | "canvas"; sourceId?: string };
+export type VideoTaskCreateOptions = { signal?: AbortSignal; onServerTask?: () => void; clientTaskId?: string; source?: "video-workbench" | "canvas"; sourceId?: string; canvasId?: string };
 export const VIDEO_POLL_INTERVAL_MS = 5000;
 
 export class VideoRequestError extends Error {
@@ -55,6 +56,7 @@ function aiApiUrl(config: AiConfig, path: string) {
 }
 
 function aiVideoPollUrl(config: AiConfig, model: string, id: string) {
+    if (config.channelMode === "remote" && (config.activeChannelId === "model-gateway" || channelProtocolForConfig({ ...config, model }) === "gateway") && id.startsWith("client_video_task_")) return `/api/v1/model-gateway/tasks/by-request/${encodeURIComponent(id)}`;
     if (!usesAccountProxy(config) && isGeminiConfig(config, model)) {
         const channel = localChannelForActiveModel(config);
         return geminiOperationUrl(channel?.baseUrl || config.baseUrl, id);
@@ -123,6 +125,13 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const token = requireCloudModelAccess(config);
     const model = config.model || config.videoModel;
     const systemPrompt = (config.systemPrompts.video || config.systemPrompt).trim();
+    if (config.activeChannelId === "model-gateway" || channelProtocolForConfig({ ...config, model }) === "gateway") {
+        const created = await createGatewayVideoTask({ ...config, model }, systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt, normalizeVideoReferenceInput(references), normalizeVideoTaskCreateOptions(options));
+        refreshRemoteUser(config);
+        created.task = await syncGeneratedVideo(created.task, config, false, token);
+        onProgress?.(created.task.progress || 0, created.task);
+        return created;
+    }
     const translation = await findParameterTranslation({...config,model});
     assertStorageSession(token);
     if (translation) return createTranslatedVideoTask({...config,model},translation,systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt,normalizeVideoReferenceInput(references),normalizeVideoTaskCreateOptions(options),onProgress);
@@ -131,7 +140,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     try {
         const createOptions = normalizeVideoTaskCreateOptions(options);
         const accountProxy = usesAccountProxy(config);
-        const headers = { ...aiHeaders(config), ...(accountProxy && createOptions.clientTaskId ? { "X-Client-Video-Task-ID": createOptions.clientTaskId } : {}), ...(accountProxy && createOptions.source ? { "X-Video-Task-Source": createOptions.source } : {}), ...(accountProxy && createOptions.sourceId ? { "X-Video-Task-Source-ID": createOptions.sourceId } : {}) };
+        const headers = { ...aiHeaders(config), ...(accountProxy && createOptions.clientTaskId ? { "X-Client-Video-Task-ID": createOptions.clientTaskId } : {}), ...(accountProxy && createOptions.source ? { "X-Video-Task-Source": createOptions.source } : {}), ...(accountProxy && createOptions.sourceId ? { "X-Video-Task-Source-ID": createOptions.sourceId } : {}), ...(accountProxy && createOptions.canvasId ? { "X-Video-Task-Canvas-ID": createOptions.canvasId } : {}) };
         const directProvider = !accountProxy ? directAIProviderForConfig(config) : null;
         const channel = localChannelForActiveModel(config);
         const createUrl = !accountProxy && isGeminiConfig(config, model)
@@ -197,6 +206,7 @@ async function createTranslatedVideoTask(config: AiConfig, match: MatchedTransla
                 "X-Client-Video-Task-ID": clientTaskId,
                 ...(options.source ? { "X-Video-Task-Source": options.source } : {}),
                 ...(options.sourceId ? { "X-Video-Task-Source-ID": options.sourceId } : {}),
+                ...(options.canvasId ? { "X-Video-Task-Canvas-ID": options.canvasId } : {}),
             },
         });
         assertStorageSession(token);
@@ -361,17 +371,18 @@ function isGrok2APIVideoConfig(config: AiConfig, model: string) {
 export async function cacheProtectedVideo(config: AiConfig, model: string, task: VideoResponse, contentRequest?: RequestInit, contentResponse?: Response, token = requireCloudModelAccess(config)) {
     assertStorageSession(token);
     const url = task.video_url || task.url || "";
-    const needsTaskContent = !url && ("object" in task && task.object === "video");
+    const gatewayTask = task.channelId === "model-gateway" || task.id.startsWith("gateway_");
+    const needsTaskContent = gatewayTask || (!url && ("object" in task && task.object === "video"));
     const needsContentURL = /\/videos\/[^/?]+\/content(?:[?#]|$)/.test(contentRequest ? new URL(url).pathname : url);
     if (!isCompletedVideoStatus(task.status) || task.storageKey || (!needsTaskContent && !needsContentURL)) return task;
-    const taskId = task.task_id || task.id || task.video_id || "";
+    const taskId = gatewayTask ? task.id : task.task_id || task.id || task.video_id || "";
     const response = contentResponse ?? await fetch(contentRequest ? url : `${aiApiUrl(config, `/videos/${encodeURIComponent(taskId)}/content`)}?model=${encodeURIComponent(model)}`, contentRequest || { headers: aiHeaders(config) });
     if (!response.ok) throw new VideoRequestError(`视频内容下载失败：${response.status}`, task);
     const blob = await response.blob();
     assertStorageSession(token);
     const translatedContent = task.parameter_translation && !url;
-    if ((contentRequest || translatedContent) && (!blob.size || /json|^text\//i.test(blob.type))) throw new VideoRequestError("视频内容接口没有返回媒体文件", task);
-    const media = await uploadMediaFile((contentRequest || translatedContent) && !blob.type.startsWith("video/") ? new Blob([blob], { type: "video/mp4" }) : blob, "generated-video", `video-content:${videoSyncKey(config, task)}`, token);
+    if ((contentRequest || translatedContent || gatewayTask) && (!blob.size || /json|^text\//i.test(blob.type))) throw new VideoRequestError("视频内容接口没有返回媒体文件", task);
+    const media = await uploadMediaFile((contentRequest || translatedContent || gatewayTask) && !blob.type.startsWith("video/") ? new Blob([blob], { type: "video/mp4" }) : blob, "generated-video", `video-content:${videoSyncKey(config, task)}`, token);
     return { ...task, url: media.url, video_url: media.url, storageKey: media.storageKey, accountSaveError: media.accountSaveError };
 }
 
@@ -1118,6 +1129,7 @@ function normalizeVideoResponse(value: unknown): VideoResponse {
         video_id: firstString(record.video_id),
         source_id: firstString(record.source_id, record.sourceId),
         sourceId: firstString(record.sourceId, record.source_id),
+        canvasId: firstString(record.canvasId),
         channelId: firstString(record.channelId, record.channel_id),
         userChannelId: firstString(record.userChannelId, record.user_channel_id),
         channelName: firstString(record.channelName, record.channel_name),

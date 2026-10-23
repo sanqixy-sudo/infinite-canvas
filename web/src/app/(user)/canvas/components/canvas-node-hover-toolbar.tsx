@@ -307,6 +307,13 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
                             <InfoRow label="尺寸" value={`${Math.round(node.width)} x ${Math.round(node.height)}`} />
                             <InfoRow label="位置" value={`${Math.round(node.position.x)}, ${Math.round(node.position.y)}`} />
                             <InfoRow label="状态" value={node.metadata?.status || "idle"} />
+                            {node.metadata?.billingStatus ? <>
+                                <InfoRow label="计费状态" value={({ reserved: "已预扣", settled: "已结算", pending_usage: node.metadata.tokenMode === "input_output_tokens" ? "待结算：等待完整输入 / 输出用量" : "待结算：等待有效 Token 用量", pending: "待结算", pending_balance: "待补扣：余额不足", released: "预扣已退回" } as Record<string, string>)[node.metadata.billingStatus] || node.metadata.billingStatus} />
+                                <InfoRow label="计费方式" value={node.metadata.tokenMode === "input_output_tokens" ? "输入 / 输出分别计费" : "总 Token 计费"} />
+                                {node.metadata.reservedCredits !== undefined ? <InfoRow label="预扣算力" value={node.metadata.reservedCredits} /> : null}
+                                {node.metadata.tokenMode === "input_output_tokens" ? <><InfoRow label="实际输入 Token" value={typeof node.metadata.actualInputTokens === "number" ? node.metadata.actualInputTokens.toLocaleString() : "等待返回"} /><InfoRow label="实际输出 Token" value={typeof node.metadata.actualOutputTokens === "number" ? node.metadata.actualOutputTokens.toLocaleString() : "等待返回"} /></> : node.metadata.actualTokens !== undefined && (node.metadata.actualTokens > 0 || node.metadata.billingStatus === "settled") ? <InfoRow label="实际 Token" value={node.metadata.actualTokens.toLocaleString()} /> : null}
+                                {node.metadata.billingStatus === "settled" && node.metadata.settledCredits !== undefined ? <InfoRow label="实际算力" value={node.metadata.settledCredits} /> : null}
+                            </> : null}
                             {batchCount > 1 ? <InfoRow label="图片组" value={`${batchCount} 张`} /> : null}
                             {(isPanoramaNodeType(node.type) ? node.metadata?.panoramaSourcePrompt : node.metadata?.prompt) ? <InfoRow label="提示词" value={isPanoramaNodeType(node.type) ? node.metadata?.panoramaSourcePrompt : node.metadata?.prompt} /> : null}
                             {imageBytes ? <InfoRow label="图片大小" value={formatBytes(imageBytes)} /> : null}

@@ -12,10 +12,10 @@ import {
 function configFor(model: string, protocol: ModelChannelProtocol = "openai", name = "custom"): AiConfig {
     return {
         ...defaultConfig,
-        channelMode: "local", model, videoModel: model, imageModel: "", audioModel: "", textModel: "",
+        channelMode: "remote", model, videoModel: model, imageModel: "", audioModel: "", textModel: "",
         activeChannelId: "chosen", videoChannelId: "chosen", imageChannelId: "", audioChannelId: "", textChannelId: "",
-        models: [model], publicChannels: [],
-        localChannels: [{ id: "chosen", protocol, name, baseUrl: "https://proxy.example", apiKey: "local-key", models: [model] }],
+        models: [model], localChannels: [],
+        publicChannels: [{ id: "chosen", protocol, name, baseUrl: "https://proxy.example", models: [model] }],
     };
 }
 
@@ -24,7 +24,7 @@ test("Kling panel matching keeps channel descriptions distinct from protocol sel
     assert.equal(isAPIMartKlingV3Config(configFor(model, "apimart"), model), false);
     assert.equal(isAPIMartKlingV3Config(configFor(model, "openai", "APIMart channel"), model), true);
     const byURL = configFor(model);
-    byURL.localChannels[0].baseUrl = "https://api.apimart.ai/v1";
+    byURL.publicChannels[0].baseUrl = "https://api.apimart.ai/v1";
     assert.equal(isAPIMartKlingV3Config(byURL, model), true);
     const remote = configFor(model);
     remote.channelMode = "remote";
@@ -36,10 +36,16 @@ test("Kling panel matching keeps channel descriptions distinct from protocol sel
 test("same model on different channels retains the selected channel identity", () => {
     const model = "kling-v3";
     const config = configFor(model);
-    config.localChannels.unshift({ ...config.localChannels[0], id: "other", name: "APIMart" });
+    config.publicChannels.unshift({ ...config.publicChannels[0], id: "other", name: "APIMart" });
     assert.equal(isAPIMartKlingV3Config(config, model), false);
     config.videoChannelId = "other";
+    assert.equal(isAPIMartKlingV3Config(config, model), false, "explicit active channel takes precedence over the saved video default");
+    config.activeChannelId = "other";
     assert.equal(isAPIMartKlingV3Config(config, model), true);
+    config.activeChannelId = "";
+    assert.equal(isAPIMartKlingV3Config(config, model), true, "video default is used when there is no active selection");
+    config.publicChannels[0].enabled = false;
+    assert.equal(isAPIMartKlingV3Config(config, model), false, "disabled channel cannot determine the selected model's panel");
 });
 
 test("Kling model variants keep existing exact normalized matches", () => {

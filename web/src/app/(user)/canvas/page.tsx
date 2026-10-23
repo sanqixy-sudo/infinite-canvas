@@ -6,16 +6,20 @@ import { useRouter } from "next/navigation";
 import { App, Button, Input, Modal } from "antd";
 import { ArrowUpRight, FileUp, FolderOpen, Layers3, Plus, Search } from "lucide-react";
 import { nanoid } from "nanoid";
+import localforage from "localforage";
+import { useUserStore } from "@/stores/use-user-store";
+import { createProduction, saveProduction } from "@/services/api/production";
+import { saveCanvasProject } from "@/services/api/canvas-tasks";
 
 import { readZip } from "@/lib/zip";
-import { setMediaBlob } from "@/services/file-storage";
+import { setMediaBlob, uploadMediaBlob } from "@/services/file-storage";
 import { setImageBlob } from "@/services/image-storage";
 import { CanvasDeleteProjectsDialog } from "./components/canvas-delete-projects-dialog";
 import { CanvasProjectPreview } from "./components/canvas-project-preview";
 import { CanvasLoadError } from "./components/canvas-load-error";
 import type { CanvasExportFile } from "./export-types";
 import { useCanvasStore, workspaceCanvases, workspaceRoot } from "./stores/use-canvas-store";
-import { importCanvasProjectGroups, prepareCanvasImport } from "./utils/canvas-transfer";
+import { importCanvasProjectGroups, prepareCanvasBundleImport, remapCanvasBundle, remapProductionCanvases } from "./utils/canvas-transfer";
 
 export default function CanvasPage() {
     const { message } = App.useApp();
@@ -49,21 +53,44 @@ export default function CanvasPage() {
     const importArchive = async (file?: File) => {
         if (!file || importing || !hydrated) return;
         setImporting(true);
+        const auth = useUserStore.getState();
+        const assertSession = () => { if (useUserStore.getState().sessionVersion !== auth.sessionVersion || useCanvasStore.getState().ownerId !== auth.user?.id) throw new Error("账号已变化，导入已停止"); };
         try {
             const zip = await readZip(file);
             const projectFile = zip.get("projects.json");
             if (!projectFile) throw new Error("压缩包缺少 projects.json");
             const data = JSON.parse(await projectFile.text()) as CanvasExportFile;
-            const restored = await prepareCanvasImport(data, zip, async (entry, blob) => {
+            assertSession();
+            const restored = await prepareCanvasBundleImport(data, zip, async (entry, blob) => {
+                assertSession();
+                if (data.projects.some((item) => item.production)) {
+                    const uploaded = await uploadMediaBlob(blob, entry.path.split("/").pop() || "项目素材", auth.token);
+                    assertSession();
+                    if (!uploaded.storageKey.startsWith("server:") || uploaded.storageKey.startsWith("server:webdav:")) throw new Error("制作计划完整导入需要账号存储，请先配置平台存储");
+                    return uploaded;
+                }
                 const image = entry.mimeType.startsWith("image/") || entry.storageKey.startsWith("image:");
                 const storageKey = `${image ? "image" : "file"}:${nanoid()}`;
                 const url = await (image ? setImageBlob(storageKey, blob) : setMediaBlob(storageKey, blob));
                 return { storageKey, url };
             });
-            importCanvasProjectGroups(restored, importCanvas);
-            message.success(`已导入 ${restored.length} 张画布及完整素材`);
+            assertSession();
+            const bundle = remapCanvasBundle(restored.projects, restored.productions);
+            const ids = importCanvasProjectGroups(bundle.projects, importCanvas);
+            for (const original of bundle.productions) {
+                assertSession();
+                const doc = remapProductionCanvases(original, ids);
+                for (const canvas of useCanvasStore.getState().projects.filter((item) => item.id === doc.workspaceId || item.workspaceId === doc.workspaceId)) { await saveCanvasProject(auth.token, canvas); assertSession(); }
+                const created = await createProduction(auth.token, doc.workspaceId, doc.title); assertSession();
+                const next = { ...doc, id: created.id, revision: created.revision, createdAt: created.createdAt, updatedAt: created.updatedAt };
+                const key = `production-draft:${auth.user?.id}:${doc.workspaceId}`;
+                await localforage.setItem(key, { document: next, dirty: true }); assertSession();
+                const saved = await saveProduction(auth.token, next); assertSession();
+                await localforage.setItem(key, { document: saved, dirty: false });
+            }
+            message.success(`已导入 ${bundle.projects.length} 张画布、${bundle.productions.length} 份制作计划和素材，生成任务与账单不会复制`);
         } catch (error) {
-            message.error(error instanceof Error ? `导入失败：${error.message}` : "导入失败，请选择有效的画布压缩包");
+            message.error(error instanceof Error ? `导入未完成：${error.message}。已导入部分会保留，可在项目列表和文件空间查看。` : "导入失败，请选择有效的画布压缩包");
         } finally {
             setImporting(false);
             if (inputRef.current) inputRef.current.value = "";

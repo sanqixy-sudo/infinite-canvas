@@ -27,6 +27,7 @@ FROM golang:1.25-alpine AS api-build
 WORKDIR /app
 COPY go.mod go.sum ./
 COPY config ./config
+COPY gateway ./gateway
 COPY handler ./handler
 COPY middleware ./middleware
 COPY model ./model
@@ -52,7 +53,7 @@ ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 ENV PROMPT_DATA_DIR=/app/data/prompts
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg fonts-noto-cjk fontconfig && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /app/data/prompts
 
 EXPOSE 3000

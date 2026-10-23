@@ -1,0 +1,16 @@
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY gateway ./gateway
+COPY cmd/model-gateway ./cmd/model-gateway
+RUN CGO_ENABLED=0 go build -trimpath -o /model-gateway ./cmd/model-gateway
+
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates tzdata && addgroup -g 10001 gateway && adduser -D -u 10001 -G gateway gateway && mkdir /data && chown gateway:gateway /data
+COPY --from=build /model-gateway /usr/local/bin/model-gateway
+USER gateway
+ENV GIN_MODE=release GATEWAY_LISTEN=:8088 GATEWAY_DATABASE=/data/model-gateway.db
+EXPOSE 8088
+VOLUME /data
+ENTRYPOINT ["/usr/local/bin/model-gateway"]

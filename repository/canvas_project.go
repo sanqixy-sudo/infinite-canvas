@@ -24,12 +24,28 @@ func ListUserCanvasProjects(userID string) ([]model.CanvasProject, error) {
 }
 
 func SaveUserCanvasProject(project model.CanvasProject, storageIDs ...string) (model.CanvasProject, error) {
+    return SaveUserCanvasProjectValidated(project, storageIDs, nil)
+}
+
+func SaveUserCanvasProjectValidated(project model.CanvasProject, storageIDs []string, validate func(string, []model.ProductionDocument) error) (model.CanvasProject, error) {
 	db, err := DB()
 	if err != nil {
 		return project, err
 	}
 	var saved model.CanvasProject
 	err = withUserStorageLock(db, project.UserID, storageIDs, func(tx *gorm.DB) error {
+        if validate != nil {
+            var current model.CanvasProject
+            result := tx.Where("user_id = ? AND id = ? AND deleted_at = ''", project.UserID, project.ID).Find(&current)
+            if result.Error != nil { return result.Error }
+            if current.ID != "" && current.UpdatedAt <= project.UpdatedAt {
+                var plans []model.ProductionProject
+                if err := tx.Where("user_id = ?", project.UserID).Find(&plans).Error; err != nil { return err }
+                docs := make([]model.ProductionDocument, 0, len(plans))
+                for _, plan := range plans { doc, err := readProductionDocument(tx, plan); if err != nil { return err }; docs = append(docs, *doc) }
+                if err := validate(current.ProjectData, docs); err != nil { return err }
+            }
+        }
 		saved, err = saveUserCanvasProject(tx, project)
 		return err
 	})
@@ -57,6 +73,7 @@ func saveUserCanvasProject(db *gorm.DB, project model.CanvasProject) (model.Canv
 	if current.DeletedAt != "" || current.UpdatedAt > project.UpdatedAt {
 		return current, nil
 	}
+	if err := preserveTeamCanvasTasks(db, current, &project); err != nil { return project, err }
 
 	result := db.Model(&model.CanvasProject{}).
 		Where(
@@ -125,17 +142,28 @@ func SoftDeleteUserCanvasProjects(
 		})
 	}
 
-	return db.Clauses(clause.OnConflict{
-		Columns: []clause.Column{
-			{Name: "user_id"},
-			{Name: "id"},
-		},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"project_data",
-			"updated_at",
-			"deleted_at",
-		}),
-	}).Create(&records).Error
+	return withUserStorageLock(db, strings.TrimSpace(userID), nil, func(tx *gorm.DB) error {
+		refs, err := listUserProductionCanvasReferences(tx, strings.TrimSpace(userID))
+		if err != nil {
+			return err
+		}
+		selected := make(map[string]bool, len(ids))
+		for _, id := range ids { selected[id] = true }
+		for _, id := range refs {
+			if selected[id] { return ErrProductionCanvasReferenced }
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: "user_id"},
+				{Name: "id"},
+			},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"project_data",
+				"updated_at",
+				"deleted_at",
+			}),
+		}).Create(&records).Error
+	})
 }
 
 func CleanupDeletedCanvasProjects(before string) error {

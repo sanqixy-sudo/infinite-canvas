@@ -57,7 +57,15 @@ export async function apiDelete<T>(url: string, token?: string, body?: unknown) 
     });
 }
 
-async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "DELETE"; params?: ApiParams; data?: unknown; headers?: Record<string, string> }) {
+export function apiPut<T>(url: string, body: unknown, token: string) {
+    return apiRequest<T>({ url, method: "PUT", data: body, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } });
+}
+
+export function apiUpload<T>(url: string, body: FormData, token: string) {
+    return apiRequest<T>({ url, method: "POST", data: body, headers: { Authorization: `Bearer ${token}` } });
+}
+
+async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "PUT" | "DELETE"; params?: ApiParams; data?: unknown; headers?: Record<string, string> }) {
     const requestToken = config.headers?.Authorization?.replace(/^Bearer /, "") || "";
     const sessionVersion = useUserStore.getState().sessionVersion;
     let response;

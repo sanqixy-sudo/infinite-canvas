@@ -24,7 +24,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     const wasLoggedOutRef = useRef(false);
     const isProtectedPage = !publicPages.has(pathname);
     const authenticated = Boolean(isReady && token && user?.id && user.role !== "guest");
-    const focused = /^\/canvas\/[^/]+$/.test(pathname) || pathname === "/tokendance/callback";
+    const focused = (pathname !== "/canvas/teams" && /^\/canvas\/[^/]+$/.test(pathname)) || pathname === "/tokendance/callback";
 
     useEffect(() => {
         if (!isReady || isLoading || sessionError || !isProtectedPage || authenticated) return;

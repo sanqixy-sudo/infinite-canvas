@@ -1,6 +1,20 @@
 package model
 
 type VideoTask struct {
+    TeamApprovalID string `json:"-" gorm:"size:128;index"`
+	BillingUnit string `json:"billingUnit,omitempty"`
+	ActualUnits *int64 `json:"actualUnits,omitempty"`
+	SubmissionHash string `json:"-"`
+	RetryOf string `json:"retryOf,omitempty" gorm:"size:256;index"`
+	Attempt int `json:"attempt"`
+	GatewaySnapshot string `json:"-" gorm:"type:text"`
+	GatewayRequestHash string `json:"-"`
+	BillingStatus string `json:"billingStatus,omitempty" gorm:"index"`
+	ReservedCredits float64 `json:"reservedCredits" gorm:"type:decimal(20,2)"`
+	SettledCredits float64 `json:"settledCredits" gorm:"type:decimal(20,2)"`
+	ActualTokens int64 `json:"actualTokens"`
+	ActualInputTokens *int64 `json:"actualInputTokens"`
+	ActualOutputTokens *int64 `json:"actualOutputTokens"`
 	ID                           string  `json:"id" gorm:"primaryKey"`
 	UserID                       string  `json:"userId" gorm:"index"`
 	UserDisplayName              string  `json:"userDisplayName"`
@@ -11,6 +25,7 @@ type VideoTask struct {
 	WorkflowRef                  string  `json:"workflowRef,omitempty" gorm:"type:text"`
 	Source                       string  `json:"source" gorm:"index"`
 	SourceID                     string  `json:"source_id" gorm:"index"`
+	CanvasID                     string  `json:"canvasId" gorm:"index"`
 	UpstreamTaskID               string  `json:"upstreamTaskId" gorm:"index"`
 	UpstreamVideoID              string  `json:"upstreamVideoId" gorm:"index"`
 	Status                       string  `json:"status" gorm:"index:idx_video_tasks_status_created_at,priority:1"`

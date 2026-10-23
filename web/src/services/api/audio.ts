@@ -34,7 +34,7 @@ export type CanvasAudioTask = {
     error_detail?: string;
     accountSaveError?: string;
 };
-export type CanvasAudioTaskOptions = { nodeId?: string; sourceId?: string; clientTaskId?: string; signal?: AbortSignal; onServerTask?: () => void };
+export type CanvasAudioTaskOptions = { nodeId?: string; sourceId?: string; clientTaskId?: string; signal?: AbortSignal; onServerTask?: () => void; forceServerTask?: boolean; maxCredits?: number };
 
 type MiMoAudioResponse = { choices?: Array<{ message?: { audio?: { data?: string } } }> };
 type GeminiAudioResponse = { candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string; mimeType?: string } }> } }>; error?: { message?: string }; promptFeedback?: { blockReason?: string } };
@@ -161,7 +161,7 @@ export async function createCanvasAudioTask(config: AiConfig, prompt: string, op
         const result = await (await import("./direct-ai")).requestDirectAudioURL({ ...config, model }, "autodl", body, options.signal);
         return syncGeneratedAudio({ id: options.clientTaskId || result.id, status: "completed", progress: 100, url: result.url, audio_url: result.url, mimeType: "audio/wav" }, result.id);
     }
-    if (!usesAccountProxy(config) || isGeminiTtsModel(model) && isGeminiConfig(config, model)) {
+    if (!usesAccountProxy(config) || isGeminiTtsModel(model) && isGeminiConfig(config, model) && !options.forceServerTask) {
         const blob = await requestAudioGeneration(config, prompt, referenceAudio, options.signal);
         assertStorageSession(token);
         options.signal?.throwIfAborted();
@@ -189,7 +189,7 @@ export async function createCanvasAudioTask(config: AiConfig, prompt: string, op
 	}
     const request: RequestInit = {
         method: "POST",
-        headers: translation ? translationHeaders(config,translation) : aiHeaders(config),
+        headers: { ...(translation ? translationHeaders(config,translation) : aiHeaders(config)), ...(options.maxCredits === undefined ? {} : { "X-Canvas-Max-Credits": String(options.maxCredits) }) },
         body: JSON.stringify({
             endpoint: "/audio/speech",
             nodeId: options.nodeId || "",
@@ -253,7 +253,8 @@ async function syncGeneratedAudio(task: CanvasAudioTask, resultId = task.started
     assertStorageSession(token);
     const url = task.audio_url || task.url || "";
     if (task.status !== "completed" || !url || task.storageKey) return task;
-    const media = await uploadMediaFile(url, "generated-audio", `audio:${task.id}:${resultId}`, token);
+    const input = task.mimeType === "audio/l16;rate=24000" && url.startsWith("data:audio/l16;rate=24000;base64,") ? geminiPcmBase64ToWav(url.slice(url.indexOf(",") + 1)) : url;
+    const media = await uploadMediaFile(input, "generated-audio", `audio:${task.id}:${resultId}`, token);
     return { ...task, url: media.url, audio_url: media.url, storageKey: media.storageKey, bytes: media.bytes, mimeType: media.mimeType, accountSaveError: media.accountSaveError };
 }
 

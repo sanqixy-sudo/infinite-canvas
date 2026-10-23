@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { BetweenHorizontalStart, FolderPlus, GalleryHorizontal, GalleryHorizontalEnd, Plus, Trash2 } from "lucide-react";
+import { BetweenHorizontalStart, FolderPlus, GalleryHorizontal, GalleryHorizontalEnd, Plus, Link2, Trash2 } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -11,8 +11,19 @@ import { isCanvasImageNodeType } from "../utils/canvas-panorama";
 import { useCanvasAssetSaveState } from "../hooks/use-canvas-asset-save-state";
 import type { VideoFramePosition } from "../utils/canvas-video-frame";
 
-export function CanvasNodeContextMenu({ menu, node, saving, onSaveAsset, canCaptureVideoFrame, onClose, onCaptureVideoFrame, onDuplicate, onDelete }: { menu: ContextMenuState; node: CanvasNodeData | null; saving: boolean; onSaveAsset: () => void; canCaptureVideoFrame: boolean; onClose: () => void; onCaptureVideoFrame: (position: VideoFramePosition) => void; onDuplicate: () => void; onDelete: () => void }) {
+export function CanvasNodeContextMenu({ menu, node, saving, onSaveAsset, canCaptureVideoFrame, onClose, onCaptureVideoFrame, onDuplicate, onDuplicateWithReferences, onDelete }: { menu: ContextMenuState; node: CanvasNodeData | null; saving: boolean; onSaveAsset: () => void; canCaptureVideoFrame: boolean; onClose: () => void; onCaptureVideoFrame: (position: VideoFramePosition) => void; onDuplicate: () => void; onDuplicateWithReferences: () => void; onDelete: () => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const menuRef = useRef<HTMLDivElement>(null);
+    const [position, setPosition] = useState({ x: menu.x, y: menu.y });
+    useLayoutEffect(() => {
+        const fit = () => {
+            const rect = menuRef.current?.getBoundingClientRect();
+            if (rect) setPosition({ x: Math.max(8, Math.min(menu.x, window.innerWidth - rect.width - 8)), y: Math.max(8, Math.min(menu.y, window.innerHeight - rect.height - 8)) });
+        };
+        fit();
+        window.addEventListener("resize", fit);
+        return () => window.removeEventListener("resize", fit);
+    }, [menu.x, menu.y]);
     const storage = useCanvasAssetSaveState(node, saving);
     const canSave = Boolean(node?.metadata?.content && (node.type === CanvasNodeType.Text || node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio || isCanvasImageNodeType(node.type)));
 
@@ -28,8 +39,9 @@ export function CanvasNodeContextMenu({ menu, node, saving, onSaveAsset, canCapt
 
     return (
         <div
-            className="fixed z-[80] min-w-44 overflow-hidden rounded-xl border py-1 shadow-2xl"
-            style={{ left: menu.x, top: menu.y, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
+            ref={menuRef}
+            className="fixed z-[80] max-h-[calc(100dvh-16px)] min-w-44 max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border py-1 shadow-2xl"
+            style={{ left: position.x, top: position.y, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onPointerDown={(event) => event.stopPropagation()}
         >
             {canSave ? <><p className="px-3 py-2 text-[10px]" style={{ color: theme.node.muted }} title={storage.detail}>{storage.label}</p><MenuButton icon={<FolderPlus className="size-4" />} label={storage.saved ? "已存入账号素材库" : "存入账号素材库"} onClick={onSaveAsset} disabled={saving || storage.saved} /><div className="my-1 border-t" style={{ borderColor: theme.toolbar.border }} /></> : null}
@@ -42,6 +54,7 @@ export function CanvasNodeContextMenu({ menu, node, saving, onSaveAsset, canCapt
                 </>
             ) : null}
             {menu.type === "node" ? <MenuButton icon={<Plus className="size-4" />} label="复制" onClick={onDuplicate} /> : null}
+            {menu.type === "node" ? <MenuButton icon={<Link2 className="size-4" />} label="保留参考创建副本" onClick={onDuplicateWithReferences} /> : null}
             <MenuButton icon={<Trash2 className="size-4" />} label="删除" onClick={onDelete} danger />
         </div>
     );

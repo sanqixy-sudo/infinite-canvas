@@ -1,0 +1,8 @@
+{
+  "model": "doubao-seedance-2-0-fast-260128",
+  "billing_mode": "input_output_tokens",
+  "resolution": "720p",
+  "ratio": "9:16",
+  "duration": 4,
+  "content": [{ "type": "text", "text": "雨后城市，镜头缓慢向前。" }]
+}

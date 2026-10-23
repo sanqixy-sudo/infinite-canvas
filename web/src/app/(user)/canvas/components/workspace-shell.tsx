@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Drawer } from "antd";
-import { ArrowUpRight, Boxes, FolderOpen, HardDrive, House, Images, LibraryBig, Menu, Settings2, Sparkles, UserRound, Wallet } from "lucide-react";
+import { ArrowUpRight, Boxes, FolderOpen, HardDrive, House, Images, LibraryBig, Menu, Settings2, Sparkles, UserRound, Users, Wallet } from "lucide-react";
 
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { BrandMark } from "@/components/brand/brand-mark";
@@ -18,6 +18,7 @@ const navigation = [
     { label: "创作空间", links: [
         { href: "/workspace", label: "工作台", icon: House },
         { href: "/canvas", label: "我的项目", icon: FolderOpen },
+        { href: "/canvas/teams", label: "团队审片", icon: Users },
         { href: "/assets", label: "我的素材", icon: Images },
     ] },
     { label: "灵感与资源", links: [
@@ -32,8 +33,8 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     const wallet = useAccountWallet();
     const openConfig = useConfigStore((state) => state.openConfigDialog);
     const [menuOpen, setMenuOpen] = useState(false);
-    const active = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
-    const pageTitle = navigation.flatMap((group) => group.links).find((link) => active(link.href))?.label || (pathname.startsWith("/account/storage") ? "存储设置" : pathname.startsWith("/account/recharge") ? "我的钱包" : pathname === "/account" ? "个人中心" : pathname === "/models" ? "模型与价格" : "小盟视频工作台");
+    const active = (href: string) => pathname === href || (href === "/canvas" ? pathname.startsWith("/canvas/project/") : pathname.startsWith(`${href}/`));
+    const pageTitle = /^\/canvas\/project\/[^/]+\/production$/.test(pathname) ? "短剧制作" : navigation.flatMap((group) => group.links).find((link) => active(link.href))?.label || (pathname.startsWith("/account/storage") ? "存储设置" : pathname.startsWith("/account/recharge") ? "我的钱包" : pathname === "/account" ? "个人中心" : pathname === "/models" ? "模型与价格" : "小盟视频工作台");
     const menu = <>
         <Link href="/workspace" onClick={() => setMenuOpen(false)} className="flex h-[100px] shrink-0 items-center gap-3.5 px-6">
             <span className="flex size-10 items-center justify-center rounded-[13px] bg-primary text-primary-foreground"><BrandMark className="size-7" /></span>

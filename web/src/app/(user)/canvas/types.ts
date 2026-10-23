@@ -97,8 +97,17 @@ export type CanvasNodeMetadata = {
     audioTaskId?: string;
     audioTaskResultId?: string;
     videoTaskId?: string;
+    teamApprovalId?: string;
+    videoTaskStatus?: string;
     videoTaskVideoId?: string;
     videoTaskTranslation?: import("@/services/api/video").VideoResponse["translationSnapshot"];
+    billingStatus?: string;
+    tokenMode?: import("@/lib/model-gateway").GatewayTokenMode;
+    actualTokens?: number;
+    actualInputTokens?: number | null;
+    actualOutputTokens?: number | null;
+    reservedCredits?: number;
+    settledCredits?: number;
     firstFrameNodeId?: string;
     lastFrameNodeId?: string;
     multiShot?: string;
