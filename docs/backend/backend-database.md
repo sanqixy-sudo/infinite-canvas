@@ -27,7 +27,7 @@ fca 阶段曾部署 `fca04adc3709c4bdede7d7ea47b11313bdeb8ceb6`，此处保留�
 
 ### 短剧制作计划（集中检查通过，已部署）
 
-制作计划使用下列5张表；P2任务、P3合成与P4审片另见下方新增表，均注册AutoMigrate。快照`70c8270ac599`的Go全量、隔离HTTP及生产镜像构建通过；追加空队列查询改用`Find`的定向ProductionRender Go检查通过，两个最终镜像再次构建并部署`production-0df20ae25d24`。部署备份为`/opt/xiaomeng-video-workbench-deploy/backups/pre-production-20261023-133141`，画布线上41张表，两个数据库完整性均`ok`，`changed_existing_tables=[]`、`changed_existing_media=[]`；原`canvas_projects`数据不迁移、不重写。团队空列表分页仅有界面修正，待最终镜像复核，不增加数据库字段。详细证据及仍待真实渠道/R2验收范围见[待测试](../progress/pending-test.md#本轮集中验证短剧制作与多渠道)。
+制作计划使用下列5张表；P2任务、P3合成与P4审片另见下方新增表，均注册AutoMigrate。快照`70c8270ac599`的Go全量、隔离HTTP及生产镜像构建通过；空队列查询改用`Find`的定向ProductionRender Go检查通过并部署0df阶段。后续团队分页补丁不增加数据库字段，独立TypeScript及两个镜像构建再次通过，当前部署为`production-2f21c20d254b`（源码`77ad155`），线上分页复核通过。最新部署备份为`/opt/xiaomeng-video-workbench-deploy/backups/pre-production-20261023-141103`，画布线上41张表，两个数据库完整性均`ok`，41表原行及原媒体hash均未变；原`canvas_projects`数据不迁移、不重写。0df阶段备份与核对记录另见[待测试](../progress/pending-test.md#本轮集中验证短剧制作与多渠道)，真实渠道/R2仍待验收。
 
 | 表 | 关键字段 | 约束与用途 |
 | --- | --- | --- |
@@ -102,7 +102,7 @@ P5快照另锁定`unit/quantitySource/variantId/reserveUnits`：按秒由已确�
 
 P5公开目录增加`variants[]`，每项含`id/name/referenceModes/generateAudio/capabilities/pricing`；`pricing.unit`为token/second/call，`per`分别为1000000或1，按秒/次价格为整数分/单位。平台固定售价档位以`variantId + resolution`定位，秒/次使用`withoutVideoCredits/withVideoCredits`；公开`sale.variants[]`保存各规格售价，`modelCosts.gateway`携带同一公开目录以便预览与报价核对。私有中间件`model_records.config_json`保存`routes[]`的`variantId/channelId/upstreamModel/adapter`，不向画布用户公开；没有新增模型规格关系表。新版本能力、价格、路由使用新revision，旧任务保存解析后的单一真实路由快照。
 
-独立中间件SQLite文件`/data/model-gateway.db`包含：`channels`（地址、路径、AES-GCM加密Key、启停）、`model_records`（模型/渠道ID、能力/价格JSON、启停）、`tasks`（唯一request_id、请求哈希、模型/渠道快照、上游任务ID、状态、实际Token、下次轮询时间）。`tasks.input_tokens/output_tokens`为可空整数，区分缺失和零；真实分项完整而上游未提供总数时可相加存入`total_tokens`，提供总数则必须一致。P5增加可空整数`tasks.units`，仅保存该任务冻结规则下的实际秒/次；缺失保持待核对，不能拿Token值替代。命名卷持久化；加密Key须随私有配置备份，不能丢弃或提交到Git。详见[gateway说明](../../gateway/README.md)。本轮P5已通过集中自动检查并部署`production-0df20ae25d24`，渠道数量为0，真实渠道计价尚未联调。
+独立中间件SQLite文件`/data/model-gateway.db`包含：`channels`（地址、路径、AES-GCM加密Key、启停）、`model_records`（模型/渠道ID、能力/价格JSON、启停）、`tasks`（唯一request_id、请求哈希、模型/渠道快照、上游任务ID、状态、实际Token、下次轮询时间）。`tasks.input_tokens/output_tokens`为可空整数，区分缺失和零；真实分项完整而上游未提供总数时可相加存入`total_tokens`，提供总数则必须一致。P5增加可空整数`tasks.units`，仅保存该任务冻结规则下的实际秒/次；缺失保持待核对，不能拿Token值替代。命名卷持久化；加密Key须随私有配置备份，不能丢弃或提交到Git。详见[gateway说明](../../gateway/README.md)。本轮P5已通过集中自动检查，当前部署为`production-2f21c20d254b`，渠道数量为0，真实渠道计价尚未联调。
 
 后端使用 GORM 管理数据库连接和表结构迁移。
 
