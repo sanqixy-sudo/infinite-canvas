@@ -9,12 +9,27 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func InsertWorkflowTask(task any) error {
+func InsertWorkflowTask(task any, storageIDs ...string) error {
 	db, err := DB()
 	if err != nil {
 		return err
 	}
-	return db.Create(task).Error
+	userID, taskID := "", ""
+	switch task := task.(type) {
+	case *model.CanvasImageTask:
+		userID, taskID = task.UserID, task.ID
+	case *model.CanvasAudioTask:
+		userID, taskID = task.UserID, task.ID
+	case *model.VideoTask:
+		userID, taskID = task.UserID, task.ID
+	default:
+		return errors.New("工作流任务类型无效")
+	}
+	return withUserStorageLock(db, userID, storageIDs, func(tx *gorm.DB) error {
+		if err := rejectProductionTaskReplay(tx, userID, taskID); err != nil { return err }
+		if err := tx.Create(task).Error; err != nil { return err }
+		return captureProductionTask(tx, task, true)
+	})
 }
 
 type RunningHubWorkflowTask struct {
@@ -55,7 +70,7 @@ func ListDueRunningHubWorkflowTasks(afterCreatedAt, afterID string, limit int) (
 	return tasks, err
 }
 
-func CompleteWorkflowTask(taskID, status string, urls []string, failure string, newRefundLog func(string) model.CreditLog) (bool, float64, string, string, error) {
+func CompleteWorkflowTask(taskID, status string, urls []string, failure string, newRefundLog func(string) model.CreditLog, storageIDs ...string) (bool, float64, string, string, error) {
 	db, err := DB()
 	if err != nil {
 		return false, 0, "", "", err
@@ -63,8 +78,23 @@ func CompleteWorkflowTask(taskID, status string, urls []string, failure string, 
 	changed := false
 	credits := 0.0
 	workflowRef := ""
-	userID := ""
-	err = db.Transaction(func(tx *gorm.DB) error {
+	var owner struct{ UserID string }
+	table := ""
+	switch {
+	case strings.HasPrefix(taskID, "wf-image-"):
+		table = "canvas_image_tasks"
+	case strings.HasPrefix(taskID, "wf-audio-"):
+		table = "canvas_audio_tasks"
+	case strings.HasPrefix(taskID, "wf-video-"):
+		table = "video_tasks"
+	default:
+		return false, 0, "", "", errors.New("工作流任务 ID 无效")
+	}
+	if err := db.Table(table).Select("user_id").Where("id = ?", taskID).Take(&owner).Error; err != nil {
+		return false, 0, "", "", err
+	}
+	userID := owner.UserID
+	err = withUserStorageLock(db, userID, storageIDs, func(tx *gorm.DB) error {
 		current := userConfigTimestamp()
 		switch {
 		case strings.HasPrefix(taskID, "wf-image-"):
@@ -141,7 +171,7 @@ func CompleteWorkflowTask(taskID, status string, urls []string, failure string, 
 			return errors.New("工作流任务 ID 无效")
 		}
 		if status != "failed" || credits <= 0 {
-			return nil
+			return RefreshProductionTask(tx, strings.SplitN(taskID, "-", 3)[1], userID, taskID)
 		}
 		if newRefundLog == nil {
 			return errors.New("工作流退款信息缺失")
@@ -161,7 +191,9 @@ func CompleteWorkflowTask(taskID, status string, urls []string, failure string, 
 		refundLog.Type = model.CreditLogTypeAIRefund
 		refundLog.Amount = credits
 		refundLog.Balance = user.Credits
-		return tx.Save(&refundLog).Error
+		refundLog.RelatedID = strings.SplitN(taskID, "-", 3)[1] + ":" + taskID
+		if err := tx.Save(&refundLog).Error; err != nil { return err }
+		return RefreshProductionTask(tx, strings.SplitN(taskID, "-", 3)[1], userID, taskID)
 	})
 	return changed, credits, workflowRef, userID, err
 }

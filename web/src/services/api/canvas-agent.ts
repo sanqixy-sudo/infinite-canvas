@@ -1,4 +1,5 @@
 import { mimoTextModels } from "@/lib/mimo-tts";
+import { requireCloudModelAccess } from "./cloud-model-access";
 import { dataUrlToGeminiInlineData, geminiActionUrl, geminiDirectHeaders, geminiErrorMessage, isGeminiConfig } from "@/lib/gemini";
 import { aiApiUrl, aiHeaders, ImageRequestError, isEventStreamResponse, readJsonServerSentEvents, refreshRemoteUser } from "@/services/api/image";
 import { imageToDataUrl } from "@/services/image-storage";
@@ -107,6 +108,7 @@ function applyCanvasAgentReasoning(body: Record<string, unknown>, config: Canvas
 }
 
 export async function requestCanvasAgentTurn(input: RequestCanvasAgentTurnInput): Promise<CanvasAgentModelTurn> {
+    requireCloudModelAccess(input.config);
     const requestConfig = {
         ...input.config,
         model: input.config.textModel || input.config.model,

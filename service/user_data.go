@@ -38,108 +38,31 @@ type UserStorageProviders struct {
 	WebDAV *StorageObjectProviderInput `json:"webdav,omitempty"`
 }
 
-type userModelConfigInput struct {
-	LocalChannels       []userLocalModelChannelInput `json:"localChannels"`
-	ChannelTranslations []struct {
-		ChannelID            string `json:"channelId"`
-		ParameterTranslation string `json:"parameterTranslation"`
-	} `json:"channelTranslations"`
-}
+var ErrPersonalModelChannelDisabled = safeMessageError{message: "仅支持平台云端模型"}
 
-type userLocalModelChannelInput struct {
-	ID       string   `json:"id"`
-	Protocol string   `json:"protocol"`
-	Name     string   `json:"name"`
-	BaseURL  string   `json:"baseUrl"`
-	APIKey   string   `json:"apiKey"`
-	Models   []string `json:"models"`
-}
+var privateModelConfigKeys = []string{"localChannels", "workflowChannels", "channelTranslations", "apiKey", "baseUrl", "publicChannels"}
 
 func SelectUserLocalModelChannelForModel(userID string, modelName string, channelID string) (model.ModelChannel, error) {
-	userID = strings.TrimSpace(userID)
-	modelName = strings.TrimSpace(modelName)
-	channelID = strings.TrimSpace(channelID)
-	if userID == "" {
-		return model.ModelChannel{}, errors.New("请先登录")
-	}
-	if modelName == "" {
-		return model.ModelChannel{}, errors.New("缺少模型名称")
-	}
-	if channelID == "" {
-		return model.ModelChannel{}, errors.New("缺少模型渠道")
-	}
-	config, ok, err := repository.GetUserConfig(userID)
-	if err != nil {
-		return model.ModelChannel{}, err
-	}
-	if !ok || strings.TrimSpace(config.ModelConfig) == "" {
-		return model.ModelChannel{}, errors.New("本地渠道不存在")
-	}
-	var modelConfig userModelConfigInput
-	if err := json.Unmarshal([]byte(config.ModelConfig), &modelConfig); err != nil {
-		return model.ModelChannel{}, err
-	}
-	for _, channel := range modelConfig.LocalChannels {
-		if strings.TrimSpace(channel.ID) != channelID {
-			continue
-		}
-		baseURL := strings.TrimSpace(channel.BaseURL)
-		apiKey := strings.TrimSpace(channel.APIKey)
-		if baseURL == "" || apiKey == "" {
-			return model.ModelChannel{}, errors.New("本地渠道配置不完整")
-		}
-		models := userLocalChannelModels(channel.Models)
-		if len(models) > 0 && !userLocalChannelHasModel(models, modelName) {
-			return model.ModelChannel{}, errors.New("本地渠道不支持该模型")
-		}
-		protocol := strings.ToLower(strings.TrimSpace(channel.Protocol))
-		if protocol == "" {
-			protocol = "openai"
-		}
-		parameterTranslation := ""
-		for _, translation := range modelConfig.ChannelTranslations {
-			if translation.ChannelID == channelID {
-				parameterTranslation = translation.ParameterTranslation
-				break
-			}
-		}
-		return model.ModelChannel{
-			ID:                   channelID,
-			Protocol:             protocol,
-			Name:                 firstVideoTaskValue(strings.TrimSpace(channel.Name), "本地直连"),
-			BaseURL:              baseURL,
-			APIKey:               apiKey,
-			Models:               models,
-			Weight:               1,
-			Timeout:              600,
-			Enabled:              true,
-			ParameterTranslation: parameterTranslation,
-		}, nil
-	}
-	return model.ModelChannel{}, errors.New("本地渠道不存在")
+	return model.ModelChannel{}, ErrPersonalModelChannelDisabled
 }
 
-func userLocalChannelModels(models []string) []string {
-	result := make([]string, 0, len(models))
-	seen := map[string]bool{}
-	for _, item := range models {
-		modelName := strings.TrimSpace(item)
-		if modelName == "" || seen[modelName] {
-			continue
-		}
-		result = append(result, modelName)
-		seen[modelName] = true
+func publicUserModelConfig(raw string) json.RawMessage {
+	var config map[string]json.RawMessage
+	if json.Unmarshal([]byte(raw), &config) != nil || config == nil {
+		return nil
 	}
+	for _, key := range privateModelConfigKeys {
+		delete(config, key)
+	}
+	for _, key := range []string{"imageWorkflowRef", "videoWorkflowRef", "audioWorkflowRef"} {
+		var ref WorkflowRef
+		if json.Unmarshal(config[key], &ref) == nil && ref.Scope != "system" {
+			delete(config, key)
+		}
+	}
+	config["channelMode"] = json.RawMessage(`"remote"`)
+	result, _ := json.Marshal(config)
 	return result
-}
-
-func userLocalChannelHasModel(models []string, modelName string) bool {
-	for _, item := range models {
-		if strings.EqualFold(strings.TrimSpace(item), modelName) {
-			return true
-		}
-	}
-	return false
 }
 
 func CurrentUserConfig(ctx context.Context) (UserConfigPayload, error) {
@@ -162,7 +85,7 @@ func CurrentUserConfig(ctx context.Context) (UserConfigPayload, error) {
 		return result, nil
 	}
 	if strings.TrimSpace(config.ModelConfig) != "" {
-		result.ModelConfig = json.RawMessage(config.ModelConfig)
+		result.ModelConfig = publicUserModelConfig(config.ModelConfig)
 	}
 	if strings.TrimSpace(config.StorageProvider) != "" {
 		providers := readUserStorageProviders(config.StorageProvider)
@@ -203,34 +126,40 @@ func SaveCurrentUserModelConfig(ctx context.Context, raw json.RawMessage) (UserC
 	if !ok || user.ID == "" {
 		return UserConfigPayload{}, errors.New("请先登录")
 	}
-	config, _, err := repository.GetUserConfig(user.ID)
-	if err != nil {
-		return UserConfigPayload{}, err
+	var incoming map[string]json.RawMessage
+	if json.Unmarshal(raw, &incoming) != nil || incoming == nil {
+		return UserConfigPayload{}, errors.New("模型配置格式错误")
 	}
-	current := now()
-	if config.UserID == "" {
-		config.UserID = user.ID
-		config.CreatedAt = current
-	}
-	var incoming, saved map[string]json.RawMessage
-	if json.Unmarshal(raw, &incoming) == nil && incoming != nil {
-		var input userModelConfigInput
-		if json.Unmarshal(raw, &input) != nil {
-			return UserConfigPayload{}, errors.New("模型配置格式错误")
+	for _, key := range []string{"imageWorkflowRef", "videoWorkflowRef", "audioWorkflowRef"} {
+		var ref WorkflowRef
+		if value, exists := incoming[key]; exists && string(value) != "null" && (json.Unmarshal(value, &ref) != nil || ref.Scope != "system") {
+			return UserConfigPayload{}, ErrPersonalModelChannelDisabled
 		}
-		for _, translation := range input.ChannelTranslations {
-			if _, err := ParameterTranslationModels(translation.ParameterTranslation); err != nil {
-				return UserConfigPayload{}, err
+	}
+	for _, key := range privateModelConfigKeys {
+		if _, supplied := incoming[key]; supplied {
+			return UserConfigPayload{}, ErrPersonalModelChannelDisabled
+		}
+	}
+	_, err := repository.PatchUserConfig(user.ID, now(), func(config *model.UserConfig) error {
+		saved, err := userModelPreferenceMap(config.ModelConfig)
+		if err != nil {
+			return err
+		}
+		for _, key := range privateModelConfigKeys {
+			if value, exists := saved[key]; exists {
+				incoming[key] = value
 			}
 		}
-		if _, supplied := incoming["channelTranslations"]; !supplied && json.Unmarshal([]byte(config.ModelConfig), &saved) == nil && saved["channelTranslations"] != nil {
-			incoming["channelTranslations"] = saved["channelTranslations"]
-			raw, _ = json.Marshal(incoming)
+		incoming["channelMode"] = json.RawMessage(`"remote"`)
+		incoming["autoSaveAssetsToCloud"], _ = json.Marshal(storagePreferencesFromMap(saved).AutoSaveAssetsToCloud)
+		value, err := json.Marshal(incoming)
+		if err == nil {
+			config.ModelConfig = string(value)
 		}
-	}
-	config.ModelConfig = string(raw)
-	config.UpdatedAt = current
-	if _, err := repository.SaveUserConfig(config); err != nil {
+		return err
+	})
+	if err != nil {
 		return UserConfigPayload{}, err
 	}
 	return CurrentUserConfig(ctx)
@@ -248,11 +177,20 @@ func CurrentUserImageHistory(ctx context.Context) (json.RawMessage, error) {
 }
 
 func SaveCurrentUserImageHistory(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	config, err := saveCurrentUserConfigField(ctx, func(config *model.UserConfig) {
-		config.ImageHistory = string(raw)
-	})
+	user, err := accountDataUser(ctx)
 	if err != nil {
 		return nil, err
+	}
+	ids, err := storageReferenceIDs(string(raw))
+	if err != nil {
+		return nil, err
+	}
+	config, err := repository.PatchUserConfigReferences(user.ID, now(), ids, func(config *model.UserConfig) error {
+		config.ImageHistory = string(raw)
+		return nil
+	})
+	if err != nil {
+		return nil, storageReferenceError(err)
 	}
 	return json.RawMessage(config.ImageHistory), nil
 }
@@ -262,20 +200,22 @@ func CurrentUserAssetData(ctx context.Context) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(config.AssetData) == "" {
-		return json.RawMessage(`{"assets":[]}`), nil
-	}
-	return json.RawMessage(config.AssetData), nil
-}
-
-func SaveCurrentUserAssetData(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	config, err := saveCurrentUserConfigField(ctx, func(config *model.UserConfig) {
-		config.AssetData = string(raw)
-	})
+	values, assets, err := accountAssetEnvelope(config.AssetData)
 	if err != nil {
 		return nil, err
 	}
-	return json.RawMessage(config.AssetData), nil
+	if _, err := accountAssetFolders(values); err != nil {
+		return nil, err
+	}
+	values["assets"], _ = json.Marshal(assets)
+	if _, exists := values["folders"]; !exists {
+		values["folders"] = json.RawMessage(`[]`)
+	}
+	return json.Marshal(values)
+}
+
+func SaveCurrentUserAssetData(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	return nil, safeMessageError{message: "素材列表批量覆盖已停用，请使用单条素材接口"}
 }
 
 func currentUserConfig(ctx context.Context) (model.UserConfig, error) {
@@ -298,16 +238,5 @@ func saveCurrentUserConfigField(ctx context.Context, patch func(config *model.Us
 	if !ok || user.ID == "" {
 		return model.UserConfig{}, errors.New("请先登录")
 	}
-	config, _, err := repository.GetUserConfig(user.ID)
-	if err != nil {
-		return model.UserConfig{}, err
-	}
-	current := now()
-	if config.UserID == "" {
-		config.UserID = user.ID
-		config.CreatedAt = current
-	}
-	patch(&config)
-	config.UpdatedAt = current
-	return repository.SaveUserConfig(config)
+	return repository.PatchUserConfig(user.ID, now(), func(config *model.UserConfig) error { patch(config); return nil })
 }

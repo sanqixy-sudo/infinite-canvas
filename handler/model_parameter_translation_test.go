@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -50,7 +51,7 @@ func TestParameterTranslationChannelFlow(t *testing.T) {
 				source = `{poll:{taskId:"id",GET:{url:"/custom/{taskId}"},status:"state",success:["done"],failure:["failed"]},models:{"custom-model":{POST:{url:"/custom",body:{text:prompt,model}},result:"output.url"}}}`
 			}
 			channel := model.ModelChannel{ID: "custom-channel", Name: "custom", Protocol: "apimart", BaseURL: "https://upstream.invalid/v1", APIKey: "secret-key", Models: []string{"custom-model"}, Enabled: true, Weight: 1, ParameterTranslation: source}
-			if _, err := repository.SaveSettings(model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{channel}}, Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{ModelCosts: []model.ModelCost{{Model: "custom-model", Credits: 2}}}}}, "fixture"); err != nil {
+			if _, err := repository.SaveSettings(model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{channel}}, Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{AvailableModels: []string{"custom-model"}, ModelCosts: []model.ModelCost{{Model: "custom-model", Credits: 2}}}}}, "fixture"); err != nil {
 				t.Fatal(err)
 			}
 			public, err := service.PublicSettings()
@@ -134,40 +135,40 @@ func TestParameterTranslationChannelFlow(t *testing.T) {
 			}
 		})
 	}
-	t.Run("personal-channel", func(t *testing.T) {
+	t.Run("personal-channel-rejected-and-config-retained", func(t *testing.T) {
 		ctx := service.WithUser(context.Background(), model.PublicUser(user))
-		raw := json.RawMessage(`{"localChannels":[{"id":"personal","protocol":"openai","baseUrl":"https://upstream.invalid/v1","apiKey":"personal-key","models":["personal-model"]}],"channelTranslations":[{"channelId":"personal","parameterTranslation":"{models:{'personal-model':{POST:{url:'/personal',body:{prompt}},result:'url'}}}"}]}`)
-		if _, err := service.SaveCurrentUserModelConfig(ctx, raw); err != nil {
+		raw := `{"localChannels":[{"id":"personal","baseUrl":"https://upstream.invalid/v1","apiKey":"retired-key"}],"channelTranslations":[{"channelId":"personal","parameterTranslation":"retired-source"}],"model":"old"}`
+		if err := db.Save(&model.UserConfig{UserID: user.ID, ModelConfig: raw}).Error; err != nil {
 			t.Fatal(err)
 		}
 		calls := 0
 		protocolMockHTTP(t, func(r *http.Request) (*http.Response, error) {
 			calls++
-			if r.URL.Path != "/v1/personal" || r.Header.Get("Authorization") != "Bearer personal-key" {
-				t.Fatalf("personal route/auth: %s %v", r.URL, r.Header)
-			}
-			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"url":"https://media.invalid/personal.png"}`))}, nil
+			return nil, fmt.Errorf("personal channel must not make an upstream request")
 		})
-		r := httptest.NewRequest("POST", "/images/generations", strings.NewReader(`{"model":"personal-model","_parameterTranslation":{"kind":"image","variables":{"prompt":"personal prompt"}}}`)).WithContext(ctx)
-		r.Header.Set("X-User-Model-Channel-ID", "personal")
+		r := httptest.NewRequest("POST", "/images/generations", strings.NewReader(`{"model":"personal-model"}`)).WithContext(ctx)
+		r.Header.Set(userModelChannelHeader, "personal")
 		w := httptest.NewRecorder()
 		proxyAIRequest(w, r, "/images/generations")
-		if w.Code != 200 || !strings.Contains(w.Body.String(), "https://media.invalid/personal.png") || calls != 1 {
-			t.Fatalf("personal response %s calls=%d", w.Body, calls)
+		if !strings.Contains(w.Body.String(), "仅支持平台云端模型") || calls != 0 {
+			t.Fatalf("personal request was not rejected: %s calls=%d", w.Body, calls)
 		}
-		if _, err := service.SaveCurrentUserModelConfig(ctx, json.RawMessage(`{"localChannels":[{"id":"personal","protocol":"openai","baseUrl":"https://upstream.invalid/v1","apiKey":"personal-key","models":["personal-model"]}]}`)); err != nil {
+		if _, err := service.SaveCurrentUserModelConfig(ctx, json.RawMessage(`{"localChannels":[]}`)); err == nil {
+			t.Fatal("personal channel writes must be rejected")
+		}
+		result, err := service.SaveCurrentUserModelConfig(ctx, json.RawMessage(`{"model":"platform-model"}`))
+		if err != nil {
 			t.Fatal(err)
 		}
-		preserved, err := service.SelectUserLocalModelChannelForModel(user.ID, "personal-model", "personal")
-		if err != nil || preserved.ParameterTranslation == "" {
-			t.Fatalf("omitted source lost: %v", err)
+		if strings.Contains(string(result.ModelConfig), "retired-") || strings.Contains(string(result.ModelConfig), "localChannels") {
+			t.Fatal("retired channel credentials leaked through preferences")
 		}
-		if _, err := service.SaveCurrentUserModelConfig(ctx, json.RawMessage(`{"localChannels":[{"id":"personal","protocol":"openai","baseUrl":"https://upstream.invalid/v1","apiKey":"personal-key","models":["personal-model"]}],"channelTranslations":[]}`)); err != nil {
-			t.Fatal(err)
+		saved, found, err := repository.GetUserConfig(user.ID)
+		if err != nil || !found || !strings.Contains(saved.ModelConfig, "retired-key") || !strings.Contains(saved.ModelConfig, "retired-source") || !strings.Contains(saved.ModelConfig, "platform-model") {
+			t.Fatalf("saved preferences lost retained data: found=%v err=%v", found, err)
 		}
-		channel, err := service.SelectUserLocalModelChannelForModel(user.ID, "personal-model", "personal")
-		if err != nil || channel.ParameterTranslation != "" {
-			t.Fatalf("personal clear failed: %v %s", err, channel.ParameterTranslation)
+		if _, err := service.SelectUserLocalModelChannelForModel(user.ID, "personal-model", "personal"); err == nil {
+			t.Fatal("retained personal data must never reactivate a channel")
 		}
 	})
 }

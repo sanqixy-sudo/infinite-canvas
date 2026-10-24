@@ -1,4 +1,6 @@
 import axios from "axios";
+import { requireCloudModelAccess } from "./cloud-model-access";
+import { assertStorageSession } from "@/services/automatic-media-save";
 import { executeParameterTranslation, findParameterTranslation, normalizeTranslationAspectRatio, translationBody, translationHeaders, type TranslationInput } from "./channel-parameter-translation";
 
 import { isMiniMaxChannel, miniMaxModels } from "@/lib/minimax-video";
@@ -73,6 +75,7 @@ export type CanvasImageTask = {
     completed_at?: string;
     error?: { message?: string };
     error_detail?: string;
+    accountSaveError?: string;
 };
 export type CanvasImageTaskOptions = { nodeId?: string; source?: "canvas" | "image-workbench" | "workflow"; sourceId?: string; clientTaskId?: string; signal?: AbortSignal; onServerTask?: () => void };
 
@@ -524,6 +527,7 @@ function withPromptGuard(config: AiConfig, prompt: string) {
 }
 
 function usesAccountProxy(config: AiConfig) {
+    requireCloudModelAccess(config);
     const token = useUserStore.getState().token;
     return config.channelMode === "remote" || (config.channelMode === "local" && Boolean(token));
 }
@@ -535,6 +539,7 @@ export function aiApiUrl(config: AiConfig, path: string) {
 }
 
 export function aiHeaders(config: AiConfig, contentType?: string) {
+    requireCloudModelAccess(config);
     const token = useUserStore.getState().token;
     if (config.channelMode === "remote" && !token) throw new Error("请先登录后再使用云端渠道");
     if (config.channelMode === "remote") {
@@ -995,28 +1000,31 @@ async function imageTranslationInput(config: AiConfig, prompt: string, reference
     };
 }
 
-async function syncGeneratedImages(images: GeneratedImage[]) {
+async function syncGeneratedImages(images: GeneratedImage[], token = useUserStore.getState().token) {
+    assertStorageSession(token);
     return Promise.all(images.map(async (image) => {
-        const stored = await autoSyncImage(image.dataUrl, image.id, image.storageKey);
-        return stored ? { id: image.id, dataUrl: stored.url, seed: image.seed, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType } : image;
+        const stored = await autoSyncImage(image.dataUrl, image.id, image.storageKey, token);
+        return stored ? { id: image.id, dataUrl: stored.url, seed: image.seed, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType, accountSaveError: stored.accountSaveError } : image;
     }));
 }
 
-async function syncCanvasImageTask(task: CanvasImageTask, resultId = task.started_at): Promise<CanvasImageTask> {
+async function syncCanvasImageTask(task: CanvasImageTask, resultId = task.started_at, token = useUserStore.getState().token): Promise<CanvasImageTask> {
+    assertStorageSession(token);
     if (!["completed", "complete", "done", "succeeded", "success"].includes((task.status || "").toLowerCase())) return task;
     const urls = [...new Set([...(task.image_urls || []), task.image_url || task.url || ""].map((url) => url.trim()).filter(Boolean))];
-    const imageStorage = await Promise.all(urls.map((url, index) => autoSyncImage(url, `${task.id}:${resultId}:${index}`, index === 0 ? task.storageKey : undefined)));
+    const imageStorage = await Promise.all(urls.map((url, index) => autoSyncImage(url, `${task.id}:${resultId}:${index}`, index === 0 ? task.storageKey : undefined, token)));
     if (!imageStorage.some(Boolean)) return task;
     const syncedUrls = urls.map((url, index) => imageStorage[index]?.url || url);
     const stored = imageStorage[0];
-    return { ...task, ...(stored ? { storageKey: stored.storageKey, bytes: stored.bytes, mimeType: stored.mimeType } : {}), url: syncedUrls[0], image_url: syncedUrls[0], ...(task.image_urls?.length ? { image_urls: syncedUrls } : {}), imageStorage };
+    return { ...task, ...(stored ? { storageKey: stored.storageKey, bytes: stored.bytes, mimeType: stored.mimeType, accountSaveError: stored.accountSaveError } : {}), url: syncedUrls[0], image_url: syncedUrls[0], ...(task.image_urls?.length ? { image_urls: syncedUrls } : {}), imageStorage };
 }
 
 export async function requestGeneration(config: AiConfig & { seedIndex?: number; seedCount?: number }, prompt: string) {
+    const token = requireCloudModelAccess(config);
     try {
         const images = await requestImages(config, prompt, []);
         refreshRemoteUser(config);
-        return syncGeneratedImages(images);
+        return syncGeneratedImages(images, token);
     } catch (error) {
         if (error instanceof ImageRequestError) throw error;
         throw new Error(error instanceof Error ? error.message : "请求失败");
@@ -1024,10 +1032,11 @@ export async function requestGeneration(config: AiConfig & { seedIndex?: number;
 }
 
 export async function requestEdit(config: AiConfig & { seedIndex?: number; seedCount?: number }, prompt: string, references: ReferenceImage[]) {
+    const token = requireCloudModelAccess(config);
     try {
         const images = await requestImages(config, prompt, references);
         refreshRemoteUser(config);
-        return syncGeneratedImages(images);
+        return syncGeneratedImages(images, token);
     } catch (error) {
         if (error instanceof ImageRequestError) throw error;
         throw new Error(error instanceof Error ? error.message : "请求失败");
@@ -1035,6 +1044,7 @@ export async function requestEdit(config: AiConfig & { seedIndex?: number; seedC
 }
 
 export async function createCanvasImageTask(config: AiConfig & { seedIndex?: number; seedCount?: number }, prompt: string, references: ReferenceImage[], options: CanvasImageTaskOptions = {}): Promise<CanvasImageTask> {
+    const token = requireCloudModelAccess(config);
 	const translation = await findParameterTranslation(config);
     if (!usesAccountProxy(config)) {
         const images = await requestImages({ ...config, count: "1" }, prompt, references, options.signal);
@@ -1057,6 +1067,7 @@ export async function createCanvasImageTask(config: AiConfig & { seedIndex?: num
     const params = createImageRequestParams({ ...config, count: "1" });
     const request: RequestInit = translation ? {method:"POST",headers:translationHeaders(config,translation),body:JSON.stringify({endpoint:references.length ? "/images/edits" : "/images/generations",nodeId:options.nodeId || "",source:options.source || "canvas",sourceId:options.sourceId || "",clientTaskId:options.clientTaskId || "",prompt,request:translationBody(config,await imageTranslationInput(config,prompt,references,params))})} : await createCanvasImageTaskRequest({ ...config, count: "1" }, prompt, references, params, options);
     options.signal?.throwIfAborted();
+    assertStorageSession(token);
     options.onServerTask?.();
     const response = await fetch("/api/v1/canvas/image-tasks", request);
     if (!response.ok) {
@@ -1066,7 +1077,7 @@ export async function createCanvasImageTask(config: AiConfig & { seedIndex?: num
     const payload = (await response.json()) as { code?: number; msg?: string; data?: CanvasImageTask };
     if (payload.code !== 0 || !payload.data) throw new ImageRequestError(payload.msg || "图片任务创建失败", payload);
     refreshRemoteUser(config);
-    return syncCanvasImageTask(payload.data);
+    return syncCanvasImageTask(payload.data, payload.data.started_at, token);
 }
 
 export async function pollCanvasImageTaskStatus(taskId: string, signal?: AbortSignal): Promise<CanvasImageTask> {
@@ -1082,7 +1093,7 @@ export async function pollCanvasImageTaskStatus(taskId: string, signal?: AbortSi
     }
     const payload = (await response.json()) as { code?: number; msg?: string; data?: CanvasImageTask };
     if (payload.code !== 0 || !payload.data) throw new ImageRequestError(payload.msg || "读取图片任务失败", payload);
-    return syncCanvasImageTask(payload.data);
+    return syncCanvasImageTask(payload.data, payload.data.started_at, token);
 }
 
 async function createCanvasImageTaskRequest(config: AiConfig & { seedIndex?: number; seedCount?: number }, prompt: string, references: ReferenceImage[], params: ImageRequestParams, options: CanvasImageTaskOptions): Promise<RequestInit> {
@@ -1203,6 +1214,7 @@ async function createCanvasImageTaskRequest(config: AiConfig & { seedIndex?: num
 }
 
 export async function requestImageQuestion(config: AiConfig, messages: ChatCompletionMessage[], onDelta: (text: string) => void) {
+    requireCloudModelAccess(config);
     if (isGeminiConfig(config)) return requestGeminiText(config, messages, onDelta);
     let answer = "";
 
@@ -1254,10 +1266,11 @@ export async function requestImageQuestion(config: AiConfig, messages: ChatCompl
 }
 
 export async function fetchImageModels(config: AiConfig) {
+    requireCloudModelAccess(config);
     if (config.channelMode === "remote") return config.models;
     const channel = localChannelForActiveModel(config);
     if (channel?.protocol === "gemini") return fetchGeminiModels(channel.baseUrl, channel.apiKey);
-    if (channel?.protocol === "autodl") return (await fetchAutoDLWorkflows(channel.baseUrl)).map((workflow) => workflow.uuid);
+    if (channel?.protocol === "autodl") return (await fetchAutoDLWorkflows(channel.id)).map((workflow) => workflow.uuid);
     if (isMiniMaxChannel(channel)) return [...miniMaxModels];
     if (isMimoChannel(channel || { baseUrl: config.baseUrl })) return [...mimoModels];
     if (channel?.protocol === "ark" && buildApiUrl(channel.baseUrl, "").toLowerCase().endsWith("/api/plan/v3")) return [
@@ -1567,6 +1580,7 @@ export async function listCanvasImageTasks(config: AiConfig, sources: Array<"ima
 }
 
 export async function batchCanvasImageTaskStatus(config: AiConfig, ids: string[]) {
+    const token = requireCloudModelAccess(config);
     const taskIds = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
     if (!usesAccountProxy(config) || !taskIds.length) return [];
     const response = await fetch("/api/v1/canvas/image-tasks/status", {
@@ -1580,7 +1594,7 @@ export async function batchCanvasImageTaskStatus(config: AiConfig, ids: string[]
     }
     const payload = (await response.json()) as { code?: number; msg?: string; data?: CanvasImageTask[] };
     if (payload.code !== 0 || !Array.isArray(payload.data)) throw new ImageRequestError(payload.msg || "读取图片任务失败", payload);
-    return Promise.all(payload.data.map((task) => syncCanvasImageTask(task)));
+    return Promise.all(payload.data.map((task) => syncCanvasImageTask(task, task.started_at, token)));
 }
 
 export async function deleteCanvasImageTask(config: AiConfig, task?: CanvasImageTask | null) {

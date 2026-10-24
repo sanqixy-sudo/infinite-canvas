@@ -6,6 +6,7 @@ import (
 
 	"github.com/tigerowo/infinite-canvas/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ListUsers 分页查询用户。
@@ -76,27 +77,82 @@ func SaveUser(user model.User) (model.User, error) {
 	if err != nil {
 		return user, err
 	}
-	return user, db.Save(&user).Error
+	return saveUser(db, user)
 }
 
-func ConsumeUserCredits(id string, credits float64, now string, log model.CreditLog, task any) (model.User, bool, error) {
+func saveUser(db *gorm.DB, user model.User) (model.User, error) {
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var saved model.User
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&saved, "id = ?", user.ID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return tx.Create(&user).Error
+		}
+		if err != nil {
+			return err
+		}
+		// 资料和登录写入不能覆盖同时到账、扣费或扩容的资产。
+		columns := []string{"Username", "Password", "Email", "DisplayName", "AvatarURL", "Role", "AffCode", "GithubID", "LinuxDoID", "WechatID", "Status", "LastLoginAt", "Extra", "UpdatedAt"}
+		if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Select(columns).Updates(&user).Error; err != nil {
+			return err
+		}
+		return tx.First(&user, "id = ?", user.ID).Error
+	})
+	return user, err
+}
+
+// AdjustUserCredits 在同一事务中更新余额并记录管理员调整流水。
+func AdjustUserCredits(id string, credits float64, timestamp string, log model.CreditLog) (model.User, bool, error) {
 	db, err := DB()
 	if err != nil {
 		return model.User{}, false, err
 	}
-	if credits <= 0 {
-		user, ok, err := GetUserByID(id)
-		return user, ok, err
+	var user model.User
+	found := false
+	err = db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&user)
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if result.Error != nil {
+			return result.Error
+		}
+		found = true
+		if user.Credits == credits {
+			return nil
+		}
+		log.Amount = credits - user.Credits
+		log.Balance = credits
+		if err := tx.Model(&user).Updates(map[string]any{"credits": credits, "updated_at": timestamp}).Error; err != nil {
+			return err
+		}
+		user.Credits = credits
+		user.UpdatedAt = timestamp
+		return tx.Create(&log).Error
+	})
+	return user, found, err
+}
+
+func ConsumeUserCredits(id string, credits float64, now string, log model.CreditLog, task any, storageIDs ...string) (model.User, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.User{}, false, err
 	}
 	var user model.User
 	consumed := false
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = withUserStorageLock(db, id, storageIDs, func(tx *gorm.DB) error {
+		if task != nil {
+			taskID := ""
+			switch value := task.(type) { case *model.CanvasImageTask: taskID = value.ID; case *model.VideoTask: taskID = value.ID; case *model.CanvasAudioTask: taskID = value.ID }
+			if err := rejectProductionTaskReplay(tx, id, taskID); err != nil { return err }
+		}
+		if credits > 0 {
 		update := tx.Model(&model.User{}).Where("id = ? AND credits >= CAST(? AS DECIMAL(20,2))", id, credits).Updates(map[string]any{
 			"credits":    gorm.Expr("ROUND(credits - CAST(? AS DECIMAL(20,2)), 2)", credits),
 			"updated_at": now,
 		})
 		if update.Error != nil || update.RowsAffected == 0 {
 			return update.Error
+		}
 		}
 		current, found, err := findUser(tx, "id = ?", id)
 		if err != nil {
@@ -111,19 +167,39 @@ func ConsumeUserCredits(id string, credits float64, now string, log model.Credit
 			return err
 		}
 		if task != nil {
-			return tx.Create(task).Error
+			if err := tx.Create(task).Error; err != nil { return err }
+			return captureProductionTask(tx, task, true)
 		}
-		return nil
+		return refreshProductionLedger(tx, id, log.RelatedID)
 	})
 	return user, consumed, err
 }
 
-func RefundUserCredits(id string, credits float64, now string) (model.User, bool, error) {
+func RefundUserCredits(id string, credits float64, now string, log model.CreditLog) (model.User, bool, error) {
 	db, err := DB()
 	if err != nil {
 		return model.User{}, false, err
 	}
-	return refundUserCredits(db, id, credits, now)
+	return refundUserCreditsWithLog(db, id, credits, now, log)
+}
+
+func refundUserCreditsWithLog(db *gorm.DB, id string, credits float64, now string, log model.CreditLog) (model.User, bool, error) {
+	if credits <= 0 {
+		return findUser(db, "id = ?", id)
+	}
+	var user model.User
+	var found bool
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var refundErr error
+		user, found, refundErr = refundUserCredits(tx, id, credits, now)
+		if refundErr != nil || !found {
+			return refundErr
+		}
+		log.Balance = user.Credits
+		if err := tx.Create(&log).Error; err != nil { return err }
+		return refreshProductionLedger(tx, id, log.RelatedID)
+	})
+	return user, found, err
 }
 
 func refundUserCredits(db *gorm.DB, id string, credits float64, now string) (model.User, bool, error) {
@@ -147,19 +223,41 @@ func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
 	if err != nil {
 		return log, err
 	}
-	return log, db.Save(&log).Error
+	err = db.Transaction(func(tx *gorm.DB) error {
+		var previous model.CreditLog
+		lookup := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", log.ID).First(&previous).Error
+		if lookup != nil && !errors.Is(lookup, gorm.ErrRecordNotFound) { return lookup }
+		if lookup == nil { if err := rejectProductionLedgerEdit(tx, previous); err != nil { return err } }
+		if err := rejectProductionLedgerEdit(tx, log); err != nil { return err }
+		return tx.Save(&log).Error
+	})
+	return log, err
 }
 
 func ListCreditLogs(q model.Query) ([]model.CreditLog, int64, error) {
+	return listCreditLogs(q, "")
+}
+
+func ListUserCreditLogs(userID string, q model.Query) ([]model.CreditLog, int64, error) {
+	return listCreditLogs(q, userID)
+}
+
+func listCreditLogs(q model.Query, userID string) ([]model.CreditLog, int64, error) {
 	db, err := DB()
 	if err != nil {
 		return nil, 0, err
 	}
 	q.Normalize()
 	tx := db.Model(&model.CreditLog{}).Joins("LEFT JOIN users ON users.id = credit_logs.user_id")
+	if userID != "" {
+		tx = tx.Where("credit_logs.user_id = ?", userID)
+	}
+	if q.Type != "" {
+		tx = tx.Where("credit_logs.type = ?", q.Type)
+	}
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("user_id LIKE ? OR type LIKE ? OR remark LIKE ? OR related_id LIKE ? OR users.username LIKE ? OR users.display_name LIKE ?", like, like, like, like, like, like)
+		tx = tx.Where("(credit_logs.user_id LIKE ? OR credit_logs.type LIKE ? OR remark LIKE ? OR related_id LIKE ? OR users.username LIKE ? OR users.display_name LIKE ?)", like, like, like, like, like, like)
 	}
 	if q.Date != "" {
 		tx = tx.Where("SUBSTR(credit_logs.created_at, 1, 10) = ?", q.Date)
@@ -182,7 +280,12 @@ func DeleteCreditLog(id string) error {
 	if err != nil {
 		return err
 	}
-	return db.Delete(&model.CreditLog{}, "id = ?", id).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		var log model.CreditLog
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&log).Error; err != nil { if errors.Is(err, gorm.ErrRecordNotFound) { return nil }; return err }
+		if err := rejectProductionLedgerEdit(tx, log); err != nil { return err }
+		return tx.Delete(&log).Error
+	})
 }
 
 // DeleteUser 删除指定用户。
@@ -191,7 +294,14 @@ func DeleteUser(id string) error {
 	if err != nil {
 		return err
 	}
-	return db.Delete(&model.User{}, "id = ?", id).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		var user model.User
+		if err:=tx.Clauses(clause.Locking{Strength:"UPDATE"}).First(&user,"id = ?",id).Error;err!=nil{return err}
+		var pending int64
+		if err:=tx.Model(&model.VideoTask{}).Where("user_id = ? AND gateway_snapshot <> '' AND billing_status NOT IN ?",id,[]string{"settled","released"}).Count(&pending).Error;err!=nil{return err}
+		if pending>0{return errors.New("用户仍有未结算的 Token 任务，请完成结算后删除")}
+		return tx.Delete(&model.User{},"id = ?",id).Error
+	})
 }
 
 // GetUserByLinuxDoID 根据 Linux.do ID 查询用户。

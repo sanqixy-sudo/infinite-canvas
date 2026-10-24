@@ -1,6 +1,6 @@
 "use client";
 
-import { CopyOutlined, DeleteOutlined, EditOutlined, ExportOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SyncOutlined } from "@ant-design/icons";
+import { CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SyncOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
 import { Button, Card, Col, Flex, Form, Image, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { useEffect, useState } from "react";
@@ -261,11 +261,6 @@ export default function AdminPromptsPage() {
                             <Button icon={<CopyOutlined />} onClick={() => copyText(detailPrompt.prompt)}>
                                 复制提示词
                             </Button>
-                            {detailPrompt.githubUrl ? (
-                                <Button icon={<ExportOutlined />} href={detailPrompt.githubUrl} target="_blank">
-                                    远程源
-                                </Button>
-                            ) : null}
                         </Space>
                     </Flex>
                 ) : null}
@@ -291,16 +286,6 @@ export default function AdminPromptsPage() {
                         {
                             title: "远程源",
                             dataIndex: "name",
-                            render: (_, item) => (
-                                <Flex align="center" gap={8}>
-                                    {item.name}
-                                    {item.githubUrl ? (
-                                        <Typography.Link href={item.githubUrl} target="_blank">
-                                            <ExportOutlined />
-                                        </Typography.Link>
-                                    ) : null}
-                                </Flex>
-                            ),
                         },
                         {
                             title: "",

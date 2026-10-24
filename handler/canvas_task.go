@@ -19,6 +19,7 @@ import (
 	"net/http/httptest"
 	"net/textproto"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,6 +97,12 @@ func CreateCanvasImageTask(w http.ResponseWriter, r *http.Request) {
 		RequestBody:     summarizeAIRequest(body, contentType),
 	})
 	if err != nil {
+		if errors.Is(err, service.ErrCanvasImageTaskConflict) || errors.Is(err, service.ErrProductionTaskReplay) {
+			old, found, lookupErr := service.GetUserCanvasImageTask(user.ID, clientTaskID)
+			if lookupErr == nil && found && old.Source == source && old.SourceID == sourceID && old.NodeID == nodeID && old.Model == modelName && old.ChannelID == channel.ID && old.RequestBody == summarizeAIRequest(body, contentType) { OK(w, service.CanvasImageTaskResponse(old)); return }
+			Fail(w, "该任务标识已使用，请查看原任务；再次生成需新建任务")
+			return
+		}
 		log.Printf("create canvas image task failed: user=%s err=%v", user.ID, err)
 		Fail(w, "AI 接口请求失败")
 		return
@@ -172,7 +179,7 @@ func DeleteUserCanvasImageTask(w http.ResponseWriter, r *http.Request, id string
 	}
 	if err := service.DeleteUserCanvasImageTask(user.ID, id); err != nil {
 		log.Printf("delete canvas image task failed: user=%s id=%s err=%v", user.ID, id, err)
-		Fail(w, "AI 接口请求失败")
+		FailError(w, err)
 		return
 	}
 	OK(w, map[string]any{"deleted": true})
@@ -184,6 +191,8 @@ func CreateCanvasAudioTask(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "未登录或权限不足")
 		return
 	}
+	var maxCredits *float64
+	if raw:=r.Header.Get("X-Canvas-Max-Credits");raw!=""{value,err:=strconv.ParseFloat(raw,64);if err!=nil{Fail(w,"确认算力无效");return};maxCredits=&value}
 	body, contentType, endpoint, _, nodeID, sourceID, clientTaskID, prompt, channelID, err := readCanvasTaskAIRequest(r, "/audio/speech")
 	if err != nil {
 		Fail(w, err.Error())
@@ -220,6 +229,8 @@ func CreateCanvasAudioTask(w http.ResponseWriter, r *http.Request) {
 		Endpoint:        endpoint,
 		ContentType:     contentType,
 		RequestBody:     summarizeAIRequest(body, contentType),
+		RawRequest:      body,
+		MaxCredits:      maxCredits,
 	})
 	if err != nil {
 		log.Printf("create canvas audio task failed: user=%s err=%v", user.ID, err)
@@ -227,7 +238,7 @@ func CreateCanvasAudioTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	OK(w, service.CanvasAudioTaskResponse(task))
-	go runCanvasAudioTask(task, user, body, contentType, task.ChannelID, task.UserChannelID)
+	if task.NewlyCreated { go runCanvasAudioTask(task, user, body, contentType, task.ChannelID, task.UserChannelID) }
 }
 
 func GetCanvasAudioTask(w http.ResponseWriter, r *http.Request, id string) {
@@ -314,6 +325,7 @@ func runCanvasAudioTask(task model.CanvasAudioTask, user model.AuthUser, body []
 		return
 	}
 	defer cleanup()
+	ctx=service.WithTaskCreditLimit(ctx,task.MaxCredits)
 	current := taskTime()
 	task.Status = "processing"
 	task.Progress = 10
@@ -347,6 +359,12 @@ func runCanvasAudioTask(task model.CanvasAudioTask, user model.AuthUser, body []
 		mimeType = strings.TrimSpace(http.DetectContentType(payload))
 	}
 	if strings.Contains(mimeType, "json") {
+		if audioURL, audioMime, audioBytes, ok := canvasInlineAudio(payload); ok {
+			task.Status,task.Progress,task.CompletedAt="completed",100,taskTime()
+			task.AudioURL,task.MimeType,task.Bytes=audioURL,audioMime,audioBytes
+			task.ResponseBody,task.Error,task.ErrorDetail="[inline audio]","",""
+			_,_=service.SaveCanvasAudioTask(task);return
+		}
 		var result struct {
 			Provider string `json:"provider"`
 			AudioURL string `json:"audio_url"`
@@ -376,6 +394,20 @@ func runCanvasAudioTask(task model.CanvasAudioTask, user model.AuthUser, body []
 	task.Error = ""
 	task.ErrorDetail = ""
 	_, _ = service.SaveCanvasAudioTask(task)
+}
+
+// Gemini returns documented 24 kHz mono PCM inside inlineData. The existing
+// client PCM-to-WAV converter persists it under the same recoverable task ID.
+func canvasInlineAudio(payload []byte)(string,string,int64,bool){
+	var result struct { Candidates []struct { Content struct { Parts []struct { InlineData struct { Data string `json:"data"`; MimeType string `json:"mimeType"` } `json:"inlineData"` } `json:"parts"` } `json:"content"` } `json:"candidates"` }
+	if json.Unmarshal(payload,&result)!=nil{return "","",0,false}
+	for _,candidate:=range result.Candidates{for _,part:=range candidate.Content.Parts{
+		mediaType,parameters,err:=mime.ParseMediaType(part.InlineData.MimeType)
+		if err!=nil||!strings.EqualFold(mediaType,"audio/l16")||parameters["rate"]!="24000"||parameters["channels"]!=""&&parameters["channels"]!="1"||len(part.InlineData.Data)>86<<20{continue}
+		data,err:=base64.StdEncoding.DecodeString(part.InlineData.Data);if err!=nil||len(data)==0||len(data)%2!=0||len(data)>64<<20{return "","",0,false}
+		return "data:audio/l16;rate=24000;base64,"+part.InlineData.Data,"audio/l16;rate=24000",int64(len(data)),true
+	}}
+	return "","",0,false
 }
 
 func executeCanvasAIRequest(ctx context.Context, user model.AuthUser, endpoint string, body []byte, contentType string, channelID string, userChannelID string, onProgress ...func(int)) ([]byte, int, string, error) {

@@ -2,6 +2,7 @@ import { isGlmTtsModel } from "@/lib/audio-generation";
 import { isGrok2APITtsConfig } from "@/lib/grok-tts";
 import { isGeminiConfig, isGeminiTtsModel } from "@/lib/gemini";
 import { supportsVideoAudioGeneration } from "@/lib/video-model-capabilities";
+import { gatewayModel, withFixedGatewayVideoSize, type GatewayModelDefinition } from "@/lib/model-gateway";
 import { type AiConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasAgentState, type CanvasConnection, type CanvasNodeData } from "../types";
 
@@ -48,6 +49,7 @@ export type CanvasAgentContext = {
         videoSeconds: string;
         videoGenerateAudio: string;
         videoSupportsAudio: boolean;
+        videoCapabilities?: GatewayModelDefinition["capabilities"];
         audioVoice: string;
         audioLanguage: string;
         audioFormat: string;
@@ -100,6 +102,7 @@ export function buildCanvasAgentContext(input: BuildCanvasAgentContextInput): Ca
     ].slice(0, MAX_CONTEXT_NODES);
     const includedIds = new Set(orderedNodes.map((node) => node.id));
     const videoModel = input.config.videoModel || input.config.model;
+    const videoConfig = withFixedGatewayVideoSize({ ...input.config, model: videoModel, activeChannelId: input.config.videoChannelId || input.config.activeChannelId, size: input.config.videoSize });
     const audioModel = input.config.audioModel;
     const audioConfig = { ...input.config, model: audioModel, activeChannelId: input.config.audioChannelId || input.config.activeChannelId };
     const grokTts = isGrok2APITtsConfig(audioConfig, audioModel);
@@ -123,12 +126,13 @@ export function buildCanvasAgentContext(input: BuildCanvasAgentContextInput): Ca
             audioModel,
             imageQuality: input.config.quality,
             imageSize: input.config.size,
-            videoQuality: input.config.vquality,
-            videoSize: input.config.videoSize,
+            videoQuality: videoConfig.vquality,
+            videoSize: videoConfig.size,
             imageCount: input.config.canvasImageCount || input.config.count,
             videoSeconds: input.config.videoSeconds,
             videoGenerateAudio: input.config.videoGenerateAudio,
             videoSupportsAudio: supportsVideoAudioGeneration(videoModel),
+            videoCapabilities: gatewayModel(videoConfig)?.capabilities,
             audioVoice: isGeminiTtsModel(audioModel) && isGeminiConfig(audioConfig, audioModel) ? input.config.geminiTtsVoice : isGlmTtsModel(audioModel) ? input.config.glmTtsVoice : grokTts ? input.config.grokTtsVoice : input.config.audioVoice,
             audioLanguage: grokTts ? input.config.grokTtsLanguage : "",
             audioFormat: isGlmTtsModel(audioModel) ? input.config.glmTtsFormat : grokTts ? input.config.grokTtsFormat : input.config.audioFormat,

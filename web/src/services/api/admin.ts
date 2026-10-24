@@ -81,14 +81,6 @@ export async function fetchAdminCreditLogs(token: string, query: AdminUserQuery 
     return apiGet<AdminCreditLogListResponse>("/api/admin/credit-logs", compactApiParams(query), token);
 }
 
-export async function saveAdminCreditLog(token: string, log: Partial<AdminCreditLog>) {
-    return apiPost<AdminCreditLog>("/api/admin/credit-logs", log, token);
-}
-
-export async function deleteAdminCreditLog(token: string, id: string) {
-    return apiDelete<boolean>(`/api/admin/credit-logs/${encodeURIComponent(id)}`, token);
-}
-
 export async function fetchAdminPromptCategories(token: string) {
     return apiGet<AdminPromptCategory[]>("/api/admin/prompt-categories", undefined, token);
 }
@@ -225,9 +217,20 @@ export type AdminPublicModelChannelSettings = {
 export type AdminModelCost = {
     model: string;
     credits: number;
+    billingUnit?: "token" | "second" | "call" | "variants";
+    gateway?: import("@/lib/model-gateway").PublishedGatewayModel;
+    tokenMode?: import("@/lib/model-gateway").GatewayTokenMode;
+    reserveCredits?: number;
+    withoutVideoCreditsPerMillion?: number;
+    withVideoCreditsPerMillion?: number;
+    reserveTokens?: number;
+    reserveInputTokens?: number;
+    reserveOutputTokens?: number;
+    tiers?: import("@/lib/model-gateway").GatewaySaleTier[];
 };
 
 export type AdminPublicModelChannelInfo = {
+	 gatewayModels?: import("@/lib/model-gateway").PublishedGatewayModel[];
 	parameterTranslationModels?: string[];
     id: string;
     protocol: AdminModelChannel["protocol"];
@@ -379,6 +382,6 @@ export type StorageCapacityResult = {
     providerName: string;
 };
 
-export async function measureAdminStorageProvider(token: string, payload: { index: number; provider: AdminStorageProvider }) {
+export async function measureAdminStorageProvider(token: string, payload: { index: number }) {
     return apiPost<StorageCapacityResult>("/api/admin/storage/measure", payload, token);
 }

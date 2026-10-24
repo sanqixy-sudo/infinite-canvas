@@ -1,4 +1,9 @@
 import axios from "axios";
+import { useUserStore } from "@/stores/use-user-store";
+
+export class ApiError extends Error {
+    constructor(message: string, public status: number) { super(message); this.name = "ApiError"; }
+}
 
 export type ApiParams = Record<string, string | string[] | number | number[] | undefined>;
 
@@ -43,15 +48,26 @@ export async function apiPost<T>(url: string, body?: unknown, token?: string) {
     });
 }
 
-export async function apiDelete<T>(url: string, token?: string) {
+export async function apiDelete<T>(url: string, token?: string, body?: unknown) {
     return apiRequest<T>({
         url,
         method: "DELETE",
+        data: body,
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
 }
 
-async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "DELETE"; params?: ApiParams; data?: unknown; headers?: Record<string, string> }) {
+export function apiPut<T>(url: string, body: unknown, token: string) {
+    return apiRequest<T>({ url, method: "PUT", data: body, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } });
+}
+
+export function apiUpload<T>(url: string, body: FormData, token: string) {
+    return apiRequest<T>({ url, method: "POST", data: body, headers: { Authorization: `Bearer ${token}` } });
+}
+
+async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "PUT" | "DELETE"; params?: ApiParams; data?: unknown; headers?: Record<string, string> }) {
+    const requestToken = config.headers?.Authorization?.replace(/^Bearer /, "") || "";
+    const sessionVersion = useUserStore.getState().sessionVersion;
     let response;
     try {
         response = await axios.request<ApiResponse<T>>({
@@ -67,6 +83,8 @@ async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "DE
         throw new Error("接口连接失败，请确认后端服务已启动");
     }
 
+    const current = useUserStore.getState();
+    if (response.status === 401 && requestToken && current.token === requestToken && current.sessionVersion === sessionVersion) current.clearSession();
     const result = response.data;
     if (!result || typeof result !== "object") {
         throw new Error(response.status === 404 ? "接口不存在，请确认后端服务已启动" : "接口返回异常，请稍后重试");
@@ -74,7 +92,7 @@ async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "DE
 
     const payload = result as ApiResponse<T>;
     if (response.status < 200 || response.status >= 300 || payload.code !== 0) {
-        throw new Error(payload.msg || "请求失败");
+        throw new ApiError(payload.msg || "请求失败", response.status);
     }
 
     return payload.data;

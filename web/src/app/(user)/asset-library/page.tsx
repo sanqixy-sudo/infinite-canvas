@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { App, Button, Card, Drawer, Empty, Image, Input, Pagination, Spin, Tag, Typography } from "antd";
 import { useCopyText } from "@/hooks/use-copy-text";
-import { getProxyUrl } from "@/services/image-storage";
+import { copyLibraryAsset } from "@/services/asset-library-copy";
 import { cn } from "@/lib/utils";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { fetchAssetLibrary, type AssetLibraryItem } from "@/services/api/assets";
@@ -49,59 +49,16 @@ export default function AssetLibraryPage() {
     const saveToMyAssets = async (asset: AssetLibraryItem) => {
         try {
             if (useAssetStore.getState().assets.some((item) => item.metadata?.source === "asset-library" && item.metadata.assetId === asset.id)) return void message.info("该素材已在我的素材中");
-            if (asset.type === "image") {
-                const blob = await (await fetch(getProxyUrl(asset.url))).blob();
-                const bitmap = await createImageBitmap(blob);
-                const { width, height } = bitmap;
-                bitmap.close();
-                if (useAssetStore.getState().assets.some((item) => item.metadata?.source === "asset-library" && item.metadata.assetId === asset.id)) return void message.info("该素材已在我的素材中");
-                addAsset({
-                    kind: "image",
-                    title: asset.title,
-                    coverUrl: asset.coverUrl,
-                    tags: asset.tags,
-                    category: asset.category,
-                    source: "素材库",
-                    data: { dataUrl: asset.url, width, height, bytes: blob.size, mimeType: blob.type || "image/*" },
-                    metadata: { source: "asset-library", assetId: asset.id },
-                });
-            } else if (asset.type === "video") {
-                addAsset({
-                    kind: "video",
-                    title: asset.title,
-                    coverUrl: asset.coverUrl,
-                    tags: asset.tags,
-                    category: asset.category,
-                    source: "素材库",
-                    data: { url: asset.url, width: 0, height: 0, bytes: 0, mimeType: "video/mp4" },
-                    metadata: { source: "asset-library", assetId: asset.id },
-                });
-            } else if (asset.type === "audio") {
-                addAsset({
-                    kind: "audio",
-                    title: asset.title,
-                    coverUrl: asset.coverUrl,
-                    tags: asset.tags,
-                    category: asset.category,
-                    source: "素材库",
-                    data: { url: asset.url, mimeType: "audio/mpeg" },
-                    metadata: { source: "asset-library", assetId: asset.id },
-                });
-            } else {
-                addAsset({
-                    kind: "text",
-                    title: asset.title,
-                    coverUrl: asset.coverUrl,
-                    tags: asset.tags,
-                    category: asset.category,
-                    source: "素材库",
-                    data: { content: asset.content },
-                    metadata: { source: "asset-library", assetId: asset.id },
-                });
-            }
+            const { asset: current, payload } = await copyLibraryAsset(asset.id);
+            if (useAssetStore.getState().assets.some((item) => item.metadata?.source === "asset-library" && item.metadata.assetId === asset.id)) return;
+            const common = { title: current.title, coverUrl: "", tags: current.tags, category: current.category, source: "素材库", metadata: { source: "asset-library", assetId: current.id } };
+            if (payload.kind === "image") addAsset({ ...common, kind: "image", coverUrl: payload.dataUrl, data: { dataUrl: payload.dataUrl, storageKey: payload.storageKey, width: payload.width || 0, height: payload.height || 0, bytes: payload.bytes || 0, mimeType: payload.mimeType || "image/png" } });
+            else if (payload.kind === "video") addAsset({ ...common, kind: "video", data: { url: payload.url, storageKey: payload.storageKey, width: payload.width || 0, height: payload.height || 0, bytes: payload.bytes || 0, mimeType: payload.mimeType || "video/mp4" } });
+            else if (payload.kind === "audio") addAsset({ ...common, kind: "audio", data: { url: payload.url, storageKey: payload.storageKey, bytes: payload.bytes || 0, mimeType: payload.mimeType || "audio/mpeg", durationMs: payload.durationMs } });
+            else addAsset({ ...common, kind: "text", data: { content: payload.content } });
             message.success("已加入我的素材");
-        } catch {
-            message.error("加入失败");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "加入失败");
         }
     };
 

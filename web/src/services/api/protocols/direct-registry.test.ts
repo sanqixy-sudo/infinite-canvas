@@ -3,9 +3,9 @@ import test from "node:test";
 import { directProtocolAdapters } from "./direct-registry";
 import { collectHTTPURLs, normalizeDirectStatus, readDirectError } from "./shared";
 
-// Expectations are taken from direct-ai.ts at a27f046, before protocol extraction.
+// Preserve existing adapters and explicitly cover newly registered protocol contracts.
 test("direct protocols preserve polling paths and task ID precedence", () => {
-    assert.deepEqual(Object.keys(directProtocolAdapters).sort(), ["apimart", "ark", "autodl", "kie"]);
+    assert.deepEqual(Object.keys(directProtocolAdapters).sort(), ["apimart", "ark", "autodl", "kie", "tokendance"]);
     assert.equal(directProtocolAdapters.kie.pollPath("task/a b?"), "/jobs/recordInfo?taskId=task%2Fa%20b%3F");
     assert.equal(directProtocolAdapters.apimart.pollPath("task/a b?"), "/tasks/task%2Fa%20b%3F?language=zh");
     assert.equal(directProtocolAdapters.ark.pollPath("task/a b?"), "/contents/generations/tasks/task%2Fa%20b%3F");
@@ -16,6 +16,10 @@ test("direct protocols preserve polling paths and task ID precedence", () => {
     assert.equal(directProtocolAdapters.apimart.readTaskId({ data: { task_id: " ", id: " fallback " } }), "fallback");
     assert.equal(directProtocolAdapters.apimart.readTaskId({ data: [{ id: "not-a-task-id" }] }), "");
     assert.equal(directProtocolAdapters.ark.readTaskId({ id: " ark-task " }), "ark-task");
+    assert.equal(directProtocolAdapters.tokendance.pollPath("seedance:generations::task/a b?"), "/ark/v3/generations/tasks/task%2Fa%20b%3F");
+    assert.equal(directProtocolAdapters.tokendance.pollPath("kling:image2video::task/a b?"), "/kling/v1/image2video/task%2Fa%20b%3F");
+    assert.equal(directProtocolAdapters.tokendance.readTaskId({ id: " preferred ", task_id: "fallback", data: { id: "nested" } }), "preferred");
+    assert.throws(() => directProtocolAdapters.tokendance.pollPath("missing-protocol"), /不支持的 TokenDance 轮询协议/);
 });
 
 test("created video status retains provider-specific behavior", () => {

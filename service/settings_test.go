@@ -1,6 +1,7 @@
 package service
 
 import (
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -9,6 +10,59 @@ import (
 
 	"github.com/tigerowo/infinite-canvas/model"
 )
+
+func TestPublicModelSelectionRequiresConfiguredChannelAndExplicitAllowlist(t *testing.T) {
+	channel := model.ModelChannel{ID: "channel-1", Protocol: "openai", Enabled: true, BaseURL: "https://models.example.com", APIKey: "secret", Models: []string{"image-1"}}
+	if got := normalizePublicSettingWithChannels(model.PublicSetting{}, []model.ModelChannel{channel}); len(got.ModelChannel.AvailableModels) != 0 {
+		t.Fatalf("empty allowlist exposed models: %#v", got.ModelChannel.AvailableModels)
+	}
+	if got := publicChannelInfos([]model.ModelChannel{channel}, nil, nil); len(got) != 0 {
+		t.Fatalf("empty allowlist exposed channels: %#v", got)
+	}
+	selected := model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{AvailableModels: []string{"image-1"}}}
+	if got := normalizePublicSettingWithChannels(selected, []model.ModelChannel{channel}); !reflect.DeepEqual(got.ModelChannel.AvailableModels, []string{"image-1"}) {
+		t.Fatalf("selected models = %#v", got.ModelChannel.AvailableModels)
+	}
+	channel.APIKey = ""
+	if got := normalizePublicSettingWithChannels(selected, []model.ModelChannel{channel}); len(got.ModelChannel.AvailableModels) != 0 {
+		t.Fatalf("channel without API key exposed models: %#v", got.ModelChannel.AvailableModels)
+	}
+}
+
+func TestValidateModelCosts(t *testing.T) {
+	if err := validateModelCosts([]model.ModelCost{{Model: "image-1", Credits: 0}, {Model: "video-1", Credits: 0.29}}); err != nil {
+		t.Fatalf("valid prices rejected: %v", err)
+	}
+	for _, costs := range [][]model.ModelCost{
+		{{Model: "", Credits: 1}},
+		{{Model: "image-1", Credits: -1}},
+		{{Model: "image-1", Credits: 0.001}},
+		{{Model: "image-1", Credits: math.NaN()}},
+		{{Model: "image-1", Credits: math.Inf(1)}},
+		{{Model: "image-1", Credits: 1}, {Model: " image-1 ", Credits: 2}},
+	} {
+		if err := validateModelCosts(costs); err == nil {
+			t.Fatalf("invalid prices accepted: %#v", costs)
+		}
+	}
+}
+
+func TestSavedSecretsMatchProviderIdentity(t *testing.T) {
+	channels := []model.ModelChannel{{ID: "old", Protocol: "openai", Name: "old", BaseURL: "https://old.example.com", APIKey: "old-key"}}
+	if _, found := findSavedChannel(model.ModelChannel{ID: "new", Protocol: "openai", Name: "new", BaseURL: "https://new.example.com"}, channels); found {
+		t.Fatal("unrelated model channel inherited an API key")
+	}
+	if got, found := findSavedChannel(model.ModelChannel{ID: "old", Protocol: "openai"}, channels); !found || got.APIKey != "old-key" {
+		t.Fatal("same model channel lost its API key")
+	}
+	providers := []model.StorageProvider{{ID: "old", Type: model.StorageProviderTypeS3, Bucket: "old", SecretAccessKey: "old-secret"}}
+	if _, found := findSavedStorageProvider(model.StorageProvider{ID: "new", Type: model.StorageProviderTypeS3, Bucket: "new"}, providers); found {
+		t.Fatal("unrelated R2 provider inherited a secret")
+	}
+	if got, found := findSavedStorageProvider(model.StorageProvider{ID: "old", Type: model.StorageProviderTypeS3}, providers); !found || got.SecretAccessKey != "old-secret" {
+		t.Fatal("same R2 provider lost its secret")
+	}
+}
 
 func TestFetchAdminChannelModelsParsesOpenAIModels(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

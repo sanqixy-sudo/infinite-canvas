@@ -1,115 +1,131 @@
 "use client";
 
-import { useRef } from "react";
+import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { App, Button } from "antd";
-import { Download, FileUp, Plus } from "lucide-react";
+import { App, Button, Input, Modal } from "antd";
+import { ArrowUpRight, FileUp, FolderOpen, Layers3, Plus, Search } from "lucide-react";
+import { nanoid } from "nanoid";
+import localforage from "localforage";
+import { useUserStore } from "@/stores/use-user-store";
+import { createProduction, saveProduction } from "@/services/api/production";
+import { saveCanvasProject } from "@/services/api/canvas-tasks";
 
 import { readZip } from "@/lib/zip";
-import { setMediaBlob } from "@/services/file-storage";
+import { setMediaBlob, uploadMediaBlob } from "@/services/file-storage";
 import { setImageBlob } from "@/services/image-storage";
 import { CanvasDeleteProjectsDialog } from "./components/canvas-delete-projects-dialog";
-import { CanvasProjectCard } from "./components/canvas-project-card";
+import { CanvasProjectPreview } from "./components/canvas-project-preview";
+import { CanvasLoadError } from "./components/canvas-load-error";
 import type { CanvasExportFile } from "./export-types";
-import { useCanvasStore } from "./stores/use-canvas-store";
-import { useCanvasUiStore } from "./stores/use-canvas-ui-store";
-import { exportCanvasProjects } from "./utils/canvas-export";
+import { useCanvasStore, workspaceCanvases, workspaceRoot } from "./stores/use-canvas-store";
+import { bindImportedProduction, importCanvasProjectGroups, prepareCanvasBundleImport, remapCanvasBundle, remapProductionCanvases } from "./utils/canvas-transfer";
 
 export default function CanvasPage() {
     const { message } = App.useApp();
     const router = useRouter();
     const inputRef = useRef<HTMLInputElement>(null);
     const hydrated = useCanvasStore((state) => state.hydrated);
-    const projects = useCanvasStore((state) => state.projects);
-    const createProject = useCanvasStore((state) => state.createProject);
-    const importProject = useCanvasStore((state) => state.importProject);
-    const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
-    const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
+    const loadError = useCanvasStore((state) => state.loadError);
+    const canvases = useCanvasStore((state) => state.projects);
+    const createCanvas = useCanvasStore((state) => state.createProject);
+    const importCanvas = useCanvasStore((state) => state.importProject);
+    const [query, setQuery] = useState("");
+    const [sort, setSort] = useState("updated");
+    const [newTitle, setNewTitle] = useState("");
+    const [createOpen, setCreateOpen] = useState(false);
+    const [importing, setImporting] = useState(false);
+    const roots = useMemo(() => canvases.filter(workspaceRoot).map((root) => {
+        const group = workspaceCanvases(canvases, root.id).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+        return { root, group, latest: Date.parse(group[0]?.updatedAt || root.updatedAt), cover: group.find((canvas) => canvas.nodes.length) || root };
+    }), [canvases]);
+    const filtered = roots.filter(({ root }) => (root.workspaceTitle || root.title).toLowerCase().includes(query.trim().toLowerCase())).sort((a, b) => sort === "name" ? (a.root.workspaceTitle || a.root.title).localeCompare(b.root.workspaceTitle || b.root.title, "zh-CN") : b.latest - a.latest);
 
-    const enterProject = (id: string) => {
+    const createWorkspace = () => {
+        if (!hydrated) return;
+        const title = newTitle.trim() || `未命名项目 ${roots.length + 1}`;
+        const id = createCanvas("画布 1", { workspaceTitle: title });
+        setNewTitle("");
+        setCreateOpen(false);
         router.push(`/canvas/${id}`);
     };
-    const createAndEnter = () => enterProject(createProject(`无限画布 ${projects.length + 1}`));
-    const importCanvas = async (file?: File) => {
-        if (!file) return;
+
+    const importArchive = async (file?: File) => {
+        if (!file || importing || !hydrated) return;
+        setImporting(true);
+        const auth = useUserStore.getState();
+        const assertSession = () => { if (useUserStore.getState().sessionVersion !== auth.sessionVersion || useCanvasStore.getState().ownerId !== auth.user?.id) throw new Error("账号已变化，导入已停止"); };
         try {
             const zip = await readZip(file);
             const projectFile = zip.get("projects.json");
-            if (!projectFile) throw new Error("missing projects.json");
+            if (!projectFile) throw new Error("压缩包缺少 projects.json");
             const data = JSON.parse(await projectFile.text()) as CanvasExportFile;
-            await Promise.all(
-                data.projects.flatMap((project) =>
-                    project.files.map(async (item) => {
-                        const blob = zip.get(item.path);
-                        if (!blob) return;
-                        const typedBlob = blob.type ? blob : blob.slice(0, blob.size, item.mimeType);
-                        await (item.storageKey.startsWith("image:") ? setImageBlob(item.storageKey, typedBlob) : setMediaBlob(item.storageKey, typedBlob));
-                    }),
-                ),
-            );
-            data.projects.forEach((item) => importProject(item.project));
-            message.success(`已导入 ${data.projects.length} 个画布`);
-        } catch {
-            message.error("导入失败，请选择有效的画布压缩包");
+            assertSession();
+            const restored = await prepareCanvasBundleImport(data, zip, async (entry, blob) => {
+                assertSession();
+                if (data.projects.some((item) => item.production)) {
+                    const uploaded = await uploadMediaBlob(blob, entry.path.split("/").pop() || "项目素材", auth.token);
+                    assertSession();
+                    if (!uploaded.storageKey.startsWith("server:") || uploaded.storageKey.startsWith("server:webdav:")) throw new Error("制作计划完整导入需要账号存储，请先配置平台存储");
+                    return uploaded;
+                }
+                const image = entry.mimeType.startsWith("image/") || entry.storageKey.startsWith("image:");
+                const storageKey = `${image ? "image" : "file"}:${nanoid()}`;
+                const url = await (image ? setImageBlob(storageKey, blob) : setMediaBlob(storageKey, blob));
+                return { storageKey, url };
+            });
+            assertSession();
+            const bundle = remapCanvasBundle(restored.projects, restored.productions);
+            const ids = importCanvasProjectGroups(bundle.projects, importCanvas);
+            const drafts = bundle.productions.map((original) => ({ ...remapProductionCanvases(original, ids), id: "", revision: 0, createdAt: "", updatedAt: "" }));
+            // Preserve every imported plan before account requests can fail or lose their response.
+            for (const doc of drafts) {
+                assertSession();
+                await localforage.setItem(`production-draft:${auth.user?.id}:${doc.workspaceId}`, { document: doc, dirty: true });
+            }
+            for (const doc of drafts) {
+                assertSession();
+                for (const canvas of useCanvasStore.getState().projects.filter((item) => item.id === doc.workspaceId || item.workspaceId === doc.workspaceId)) { await saveCanvasProject(auth.token, canvas); assertSession(); }
+                const created = await createProduction(auth.token, doc.workspaceId, doc.title); assertSession();
+                const next = bindImportedProduction(doc, created);
+                const key = `production-draft:${auth.user?.id}:${doc.workspaceId}`;
+                await localforage.setItem(key, { document: next, dirty: true }); assertSession();
+                const saved = await saveProduction(auth.token, next); assertSession();
+                await localforage.setItem(key, { document: saved, dirty: false }); assertSession();
+            }
+            message.success(`已导入 ${bundle.projects.length} 张画布、${bundle.productions.length} 份制作计划和素材，生成任务与账单不会复制`);
+        } catch (error) {
+            message.error(error instanceof Error ? `导入未完成：${error.message}。已导入部分会保留；已缓存的制作草稿可在对应项目的“短剧制作”中继续保存，无需重新导入。` : "导入失败，请选择有效的画布压缩包");
         } finally {
+            setImporting(false);
             if (inputRef.current) inputRef.current.value = "";
         }
     };
 
-    return (
-        <main className="h-full overflow-auto bg-background text-stone-950 dark:text-stone-100">
-            <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-10">
-                <header className="flex flex-wrap items-end justify-between gap-4 border-b border-stone-200 pb-6 dark:border-stone-800">
-                    <div>
-                        <p className="text-xs text-stone-500">画布库</p>
-                        <h1 className="mt-3 text-3xl font-semibold">无限画布</h1>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {selectedIds.length ? (
-                            <>
-                                <Button disabled={!hydrated} icon={<Download className="size-4" />} onClick={() => void exportCanvasProjects(projects.filter((project) => selectedIds.includes(project.id)), `无限画布-${selectedIds.length}个项目`)}>
-                                    导出选中
-                                </Button>
-                                <Button disabled={!hydrated} onClick={() => setDeleteIds(selectedIds)}>
-                                    删除选中
-                                </Button>
-                            </>
-                        ) : null}
-                        {projects.length ? (
-                            <Button disabled={!hydrated} onClick={() => setDeleteIds(projects.map((project) => project.id))}>
-                                删除全部
-                            </Button>
-                        ) : null}
-                        <Button disabled={!hydrated} icon={<FileUp className="size-4" />} onClick={() => inputRef.current?.click()}>
-                            导入画布
-                        </Button>
-                        <Button disabled={!hydrated} type="primary" icon={<Plus className="size-4" />} onClick={createAndEnter}>
-                            新建画布
-                        </Button>
-                    </div>
-                </header>
-
-                {!hydrated ? (
-                    <section className="flex min-h-[360px] items-center justify-center border-y border-stone-200 text-sm text-stone-500 dark:border-stone-800">正在加载画布...</section>
-                ) : projects.length ? (
-                    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                        {projects.map((project) => (
-                            <CanvasProjectCard key={project.id} project={project} />
-                        ))}
-                    </div>
-                ) : (
-                    <section className="flex min-h-[360px] flex-col items-center justify-center border-y border-stone-200 text-center dark:border-stone-800">
-                        <h2 className="text-xl font-medium">还没有画布</h2>
-                        <p className="mt-3 text-sm text-stone-500">新建一个画布后，就可以独立保存节点、连线和画布外观。</p>
-                        <Button type="primary" className="mt-6" icon={<Plus className="size-4" />} onClick={createAndEnter}>
-                            新建画布
-                        </Button>
-                    </section>
-                )}
+    if (loadError) return <CanvasLoadError />;
+    return <>
+        <main className="h-full overflow-y-auto">
+        <div className="mx-auto max-w-[1320px] px-5 py-8 sm:px-8 lg:px-10">
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-5">
+                <div><p className="mb-2 flex items-center gap-2 text-xs font-medium text-primary"><FolderOpen className="size-3.5" />创作空间</p><h1 className="text-[28px] font-semibold tracking-tight">我的项目</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">把灵感整理成项目，在画布里自由展开。</p></div>
+                <Button type="primary" className="h-10 rounded-xl px-5" icon={<Plus className="size-4" />} disabled={!hydrated} onClick={() => setCreateOpen(true)}>新建项目</Button>
             </div>
-
-            <input ref={inputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importCanvas(event.target.files?.[0])} />
-            <CanvasDeleteProjectsDialog />
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+                <label className="flex h-10 w-full max-w-sm items-center gap-2.5 rounded-xl border border-border/70 bg-card px-3.5 text-muted-foreground transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-ring/15"><Search className="size-4 shrink-0" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目名称" aria-label="搜索项目" className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" /></label>
+                <div className="flex items-center gap-2"><select aria-label="项目排序" value={sort} onChange={(event) => setSort(event.target.value)} className="h-10 rounded-xl border border-border/70 bg-card px-3 text-sm text-muted-foreground outline-none focus:border-primary/50 focus:ring-2 focus:ring-ring/15"><option value="updated">最近修改</option><option value="name">项目名称</option></select><Button type="text" className="h-10 rounded-xl" icon={<FileUp className="size-4" />} loading={importing} disabled={!hydrated || importing} onClick={() => inputRef.current?.click()}>导入项目</Button></div>
+            </div>
+            {hydrated && roots.length > 0 ? <p className="mb-4 text-xs text-muted-foreground">{query ? `找到 ${filtered.length} 个项目` : `共 ${roots.length} 个项目`}</p> : null}
+            {!hydrated ? <div className="py-28 text-center text-sm text-muted-foreground">正在读取项目...</div> : filtered.length ? <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">{filtered.map(({ root, group, latest, cover }) => {
+                return <Link href={`/canvas/project/${root.id}`} key={root.id} className="group overflow-hidden rounded-2xl border border-border/70 bg-card transition duration-200 hover:-translate-y-0.5 hover:border-primary/35 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring motion-reduce:transform-none">
+                    <CanvasProjectPreview project={cover} className="aspect-[16/10] w-full" />
+                    <div className="px-4 pb-4 pt-3.5"><div className="flex items-center justify-between gap-3"><h2 className="truncate text-[15px] font-medium transition-colors group-hover:text-primary">{root.workspaceTitle || root.title}</h2><ArrowUpRight className="size-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-primary" /></div><div className="mt-2.5 flex items-center justify-between gap-2 text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Layers3 className="size-3.5" />{group.length} 张画布</span><time dateTime={group[0]?.updatedAt || root.updatedAt}>{latest ? `${new Date(latest).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })} 更新` : ""}</time></div></div>
+                </Link>;
+            })}</div> : <div className="flex min-h-80 flex-col items-center justify-center rounded-2xl border border-border/70 bg-card px-6 py-12 text-center"><span className="mb-5 flex size-16 items-center justify-center rounded-2xl bg-accent text-primary">{query ? <Search className="size-6" /> : <Layers3 className="size-7" />}</span><h2 className="text-lg font-medium">{query ? "没有找到匹配的项目" : "为下一个灵感，留一张画布"}</h2><p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">{query ? "试试其他名称，或清除搜索查看全部项目。" : "从右上角新建项目，把脚本、分镜与素材放在一起。"}</p>{query ? <Button className="mt-5 rounded-xl" onClick={() => setQuery("")}>清除搜索</Button> : null}</div>}
+            <p className="mt-8 text-xs leading-5 text-muted-foreground">未登录内容保存在当前浏览器；登录后按账号同步设置保存。</p>
+        </div>
         </main>
-    );
+        <input ref={inputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importArchive(event.target.files?.[0])} />
+        <Modal title="新建项目" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={createWorkspace} okText="创建并开始" cancelText="取消" okButtonProps={{ disabled: !hydrated }}><p className="mb-4 text-sm text-muted-foreground">创建后进入第一张画布，后续可在项目中添加更多画布。</p><Input autoFocus aria-label="项目名称" maxLength={80} placeholder="例如：品牌短片 · 秋季企划" value={newTitle} onChange={(event) => setNewTitle(event.target.value)} onPressEnter={createWorkspace} /></Modal>
+        <CanvasDeleteProjectsDialog />
+    </>;
 }

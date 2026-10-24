@@ -8,11 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
-	"sort"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,13 +27,14 @@ func PublicSettings() (model.PublicSetting, error) {
 	settings, err := repository.GetSettings()
 	settings = normalizeSettings(settings)
 	settings.Public.ModelChannel.Channels = publicChannelInfos(settings.Private.Channels, settings.Public.ModelChannel.AvailableModels, settings.Public.ModelChannel.AvailableWorkflows)
-	if len(settings.Public.ModelChannel.AvailableModels) == 0 {
-		settings.Public.ModelChannel.AvailableModels = enabledChannelModels(settings.Private.Channels)
-	}
+	appendGatewayPublic(&settings.Public, settings.Private.Gateway)
 	return settings.Public, err
 }
 
 func UserCanUseRemoteModelChannel(user model.AuthUser) bool {
+	if strings.TrimSpace(user.ID) == "" {
+		return false
+	}
 	if user.Role == model.UserRoleAdmin {
 		return true
 	}
@@ -50,10 +52,19 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	if err != nil {
 		return model.Settings{}, err
 	}
-	settings = normalizeSettings(settings)
-	keepPrivateAPIKeys(&settings, normalizeSettings(saved))
-	keepPrivateAuthSecrets(&settings, normalizeSettings(saved))
-	keepPrivateStorageSecrets(&settings, normalizeSettings(saved))
+	if err := validateModelCosts(settings.Public.ModelChannel.ModelCosts); err != nil {
+		return model.Settings{}, err
+	}
+	settings.Private = normalizePrivateSetting(settings.Private)
+	saved = normalizeSettings(saved)
+	keepPrivateAPIKeys(&settings, saved)
+	keepPrivateAuthSecrets(&settings, saved)
+	keepPrivateStorageSecrets(&settings, saved)
+	// Gateway configuration has its own administrator endpoint.
+	settings.Private.Gateway = saved.Private.Gateway
+	if err:=validateGatewayChannelConflicts(settings);err!=nil{return model.Settings{},err}
+	settings.Public = normalizePublicSettingWithChannels(settings.Public, settings.Private.Channels)
+	settings.Public.Storage = publicStorageSetting(settings.Private.Storage)
 	for _, channel := range settings.Private.Channels {
 		if _, err := ParameterTranslationModels(channel.ParameterTranslation); err != nil {
 			return model.Settings{}, fmt.Errorf("渠道 %s：%w", channel.Name, err)
@@ -62,6 +73,17 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	if err := validateEnabledStorageProviderTypes(settings.Private.Storage.Providers); err != nil {
 		return model.Settings{}, err
 	}
+	if err := validateStorageMode(settings.Private.Storage); err != nil {
+		return model.Settings{}, err
+	}
+	if err := protectStoredProviderLocations(saved.Private.Storage, settings.Private.Storage); err != nil {
+		return model.Settings{}, err
+	}
+	for _, provider := range settings.Private.Storage.Providers {
+		if provider.Enabled && provider.Type == model.StorageProviderTypeS3 && !storageProviderConfigured(provider) {
+			return model.Settings{}, safeMessageError{message: "已启用的 S3/R2 配置不完整或 Endpoint 无效"}
+		}
+	}
 	result, err := repository.SaveSettings(settings, now())
 	if err == nil {
 		RefreshPromptSyncScheduler()
@@ -69,6 +91,18 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 		RefreshAILogCleanupScheduler()
 	}
 	return hidePrivateAPIKeys(result), err
+}
+
+func validateModelCosts(costs []model.ModelCost) error {
+	seen := map[string]bool{}
+	for _, item := range costs {
+		name := strings.TrimSpace(item.Model)
+		if name == "" || seen[name] || math.IsNaN(item.Credits) || math.IsInf(item.Credits, 0) || item.Credits < 0 || math.IsInf(item.Credits*100, 0) || math.Abs(item.Credits-normalizeCredits(item.Credits)) > 1e-9 {
+			return safeMessageError{message: "模型算力点价格配置无效"}
+		}
+		seen[name] = true
+	}
+	return nil
 }
 
 func AdminChannelModels(index *int, channel model.ModelChannel) ([]string, error) {
@@ -111,6 +145,7 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 func normalizeSettings(settings model.Settings) model.Settings {
 	settings.Private = normalizePrivateSetting(settings.Private)
 	settings.Public = normalizePublicSettingWithChannels(settings.Public, settings.Private.Channels)
+	settings.Public.Storage = publicStorageSetting(settings.Private.Storage)
 	return settings
 }
 
@@ -216,7 +251,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	setting.ModelChannel.AvailableModels = filterEnabledModels(setting.ModelChannel.AvailableModels, enabledChannelModels(channels))
 	workflows := []string{}
 	for _, channel := range channels {
-		if !isWorkflowChannelProtocol(channel.Protocol) {
+		if !channel.Enabled || !isWorkflowChannelProtocol(channel.Protocol) {
 			continue
 		}
 		for _, entry := range channel.Workflows {
@@ -244,7 +279,7 @@ func ModelCost(modelName string) (float64, error) {
 			return item.Credits, nil
 		}
 	}
-	return 0, nil
+	return 0, safeMessageError{message: "模型未配置算力点价格"}
 }
 
 func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting {
@@ -275,6 +310,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 }
 
 func hidePrivateAPIKeys(settings model.Settings) model.Settings {
+	settings.Private.Gateway = publicGatewayConfig(settings.Private.Gateway)
 	for i := range settings.Private.Channels {
 		settings.Private.Channels[i].APIKey = ""
 		settings.Private.Channels[i].UploadAPIKey = ""
@@ -293,7 +329,7 @@ func keepPrivateAPIKeys(settings *model.Settings, saved model.Settings) {
 			if strings.TrimSpace(settings.Private.Channels[i].APIKey) != "" {
 				continue
 			}
-			if channel, ok := findSavedChannel(settings.Private.Channels[i], saved.Private.Channels, i); ok {
+			if channel, ok := findSavedChannel(settings.Private.Channels[i], saved.Private.Channels); ok {
 				settings.Private.Channels[i].APIKey = channel.APIKey
 			}
 			continue
@@ -319,14 +355,11 @@ func keepPrivateAuthSecrets(settings *model.Settings, saved model.Settings) {
 	}
 }
 
-func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel, index int) (model.ModelChannel, bool) {
+func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel) (model.ModelChannel, bool) {
 	for _, item := range saved {
-		if item.Name == channel.Name && item.BaseURL == channel.BaseURL {
+		if item.Protocol == channel.Protocol && ((channel.ID != "" && item.ID == channel.ID) || (item.Name == channel.Name && item.BaseURL == channel.BaseURL)) {
 			return item, true
 		}
-	}
-	if index < len(saved) {
-		return saved[index], true
 	}
 	return model.ModelChannel{}, false
 }
@@ -341,9 +374,9 @@ func SelectModelChannelForModel(modelName string, channelID string, publicOnly b
 		return model.ModelChannel{}, err
 	}
 	privateChannels := normalizePrivateSetting(settings.Private).Channels
-	if publicOnly && len(settings.Public.ModelChannel.AvailableModels) > 0 {
+	if publicOnly {
 		selected := filterEnabledModels(settings.Public.ModelChannel.AvailableModels, enabledChannelModels(privateChannels))
-		if len(selected) > 0 && !slices.Contains(selected, modelName) {
+		if !slices.Contains(selected, modelName) {
 			return model.ModelChannel{}, safeMessageError{message: "模型未开放"}
 		}
 	}
@@ -427,7 +460,7 @@ func isArkAgentPlanChannel(channel model.ModelChannel) bool {
 func enabledChannelModels(channels []model.ModelChannel) []string {
 	models := []string{}
 	for _, channel := range channels {
-		if !channel.Enabled || isWorkflowChannelProtocol(channel.Protocol) {
+		if !channel.Enabled || isWorkflowChannelProtocol(channel.Protocol) || strings.TrimSpace(channel.BaseURL) == "" || strings.TrimSpace(channel.APIKey) == "" {
 			continue
 		}
 		models = append(models, channel.Models...)
@@ -532,20 +565,20 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 			return model.ModelChannel{}, err
 		}
 		saved := normalizePrivateSetting(settings.Private).Channels
-		if index != nil && *index >= 0 && *index < len(saved) {
-			if resolved.APIKey == "" {
-				resolved.APIKey = saved[*index].APIKey
-			}
+		var savedChannel model.ModelChannel
+		var found bool
+		if index != nil && *index >= 0 && *index < len(saved) && saved[*index].ID == resolved.ID && saved[*index].Protocol == resolved.Protocol {
+			savedChannel, found = saved[*index], true
+		} else {
+			savedChannel, found = findSavedChannel(resolved, saved)
+		}
+		if found {
+			resolved.APIKey = savedChannel.APIKey
 			if resolved.BaseURL == "" {
-				resolved.BaseURL = saved[*index].BaseURL
+				resolved.BaseURL = savedChannel.BaseURL
 			}
 			if resolved.Name == "" {
-				resolved.Name = saved[*index].Name
-			}
-		}
-		if resolved.APIKey == "" {
-			if savedChannel, ok := findSavedChannel(resolved, saved, -1); ok {
-				resolved.APIKey = savedChannel.APIKey
+				resolved.Name = savedChannel.Name
 			}
 		}
 	}
@@ -990,7 +1023,7 @@ func keepPrivateStorageSecrets(settings *model.Settings, saved model.Settings) {
 		if strings.TrimSpace(current.SecretAccessKey) != "" && strings.TrimSpace(current.Password) != "" {
 			continue
 		}
-		if provider, ok := findSavedStorageProvider(*current, saved.Private.Storage.Providers, i); ok {
+		if provider, ok := findSavedStorageProvider(*current, saved.Private.Storage.Providers); ok {
 			if strings.TrimSpace(current.SecretAccessKey) == "" {
 				current.SecretAccessKey = provider.SecretAccessKey
 			}
@@ -1001,24 +1034,28 @@ func keepPrivateStorageSecrets(settings *model.Settings, saved model.Settings) {
 	}
 }
 
-func findSavedStorageProvider(provider model.StorageProvider, saved []model.StorageProvider, index int) (model.StorageProvider, bool) {
+func findSavedStorageProvider(provider model.StorageProvider, saved []model.StorageProvider) (model.StorageProvider, bool) {
 	for _, item := range saved {
-		if provider.ID != "" && item.ID == provider.ID {
+		if provider.ID != "" && item.ID == provider.ID && item.Type == provider.Type {
 			return item, true
 		}
 		if item.Type == provider.Type && item.Name == provider.Name && item.Endpoint == provider.Endpoint && item.Bucket == provider.Bucket && (provider.Type != model.StorageProviderTypeWebDAV || item.PathPrefix == provider.PathPrefix) {
 			return item, true
 		}
 	}
-	if index >= 0 && index < len(saved) && saved[index].Type == provider.Type {
-		return saved[index], true
-	}
 	return model.StorageProvider{}, false
 }
 
 func validateEnabledStorageProviderTypes(providers []model.StorageProvider) error {
 	enabledType := ""
+	ids := map[string]bool{}
 	for _, provider := range providers {
+		if provider.ID == localStorageProviderID || provider.ID != "" && ids[provider.ID] {
+			return safeMessageError{message: "存储配置 ID 重复或使用了保留名称"}
+		}
+		if provider.ID != "" {
+			ids[provider.ID] = true
+		}
 		if provider.Type != model.StorageProviderTypeS3 && provider.Type != model.StorageProviderTypeWebDAV {
 			return safeMessageError{message: "存储类型不支持"}
 		}
@@ -1037,9 +1074,16 @@ func validateEnabledStorageProviderTypes(providers []model.StorageProvider) erro
 }
 
 func normalizePrivateStorageSetting(setting model.PrivateStorageSetting) model.PrivateStorageSetting {
-	if setting.Mode == "" {
-		setting.Mode = "local_indexeddb"
+	if setting.Mode == "" || setting.Mode == "local_indexeddb" || setting.Mode == "hybrid" || setting.Mode == "server_sqlite_s3" {
+		setting.Mode = "local"
 		setting.AllowUserGlobalProvider = true
+		setting.AutoSyncAllAssets = true
+		for _, provider := range setting.Providers {
+			if provider.Enabled && provider.Type == model.StorageProviderTypeS3 {
+				setting.Mode = "r2"
+				break
+			}
+		}
 	}
 	if setting.CapacityLimitBytes <= 0 {
 		setting.CapacityLimitBytes = 9 * 1024 * 1024 * 1024
@@ -1137,9 +1181,12 @@ func publicChannelInfos(channels []model.ModelChannel, availableModels, availabl
 	}
 	for _, channel := range channels {
 		if isWorkflowChannelProtocol(channel.Protocol) {
+			if !channel.Enabled {
+				continue
+			}
 			workflows := []model.WorkflowSummary{}
 			for _, entry := range channel.Workflows {
-				if !entry.Enabled || entry.Provider != channel.Protocol || (len(availableWorkflows) > 0 && !allowed[workflowBillingName(WorkflowRef{Scope: "system", ChannelID: channel.ID, Kind: entry.Kind, WorkflowID: entry.WorkflowID})]) {
+				if !entry.Enabled || entry.Provider != channel.Protocol || !allowed[workflowBillingName(WorkflowRef{Scope: "system", ChannelID: channel.ID, Kind: entry.Kind, WorkflowID: entry.WorkflowID})] {
 					continue
 				}
 				workflows = append(workflows, model.WorkflowSummary{
@@ -1150,20 +1197,17 @@ func publicChannelInfos(channels []model.ModelChannel, availableModels, availabl
 			if len(workflows) > 0 {
 				result = append(result, model.PublicModelChannelInfo{
 					ID: channel.ID, Protocol: channel.Protocol, Name: channel.Name,
-					Models: []string{}, Workflows: workflows,
+					Models: []string{}, Workflows: workflows, Enabled: channel.Enabled,
 				})
 			}
 			continue
 		}
-		if !channel.Enabled || channel.BaseURL == "" || len(channel.Models) == 0 {
+		if !channel.Enabled || strings.TrimSpace(channel.BaseURL) == "" || strings.TrimSpace(channel.APIKey) == "" || len(channel.Models) == 0 {
 			continue
 		}
-		models := append([]string{}, channel.Models...)
-		if len(availableModels) > 0 {
-			models = filterEnabledModels(models, availableModels)
-			if len(models) == 0 {
-				continue
-			}
+		models := filterEnabledModels(channel.Models, availableModels)
+		if len(models) == 0 {
+			continue
 		}
 		modelCapabilities := map[string]string{}
 		for _, name := range models {

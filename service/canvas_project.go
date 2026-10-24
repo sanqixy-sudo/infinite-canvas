@@ -86,9 +86,15 @@ func SaveCurrentUserCanvasProject(
 	if err != nil {
 		return nil, err
 	}
-	saved, err := repository.SaveUserCanvasProject(project)
+	storageIDs, err := storageReferenceIDs(string(raw))
 	if err != nil {
 		return nil, err
+	}
+	saved, err := repository.SaveUserCanvasProjectValidated(project, storageIDs, func(previous string, docs []model.ProductionDocument) error {
+        return validateProductionNodeChanges(project.ID, previous, project.ProjectData, docs)
+    })
+	if err != nil {
+		return nil, storageReferenceError(err)
 	}
 	if saved.DeletedAt != "" {
 		return nil, errors.New("画布项目已删除")
@@ -105,20 +111,12 @@ func SyncCurrentUserCanvasProjects(
 		return nil, errors.New("请先登录")
 	}
 
-	projects := make([]model.CanvasProject, 0, len(rawProjects))
 	for _, raw := range rawProjects {
-		project, err := canvasProjectFromRaw(user.ID, raw)
-		if err != nil {
+		if _, err := SaveCurrentUserCanvasProject(ctx, raw); err != nil {
 			return nil, err
 		}
-		projects = append(projects, project)
 	}
-
-	saved, err := repository.SaveUserCanvasProjects(user.ID, projects)
-	if err != nil {
-		return nil, err
-	}
-	return canvasProjectData(saved), nil
+	return CurrentUserCanvasProjects(ctx)
 }
 
 func DeleteCurrentUserCanvasProjects(
@@ -132,11 +130,15 @@ func DeleteCurrentUserCanvasProjects(
 
 	for _, projectID := range projectIDs {
 		if strings.TrimSpace(projectID) != "" {
-			return repository.SoftDeleteUserCanvasProjects(
+			err := repository.SoftDeleteUserCanvasProjects(
 				user.ID,
 				projectIDs,
 				time.Now().UTC().Format(time.RFC3339Nano),
 			)
+			if errors.Is(err, repository.ErrProductionCanvasReferenced) {
+				return safeMessageError{message: "画布仍被短剧制作计划引用，请先在短剧制作中解除关联；删除整个项目时请先删除制作计划"}
+			}
+			return err
 		}
 	}
 	return errors.New("画布项目参数无效")

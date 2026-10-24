@@ -5,6 +5,7 @@ import { ArrowUp, Brain, FolderOpen, ImageIcon, Menu, Square, Upload, Video } fr
 import { Button, Dropdown } from "antd";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { withFixedGatewayVideoSize } from "@/lib/model-gateway";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasAgentConfig, type CanvasAgentSkillSelection, type CanvasAssistantReference } from "../types";
@@ -59,7 +60,7 @@ export function CanvasAssistantComposer({
     const effectiveConfig = useEffectiveConfig();
     const reasoningEnabled = agentConfig.textReasoningEnabled === true;
     const imageConfig = useMemo(() => ({ ...effectiveConfig, quality: agentConfig.imageQuality, size: agentConfig.imageSize }), [agentConfig.imageQuality, agentConfig.imageSize, effectiveConfig]);
-    const videoConfig = useMemo(() => ({ ...effectiveConfig, activeChannelId: effectiveConfig.videoChannelId || effectiveConfig.activeChannelId, vquality: agentConfig.videoQuality, size: agentConfig.videoSize }), [agentConfig.videoQuality, agentConfig.videoSize, effectiveConfig]);
+    const videoConfig = useMemo(() => withFixedGatewayVideoSize({ ...effectiveConfig, model: effectiveConfig.videoModel || effectiveConfig.model, activeChannelId: effectiveConfig.videoChannelId || effectiveConfig.activeChannelId, vquality: agentConfig.videoQuality, size: agentConfig.videoSize }), [agentConfig.videoQuality, agentConfig.videoSize, effectiveConfig]);
     const promptReferences = useMemo(() => {
         const seen = new Set<string>();
         return [...(availableReferences || []), ...references.map(assistantToPromptReference)].filter((reference) => {

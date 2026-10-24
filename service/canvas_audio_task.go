@@ -1,6 +1,11 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"math"
 	"strings"
 
 	"github.com/google/uuid"
@@ -26,9 +31,12 @@ type CanvasAudioTaskCreateInput struct {
 	Endpoint        string
 	ContentType     string
 	RequestBody     string
+	RawRequest      []byte
+	MaxCredits      *float64
 }
 
 func CreateCanvasAudioTask(input CanvasAudioTaskCreateInput) (model.CanvasAudioTask, error) {
+	if input.MaxCredits!=nil&&(math.IsNaN(*input.MaxCredits)||math.IsInf(*input.MaxCredits,0)||*input.MaxCredits<0){return model.CanvasAudioTask{},fmt.Errorf("确认算力无效")}
 	current := now()
 	task := model.CanvasAudioTask{
 		ID:              firstVideoTaskValue(input.ClientTaskID, "canvas_audio_task_"+uuid.NewString()),
@@ -49,20 +57,28 @@ func CreateCanvasAudioTask(input CanvasAudioTaskCreateInput) (model.CanvasAudioT
 		Endpoint:        strings.TrimSpace(input.Endpoint),
 		ContentType:     strings.TrimSpace(input.ContentType),
 		RequestBody:     input.RequestBody,
+		MaxCredits:      input.MaxCredits,
 		CreatedAt:       current,
 		UpdatedAt:       current,
 	}
+	body:=input.RawRequest;if len(body)==0{body=[]byte(input.RequestBody)}
+	fingerprint,_:=json.Marshal([]any{task.UserID,task.Model,task.ChannelID,task.UserChannelID,task.Endpoint,task.ContentType,task.SourceID,task.NodeID,task.Prompt,string(body),input.MaxCredits})
+	hash:=sha256.Sum256(fingerprint);task.RequestHash=hex.EncodeToString(hash[:])
 	saved := task
 	var err error
+	ids, err := taskStorageReferenceIDs(task)
+	if err != nil {
+		return task, err
+	}
 	if input.WorkflowRef != "" {
 		err = ConsumeUserCredits(task.UserID, input.BillingName, task.Credits, input.BillingPath, &task)
 	} else {
-		saved, err = repository.SaveCanvasAudioTask(task)
+		saved, err = repository.SaveCanvasAudioTask(task, ids...)
 	}
 	if err == nil {
 		WakeVideoTaskPoller()
 	}
-	return saved, err
+	return saved, storageReferenceError(err)
 }
 
 func GetUserCanvasAudioTask(userID string, id string) (model.CanvasAudioTask, bool, error) {
@@ -71,7 +87,12 @@ func GetUserCanvasAudioTask(userID string, id string) (model.CanvasAudioTask, bo
 
 func SaveCanvasAudioTask(task model.CanvasAudioTask) (model.CanvasAudioTask, error) {
 	task.UpdatedAt = now()
-	return repository.UpdateCanvasAudioTask(task)
+	ids, err := taskStorageReferenceIDs(task)
+	if err != nil {
+		return task, err
+	}
+	saved, err := repository.UpdateCanvasAudioTask(task, ids...)
+	return saved, storageReferenceError(err)
 }
 
 func CanvasAudioTaskResponse(task model.CanvasAudioTask) map[string]any {

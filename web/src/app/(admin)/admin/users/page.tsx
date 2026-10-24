@@ -2,7 +2,7 @@
 
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
-import { Avatar, Button, Card, Col, Divider, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Tag, Tooltip, Typography } from "antd";
+import { App, Avatar, Button, Card, Col, Divider, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
@@ -22,7 +22,8 @@ const statusOptions = [
 ];
 
 export default function AdminUsersPage() {
-    const { users, keyword, page, pageSize, total, isLoading, searchUsers, changePage, changePageSize, resetFilters, refreshUsers, saveUser: saveAdminUser, adjustCredits, deleteUser } = useAdminUsers();
+    const { message, modal } = App.useApp();
+    const { users, keyword, page, pageSize, total, isLoading, isAdjustingCredits, searchUsers, changePage, changePageSize, resetFilters, refreshUsers, saveUser: saveAdminUser, adjustCredits, deleteUser } = useAdminUsers();
     const [form] = Form.useForm<UserFormValues>();
     const [keywordText, setKeywordText] = useState(keyword);
     const [editingUser, setEditingUser] = useState<Partial<AdminUser> | null>(null);
@@ -42,9 +43,21 @@ export default function AdminUsersPage() {
         setEditingUser(null);
     };
 
-    const saveCredits = async () => {
+    const saveCredits = () => {
         if (!editingUser?.id) return;
-        await adjustCredits(editingUser.id, form.getFieldValue("credits") || 0);
+        const credits = form.getFieldValue("credits");
+        if (typeof credits !== "number" || !Number.isFinite(credits) || credits < 0) {
+            message.error("请输入有效的目标余额");
+            return;
+        }
+        const id = editingUser.id;
+        modal.confirm({
+            title: "确认设置算力点余额",
+            content: `「${editingUser.displayName || editingUser.username}」的余额将设置为 ${credits}，系统会按服务器当前余额计算变动并记录流水。`,
+            okText: "确认设置",
+            cancelText: "取消",
+            onOk: () => adjustCredits(id, credits),
+        });
     };
 
     const columns: ProColumns<AdminUser>[] = [
@@ -225,12 +238,12 @@ export default function AdminUsersPage() {
                             <Typography.Text strong>算力点调整</Typography.Text>
                             <Row gutter={14}>
                                 <Col span={12}>
-                                    <Form.Item label="算力点">
+                                    <Form.Item label="目标余额" extra="填写调整后的总余额，确认后自动生成流水。">
                                         <Space.Compact style={{ width: "100%" }}>
                                             <Form.Item name="credits" noStyle>
                                                 <InputNumber min={0} step={0.01} precision={2} style={{ width: "100%" }} />
                                             </Form.Item>
-                                            <Button onClick={() => void saveCredits()}>调整</Button>
+                                            <Button loading={isAdjustingCredits} onClick={saveCredits}>设置余额</Button>
                                         </Space.Compact>
                                     </Form.Item>
                                 </Col>

@@ -1,233 +1,139 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
-import { type ChangeEvent, useEffect, useRef, useState } from "react";
-import { App, Button, Image, Tag } from "antd";
-import { nanoid } from "nanoid";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useEffect } from "react";
+import { ArrowRight, ArrowUpRight, FolderOpen, ImageIcon, Layers3, MousePointer2, Play, Plus, Sparkles, Tag } from "lucide-react";
+import { BrandMark } from "@/components/brand/brand-mark";
+import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
+import { loginHrefForPath } from "@/lib/auth-navigation";
+import { useThemeStore } from "@/stores/use-theme-store";
+import { useUserStore } from "@/stores/use-user-store";
+import CreationShowcase from "./components/creation-showcase";
+import LandingFaq from "./components/landing-faq";
+import styles from "./landing.module.css";
 
-import { fetchPrompts, type Prompt } from "@/services/api/prompts";
-import { cn } from "@/lib/utils";
-import { uploadAssetMediaFile } from "@/services/file-storage";
-import { uploadImage } from "@/services/image-storage";
-import { useEffectiveConfig } from "@/stores/use-config-store";
-import { AssetPickerModal } from "./canvas/components/asset-picker-modal";
-import { CanvasAssistantComposer } from "./canvas/components/canvas-assistant-composer";
-import { useCanvasStore } from "./canvas/stores/use-canvas-store";
-import { canvasResourceLabel } from "./canvas/utils/canvas-resource-references";
-import { HomeBannerCarousel, type HomeBanner } from "./home-banner-carousel";
-import {
-    MAX_CANVAS_AGENT_SKILLS,
-    CanvasNodeType,
-    type CanvasAgentConfig,
-    type CanvasAgentSkillSelection,
-    type CanvasAssistantReference,
-    type InsertAssetPayload,
-    type PendingAgentAsset,
-} from "./canvas/types";
-
-
-const HOME_BANNERS: HomeBanner[] = [
-    { imageUrl: "https://gcore.jsdelivr.net/gh/tigerowo/cdn-tdeh@v0.7/img/infinite-canvas/88.webp", videoUrl: "", linkUrl: "https://88api.ai/sign-up?aff=25ty", alt: "1" },
-    { imageUrl: "https://gcore.jsdelivr.net/gh/tigerowo/cdn-tdeh@v0.6/img/infinite-canvas/metaso.webp", videoUrl: "", linkUrl: "https://metaso.cn/minimax-h3/?s=tt", alt: "2" },
-    { imageUrl: "https://gcore.jsdelivr.net/gh/tigerowo/cdn-tdeh@v0.5/img/infinite-canvas/3ddirectortl.webp", videoUrl: "", linkUrl: "", alt: "3" },
-    { imageUrl: "https://gcore.jsdelivr.net/gh/tigerowo/cdn-tdeh@v0.4/img/infinite-canvas/agent.webp", videoUrl: "https://gcore.jsdelivr.net/gh/tigerowo/cdn-tdeh@v0.4/img/infinite-canvas/agent.webm", linkUrl: "", alt: "4" },
-    { imageUrl: "https://gcore.jsdelivr.net/gh/tigerowo/cdn-tdeh@v0.4/img/infinite-canvas/panorama.webp", videoUrl: "", linkUrl: "", alt: "5" },
-    { imageUrl: "https://gcore.jsdelivr.net/gh/tigerowo/cdn-tdeh@v0.4/img/infinite-canvas/3ddirector.webp", videoUrl: "", linkUrl: "", alt: "6" },
-];
-
-function toPendingAgentAsset(payload: InsertAssetPayload, label: string): PendingAgentAsset {
-    const nodeId = nanoid();
-    let reference: CanvasAssistantReference;
-    if (payload.kind === "text") {
-        reference = { id: nodeId, type: CanvasNodeType.Text, title: payload.title, label, text: payload.content };
-    } else {
-        const common = { id: nodeId, title: payload.title, label, storageKey: payload.storageKey, mimeType: payload.mimeType };
-        if (payload.kind === "image") reference = { ...common, type: CanvasNodeType.Image, dataUrl: payload.dataUrl };
-        else if (payload.kind === "video") reference = { ...common, type: CanvasNodeType.Video, url: payload.url };
-        else reference = { ...common, type: CanvasNodeType.Audio, url: payload.url };
-    }
-    return { nodeId, payload, reference };
-}
-
-export default function IndexPage() {
-    const { message } = App.useApp();
-    const router = useRouter();
-    const effectiveConfig = useEffectiveConfig();
-    const createProject = useCanvasStore((state) => state.createProject);
-    const hydrated = useCanvasStore((state) => state.hydrated);
-    const [promptShowcase, setPromptShowcase] = useState<Prompt[]>([]);
-    const [previewIndex, setPreviewIndex] = useState(0);
-    const [previewOpen, setPreviewOpen] = useState(false);
-    const [prompt, setPrompt] = useState("");
-    const [pendingAssets, setPendingAssets] = useState<PendingAgentAsset[]>([]);
-    const [selectedSkills, setSelectedSkills] = useState<CanvasAgentSkillSelection[]>([]);
-    const [assetPickerOpen, setAssetPickerOpen] = useState(false);
-    const [submitting, setSubmitting] = useState(false);
-    const [agentConfig, setAgentConfig] = useState<CanvasAgentConfig>(() => ({
-        textApiMode: "chat",
-        autoGenerateMedia: false,
-        imageQuality: effectiveConfig.quality,
-        imageSize: effectiveConfig.size,
-        videoQuality: effectiveConfig.vquality,
-        videoSize: effectiveConfig.videoSize,
-    }));
-    const uploadInputRef = useRef<HTMLInputElement>(null);
-    const pendingAssetCountsRef = useRef<Record<InsertAssetPayload["kind"], number>>({ text: 0, image: 0, video: 0, audio: 0 });
+export default function HomePage() {
+    const user = useUserStore((state) => state.user);
+    const ready = useUserStore((state) => state.isReady);
+    const theme = useThemeStore((state) => state.theme);
+    const setTheme = useThemeStore((state) => state.setTheme);
+    const startHref = ready && user ? "/workspace" : loginHrefForPath("/workspace");
 
     useEffect(() => {
-        void fetchPrompts({ pageSize: 12 })
-            .then((data) => setPromptShowcase(data.items))
-            .catch((error) => message.error(error instanceof Error ? error.message : "获取提示词失败"));
-    }, [message]);
+        const target = document.getElementById(window.location.hash.slice(1));
+        if (!target) return;
+        // Restore the fragment inside this page's scroll container after hydration.
+        const frame = requestAnimationFrame(() => target.scrollIntoView({ behavior: "instant", block: "start" }));
+        return () => cancelAnimationFrame(frame);
+    }, []);
 
-    const addPendingAsset = (payload: InsertAssetPayload) => {
-        const asset = toPendingAgentAsset(payload, canvasResourceLabel(payload.kind, pendingAssetCountsRef.current[payload.kind]++));
-        setPendingAssets((current) => [...current, asset]);
-        setPrompt((current) => `${current}${current.endsWith(" ") ? "" : " "}${asset.reference.label} `);
-    };
+    return <div className={`${styles.page} h-full overflow-y-auto scroll-smooth bg-background text-foreground motion-reduce:scroll-auto`}>
+        <div id="home-top" aria-hidden="true" />
+        <a href="#main-content" className="sr-only z-50 rounded-lg bg-primary px-4 py-3 text-primary-foreground focus:not-sr-only focus:absolute focus:left-4 focus:top-4">跳到主要内容</a>
+        <header className="sticky top-0 z-30 border-b border-border/60 bg-background/95 backdrop-blur-md">
+            <div className="mx-auto flex h-20 max-w-[1440px] items-center justify-between gap-3 px-5 sm:h-20 sm:px-9 lg:px-12">
+            <a href="#home-top" aria-label="返回首页顶部" className="flex min-w-0 items-center gap-2.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">
+                <BrandMark className="size-8 shrink-0 sm:size-9" />
+                <span><strong className="block whitespace-nowrap text-sm font-semibold tracking-tight sm:text-[15px]">小盟视频工作台</strong><span className="mt-0.5 block text-[8px] tracking-[0.22em] text-muted-foreground">XIAOMENG STUDIO</span></span>
+            </a>
+            <nav aria-label="首页导航" className="hidden items-center gap-4 whitespace-nowrap text-[13px] text-muted-foreground md:flex xl:gap-8">{[{ href: "#home-top", title: "产品概览" }, { href: "#capabilities", title: "核心能力" }, { href: "#creation", title: "功能演示" }, { href: "#workflow", title: "工作流程" }, { href: "#questions", title: "常见问题" }].map((item) => <a key={item.href} href={item.href} className="py-2 transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">{item.title}</a>)}</nav>
+            <div className="flex shrink-0 items-center gap-1 sm:gap-4">
+                <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground [&_svg]:size-4" aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
+                <Link href={startHref} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border px-3 text-xs sm:px-4 font-medium transition hover:border-foreground/40 hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">{ready && user ? "进入工作台" : "登录"}<ArrowUpRight className="hidden size-3.5 sm:block" /></Link>
+            </div>
+            </div>
+        </header>
 
-    const uploadFile = async (file: File) => {
-        try {
-            if (file.type.startsWith("image/")) {
-                const uploaded = await uploadImage(file);
-                addPendingAsset({ kind: "image", dataUrl: uploaded.url, title: file.name, ...uploaded });
-            } else if (file.type.startsWith("video/") || file.type.startsWith("audio/")) {
-                const uploaded = await uploadAssetMediaFile(file);
-                if (file.type.startsWith("video/")) addPendingAsset({ kind: "video", title: file.name, ...uploaded });
-                else addPendingAsset({ kind: "audio", title: file.name, ...uploaded });
-            } else {
-                throw new Error("仅支持图片、视频和音频文件");
-            }
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "素材上传失败");
-        }
-    };
-
-    const onUploadInputChange = (event: ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        event.target.value = "";
-        if (file) void uploadFile(file);
-    };
-
-    const submit = (nextPrompt = prompt, referenceIds = pendingAssets.map((asset) => asset.nodeId)) => {
-        const text = nextPrompt.trim();
-        if (!text || submitting) return;
-        if (!hydrated) {
-            message.info("画布数据正在加载，请稍后再试");
-            return;
-        }
-        setSubmitting(true);
-        const titles = new Set(useCanvasStore.getState().projects.map(({ title }) => title));
-        let title = "无限画布";
-        for (let i = 1; titles.has(title); i++) title = `无限画布 ${i}`;
-        const projectId = createProject(title, {
-            agentConfig,
-            pendingAgentRequest: { prompt: text, assets: pendingAssets.filter((asset) => referenceIds.includes(asset.nodeId)), skills: selectedSkills },
-        });
-        router.push(`/canvas/${projectId}`);
-    };
-
-    const selectSkill = (skill: CanvasAgentSkillSelection) => {
-        const existingIndex = selectedSkills.findIndex((selected) => selected.id === skill.id && selected.source === skill.source);
-        if (existingIndex >= 0) return setSelectedSkills(selectedSkills.map((selected, index) => index === existingIndex ? skill : selected));
-        if (selectedSkills.length >= MAX_CANVAS_AGENT_SKILLS) return void message.warning(`最多选择 ${MAX_CANVAS_AGENT_SKILLS} 个 Skill`);
-        setSelectedSkills([...selectedSkills, skill]);
-    };
-
-    return (
-        <main className="relative h-full overflow-x-hidden overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] text-stone-950 dark:bg-[radial-gradient(rgba(245,245,244,.18)_1px,transparent_1px)] dark:text-stone-100">
-            <section className="relative mx-auto min-h-[calc(100vh-4rem)] max-w-7xl px-6">
-                <section className="relative flex min-h-[620px] flex-col items-center justify-center py-10 sm:py-14">
-                    <HomeBannerCarousel banners={HOME_BANNERS} />
-                    <div className="mt-12 w-full max-w-[820px]">
-                        <CanvasAssistantComposer
-                            prompt={prompt}
-                            isRunning={false}
-                            references={pendingAssets.map((asset) => asset.reference)}
-                            selectedSkills={selectedSkills}
-                            agentConfig={agentConfig}
-                            onAgentConfigChange={(patch) => setAgentConfig((current) => ({ ...current, ...patch }))}
-                            onPromptChange={setPrompt}
-                            onReferenceIdsChange={(ids) => setPendingAssets((current) => current.filter((asset) => ids.includes(asset.nodeId)))}
-                            onSkillSelect={selectSkill}
-                            onSkillRemove={(id, source) => setSelectedSkills((current) => current.filter((skill) => skill.id !== id || skill.source !== source))}
-                            onSubmit={submit}
-                            onOpenUpload={() => uploadInputRef.current?.click()}
-                            onOpenAssets={() => setAssetPickerOpen(true)}
-                            onPasteImage={(file) => void uploadFile(file)}
-                        />
+        <main id="main-content" className="mx-auto max-w-[1440px] px-5 sm:px-9 lg:px-12">
+            <section className={styles.hero} aria-labelledby="home-title">
+                <div className={styles.intro}>
+                    <p className="inline-flex items-center gap-2.5 text-xs font-medium tracking-wide text-muted-foreground"><span className="size-1.5 rounded-full bg-foreground" />无限画布 · AI 影像创作空间</p>
+                    <h1 id="home-title" className={styles.title}>让灵感相连，<br /><span className="text-muted-foreground">让故事成片。</span></h1>
+                    <p className="mt-6 max-w-[360px] text-[15px] leading-[1.9] text-muted-foreground sm:mt-7 sm:text-base">从一句想法到一组镜头，<br />把文字、画面与视频连接在同一张画布。<br />让每次创作，都有迹可循。</p>
+                    <div className="mt-8 flex flex-wrap items-center gap-5 sm:mt-9">
+                        <Link href={startHref} className="group inline-flex min-h-12 items-center gap-8 rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground transition hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">进入工作台<ArrowRight className="size-4 transition-transform group-hover:translate-x-1 motion-reduce:transition-none" /></Link>
+                        <a href="#creation" className="inline-flex min-h-12 items-center gap-2 text-[13px] text-muted-foreground transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><span className="flex size-7 items-center justify-center rounded-full border border-border"><Play className="ml-0.5 size-3" /></span>看看如何创作</a>
                     </div>
-                    <input ref={uploadInputRef} hidden type="file" accept="image/*,video/*,audio/*" onChange={onUploadInputChange} />
-                </section>
-
-                <section className="relative mx-auto mb-20 max-w-6xl border-t border-stone-200 pt-12 dark:border-stone-800">
-                    <div className="mb-8 grid gap-4 md:grid-cols-[1fr_auto_1fr] md:items-start">
-                        <div />
-                        <div className="max-w-2xl text-center">
-                            <div className="flex flex-wrap items-center justify-center gap-3">
-                                <h2 className="text-3xl font-semibold text-stone-950 dark:text-stone-100">沉淀每一次好结果</h2>
-                                <Button type="primary" size="middle" href="https://prompts.tdeh.top/" target="_blank" className="-translate-y-[6px]">提示词仓库</Button>
+                    <div className="mt-9 flex items-center gap-3 text-xs text-muted-foreground"><span className="flex size-8 items-center justify-center rounded-lg border border-border"><Layers3 className="size-4" strokeWidth={1.4} /></span><span>一个项目，多张画布。<br /><span className="mt-1 block text-[11px] opacity-80">属于你的创作工作室</span></span></div>
+                </div>
+                <figure className={`${styles.preview} min-w-0`} aria-label="从灵感脚本到分镜与影像的画布流程示意">
+                    <div className="mb-3 flex items-center justify-between px-1 text-[10px] tracking-[0.12em] text-muted-foreground"><span>灵感，由此展开</span><span className="font-mono tracking-[0.18em]">THE CREATIVE CANVAS</span></div>
+                    <div className={styles.frame}>
+                        <div className="flex h-12 items-center justify-between gap-3 border-b border-border/70 px-4 sm:px-5"><span className="flex items-center gap-2 text-xs font-medium"><FolderOpen className="size-3.5 text-muted-foreground" />城市来信<span className="ml-1 hidden rounded border border-border px-1.5 py-0.5 text-[9px] font-normal text-muted-foreground sm:inline">创作示意</span></span><span className="flex items-center gap-1.5 text-[10px] text-muted-foreground"><span className="size-1 rounded-full bg-current" />无限画布</span></div>
+                        <div className={styles.canvas}>
+                            <svg className="pointer-events-none absolute inset-0 size-full text-muted-foreground/60" viewBox="0 0 100 100" preserveAspectRatio="none" fill="none" aria-hidden="true"><path d="M49 24H51Q55 24 55 32V48H58M49 71H51Q55 71 55 63V52Q55 48 58 48" stroke="currentColor" strokeWidth="1.2" vectorEffect="non-scaling-stroke" /></svg>
+                            <div className="relative flex min-w-0 flex-col gap-4 sm:gap-5">
+                                <div className="relative"><span className={`${styles.port} -right-[3px] top-1/2`} aria-hidden="true" /><div className={`${styles.node} p-3 sm:p-3.5`}><div className="mb-2 flex items-center gap-2 text-[10px] text-muted-foreground"><span className="font-serif text-sm italic">T</span>灵感脚本<span className="ml-auto font-mono opacity-60">01</span></div><p className="!mb-0 text-xs font-medium leading-[1.8] sm:text-[14px]">日落之后，<br />城市开始讲故事。</p></div></div>
+                                <div className="relative"><span className={`${styles.port} -right-[3px] top-1/2`} aria-hidden="true" /><div className={styles.node}><div className="flex items-center justify-between px-3 py-2.5 text-[10px] text-muted-foreground"><span>分镜参考</span><span className="font-mono opacity-60">02</span></div><div className="mx-1.5 aspect-[1.6] overflow-hidden rounded-md"><img src="/showcase/storyboard-city.webp" alt="" width={800} height={500} decoding="async" className="block size-full object-cover" /></div><p className="!mb-0 px-3 py-2.5 text-[9px] leading-4 text-muted-foreground">远景 · 暮色里的城市</p></div></div>
                             </div>
-                            <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">收藏稳定出图的提示词、参考风格和结果图片，让下一次创作从已有经验开始。</p>
+                            <div className="relative mt-6 min-w-0"><span className={`${styles.port} -left-[3px] top-1/2`} aria-hidden="true" /><div className={styles.node}><div className="flex items-center gap-1.5 px-3 py-2.5 text-[10px] text-muted-foreground"><Play className="size-3" />影像片段<span className="ml-auto font-mono opacity-60">03</span></div><div className="relative mx-1.5 aspect-[.82] overflow-hidden rounded-md sm:aspect-[.86]"><img src="/showcase/film-city.webp" alt="" width={800} height={800} decoding="async" className="block size-full object-cover object-[45%_center]" /><span className="absolute inset-0 flex items-center justify-center" aria-hidden="true"><span className="flex size-9 items-center justify-center rounded-full border border-white/40 bg-black/20 text-white backdrop-blur-sm sm:size-11"><Play className="ml-0.5 size-4" fill="currentColor" /></span></span></div><div className="flex items-center justify-between px-3 py-3 text-[9px] text-muted-foreground"><span>城市来信 / 镜头 01</span><span>预览帧</span></div></div></div>
                         </div>
-                        <Button type="link" href="/prompts" className="justify-self-center md:justify-self-end" icon={<ArrowRight className="size-4" />} iconPlacement="end">
-                            提示词库
-                        </Button>
+                        <div className="flex items-center justify-between border-t border-border/70 px-4 py-3 text-[10px] text-muted-foreground sm:px-5"><span className="flex items-center gap-2"><span className="flex items-center gap-1"><Plus className="size-3" />节点</span><span className="mx-1 h-3 w-px bg-border" /><Layers3 className="size-3" />画布 01</span><span className="flex items-center gap-1.5"><MousePointer2 className="size-3" />继续你的故事</span></div>
                     </div>
-                    <div className="grid auto-rows-[210px] gap-4 md:grid-cols-4">
-                        {promptShowcase.map((item, index) => (
-                            <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => {
-                                    setPreviewIndex(index);
-                                    setPreviewOpen(true);
-                                }}
-                                className={cn(
-                                    "group relative cursor-pointer overflow-hidden border border-stone-200 bg-stone-100 text-left dark:border-stone-800 dark:bg-stone-900",
-                                    index === 0 && "md:col-span-2 md:row-span-2",
-                                    index === 3 && "md:col-span-2",
-                                )}
-                            >
-                                <img src={item.coverUrl} alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
-                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/35 to-transparent p-4 text-white">
-                                    <div className="mb-2 flex flex-wrap gap-1.5">
-                                        {item.tags.slice(0, 2).map((tag) => (
-                                            <Tag key={tag} variant="filled" className="m-0 bg-white/15 text-[11px] text-white backdrop-blur">
-                                                {tag}
-                                            </Tag>
-                                        ))}
-                                    </div>
-                                    <h3 className="text-sm font-medium">{item.title}</h3>
-                                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/75">{item.prompt}</p>
-                                </div>
-                            </button>
-                        ))}
-                    </div>
-                </section>
+                    <figcaption className="mt-4 flex items-center justify-between gap-3 text-[10px] leading-5 text-muted-foreground"><span className="inline-flex items-center gap-2"><span className="h-px w-5 bg-border" />从灵感，到画面，再到故事</span><span>创作流程示意</span></figcaption>
+                </figure>
             </section>
-            <AssetPickerModal
-                open={assetPickerOpen}
-                defaultTab="my-assets"
-                onInsert={(payload) => {
-                    addPendingAsset(payload);
-                    setAssetPickerOpen(false);
-                }}
-                onClose={() => setAssetPickerOpen(false)}
-            />
-            <Image.PreviewGroup
-                items={promptShowcase.map((item) => ({
-                    src: item.coverUrl,
-                    alt: item.title,
-                }))}
-                preview={{
-                    open: previewOpen,
-                    current: previewIndex,
-                    onOpenChange: setPreviewOpen,
-                    onChange: setPreviewIndex,
-                }}
-            />
+
+            <section aria-labelledby="capabilities-title" className={styles.capabilities}>
+                <div id="capabilities" className={styles.capabilitiesHeading}>
+                    <div><p className={styles.eyebrow}>项目 · 画布 · 素材</p><h2 id="capabilities-title" className={styles.sectionTitle}>核心能力</h2></div>
+                    <p>围绕无限画布，把项目组织、模型创作与素材管理连接起来。<br className="hidden sm:block" />从一个想法出发，逐步搭建你的作品。</p>
+                </div>
+                <div className={styles.capabilityGrid}>
+                    {[
+                        { Icon: Layers3, title: "项目与多画布", text: "一个项目容纳多张画布。把灵感、分镜与不同版本分别展开，让长篇创作也有清晰结构。", features: ["项目管理", "多张画布", "节点连接"] },
+                        { Icon: Sparkles, title: "平台云端模型", text: "在画布里选择平台开放的模型，结合文字与参考素材展开创作，无需自行配置模型密钥。", features: ["平台统一配置", "画布内创作", "上下文参考"] },
+                        { Icon: FolderOpen, title: "素材目录与标签", text: "用多级文件夹与标签整理素材。按偏好保存在当前浏览器或账号素材库，再带入下一张画布。", features: ["多级目录", "标签检索", "按需存入素材库"] },
+                    ].map(({ Icon, title, text, features }, index) => <article key={title} className={styles.capability}>
+                        <div className={styles.capabilityIndex}><Icon size={22} strokeWidth={1.3} aria-hidden="true" /><span>0{index + 1}</span></div>
+                        <h3>{title}</h3><p>{text}</p>
+                        <ul>{features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
+                    </article>)}
+                </div>
+            </section>
+
+            <CreationShowcase />
+
+            <section aria-labelledby="workflow-title" className={styles.workflow}>
+                <div id="workflow" className="mb-9 flex flex-wrap items-end justify-between gap-5 sm:mb-12"><div><p className={styles.eyebrow}>从灵感到作品 · 创作路径</p><h2 id="workflow-title" className={styles.sectionTitle}>创作的每一步，<br className="sm:hidden" />都在同一个空间。</h2></div><Link href={startHref} className="inline-flex min-h-10 items-center gap-3 text-sm font-medium underline decoration-border underline-offset-8 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring">进入工作台<ArrowUpRight className="size-4" /></Link></div>
+                <ol className={styles.workflowSteps}>
+                    <li>
+                        <div className={styles.stepVisual} aria-label="一个项目组织多张画布的示意">
+                            <div className={styles.projectStack}>
+                                <div className={styles.projectName}><FolderOpen size={18} strokeWidth={1.5} /><span>我的第一部作品</span><span className="ml-auto font-mono text-[10px] text-muted-foreground">PROJECT</span></div>
+                                <div className={styles.canvasBranch}><span><Layers3 size={15} />灵感与脚本</span><span><Layers3 size={15} />分镜与画面</span></div>
+                            </div>
+                            <span className={styles.visualCaption}>一个项目，多张画布</span>
+                        </div>
+                        <div className={styles.stepCopy}><span>01</span><div><h3>给灵感一个位置</h3><p>用项目收拢想法，用多张画布展开场景、章节和不同的创作方向。</p></div></div>
+                    </li>
+                    <li>
+                        <div className={styles.stepVisual} aria-label="文字和图像节点相连的示意">
+                            <div className={styles.nodePath}><span className={styles.textTile}><span className="font-serif text-lg italic">T</span><span>日落之后，<br />故事才刚刚开始。</span></span><span className={styles.pathLine} aria-hidden="true"><ArrowRight size={13} /></span><div className={styles.imageTile}><img src="/showcase/storyboard-city.webp" width={800} height={500} alt="" loading="lazy" /><span><ImageIcon size={12} />城市分镜</span></div></div>
+                            <span className={styles.visualCaption}>文字、图像、视频在此相连</span>
+                        </div>
+                        <div className={styles.stepCopy}><span>02</span><div><h3>把想法连接成画面</h3><p>添加文字与参考素材，选择平台开放的模型，在画布里推敲每个镜头。</p></div></div>
+                    </li>
+                    <li>
+                        <div className={styles.stepVisual} aria-label="素材目录与标签的示意">
+                            <div className={styles.libraryPreview}><div className="flex items-center gap-2 text-xs"><FolderOpen size={14} />城市影像<span className="ml-auto text-muted-foreground">素材收藏</span></div><div className={styles.libraryImages}><img src="/showcase/storyboard-city.webp" width={800} height={500} alt="" loading="lazy" /><img src="/showcase/film-city.webp" width={800} height={800} alt="" loading="lazy" /></div><span className="flex items-center gap-2 text-[10px] text-muted-foreground"><Tag size={11} />城市 / 暮色 / 故事</span></div>
+                            <span className={styles.visualCaption}>好素材，带进下一次创作</span>
+                        </div>
+                        <div className={styles.stepCopy}><span>03</span><div><h3>让好结果积累下来</h3><p>用文件夹与标签整理素材，按偏好保存在当前浏览器或账号素材库。</p></div></div>
+                    </li>
+                </ol>
+                <p className="!mb-0 mt-5 text-right text-[11px] text-muted-foreground">创作结构示意 · 影像用于展示</p>
+            </section>
+
+            <LandingFaq />
+
+            <section className={styles.closing} aria-labelledby="closing-title">
+                <img src="/showcase/storyboard-city.webp" width={800} height={500} alt="" loading="lazy" className={styles.closingImage} />
+                <div className={styles.closingCopy}><span className="mb-7 flex items-center gap-3 text-[10px] tracking-[.18em] text-white/70"><BrandMark className="size-6" />XIAOMENG STUDIO</span><h2 id="closing-title">故事还未开始。<br />画布，已经准备好了。</h2><p>给下一次灵感，留一个可以展开的空间。</p><Link href={startHref} className="group mt-7 inline-flex min-h-12 items-center gap-8 rounded-xl bg-white px-6 text-sm font-medium text-neutral-950 transition hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">进入工作台<ArrowRight className="size-4 transition-transform group-hover:translate-x-1 motion-reduce:transition-none" /></Link></div>
+                <div className={styles.closingFootnote}><span>项目 · 画布 · 素材</span><span>为你的下一部作品而来</span></div>
+            </section>
         </main>
-    );
+        <footer className="border-t border-border"><div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-7 text-[10px] text-muted-foreground sm:px-9 lg:px-12"><span className="flex items-center gap-2"><BrandMark className="size-4" />小盟视频工作台</span><span className="text-[8px] tracking-[0.16em]">XIAOMENG STUDIO · MADE FOR YOUR NEXT IDEA</span></div></footer>
+    </div>;
 }
+

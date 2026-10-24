@@ -14,20 +14,16 @@ import (
 func AutoDLWorkflows(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	var input struct {
-		BaseURL string `json:"baseUrl"`
+		ChannelID string `json:"channelId"`
 		WorkflowID string `json:"workflowId"`
 	}
-	if json.NewDecoder(r.Body).Decode(&input) != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&input) != nil {
 		Fail(w, "AutoDL 工作流参数格式错误")
 		return
 	}
-	var result any
-	var err error
-	if strings.TrimSpace(input.WorkflowID) == "" {
-		result, err = service.AutoDLWorkflows(input.BaseURL)
-	} else {
-		result, err = service.AutoDLWorkflowDetail(input.BaseURL, input.WorkflowID)
-	}
+	result, err := service.CurrentUserAutoDLWorkflows(r.Context(), input.ChannelID, input.WorkflowID)
 	if err != nil {
 		Fail(w, err.Error())
 		return

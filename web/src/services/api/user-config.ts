@@ -1,6 +1,8 @@
 import { apiDelete, apiGet, apiPost } from "@/services/api/request";
+import type { Asset } from "@/stores/use-asset-store";
+import type { AssetOrganizationSnapshot } from "./asset-organization";
 import type { AiConfig } from "@/stores/use-config-store";
-import type { WorkflowChannelData } from "@/lib/workflow-channel";
+import type { WorkflowChannelData, WorkflowRef } from "@/lib/workflow-channel";
 import type { ChannelTranslation } from "@/lib/channel-parameter-translation";
 import { toProviderPayload, type UserS3StorageProvider, type UserStorageProvider, type UserWebDAVStorageProvider } from "@/services/image-storage";
 
@@ -31,8 +33,35 @@ export async function fetchUserConfig(token: string) {
     return apiGet<UserConfigPayload>("/api/v1/user-config", undefined, token);
 }
 
-export async function syncUserModelConfig(token: string, config: AiConfig, workflowChannels?: WorkflowChannelData[], channelTranslations?: ChannelTranslation[]) {
-    return apiPost<UserConfigPayload>("/api/v1/user-config/model", { config: { ...config, ...(workflowChannels === undefined ? {} : { workflowChannels }), ...(channelTranslations === undefined ? {} : { channelTranslations }) } }, token);
+const cloudPreferenceKeys = [
+    "model", "imageModel", "videoModel", "textModel", "audioModel",
+    "activeChannelId", "imageChannelId", "videoChannelId", "textChannelId", "audioChannelId",
+    "audioVoice", "audioFormat", "audioSpeed", "audioInstructions",
+    "grokTtsVoice", "grokTtsLanguage", "grokTtsFormat", "grokTtsSpeed",
+    "glmTtsVoice", "glmTtsFormat", "glmTtsSpeed", "mimoTtsVoice", "mimoTtsFormat", "mimoVoiceDesignPrompt", "geminiTtsVoice",
+    "videoSeconds", "videoMode", "videoNegativePrompt", "videoMultiShot", "videoShotType", "videoMultiPrompt", "videoElementList",
+    "vquality", "videoGenerateAudio", "videoWatermark", "videoCharacterOrientation",
+    "quality", "size", "videoSize", "count", "canvasImageCount", "timeout", "apiMode",
+    "streamImages", "streamPartialImages", "responseFormatB64Json", "systemPrompt", "systemPrompts",
+    "syncStorageConfig", "syncWebDAVStorageConfig",
+] as const satisfies readonly (keyof AiConfig)[];
+
+export function cloudModelPreferences(config: Partial<AiConfig>): Partial<AiConfig> {
+    const preferences = Object.fromEntries(cloudPreferenceKeys.filter((key) => config[key] !== undefined).map((key) => [key, config[key]]));
+    const systemWorkflow = (ref?: WorkflowRef): WorkflowRef | undefined => ref?.scope === "system" && typeof ref.channelId === "string" && typeof ref.workflowId === "string" && (ref.kind === "workflow" || ref.kind === "app")
+        ? { scope: "system", channelId: ref.channelId, kind: ref.kind, workflowId: ref.workflowId }
+        : undefined;
+    return {
+        ...preferences,
+        channelMode: "remote",
+        imageWorkflowRef: systemWorkflow(config.imageWorkflowRef),
+        videoWorkflowRef: systemWorkflow(config.videoWorkflowRef),
+        audioWorkflowRef: systemWorkflow(config.audioWorkflowRef),
+    };
+}
+
+export async function syncUserModelConfig(token: string, config: Partial<AiConfig>) {
+    return apiPost<UserConfigPayload>("/api/v1/user-config/model", { config: cloudModelPreferences(config) }, token);
 }
 
 export type UserStorageProviders = {
@@ -67,6 +96,14 @@ export async function fetchUserAssetData<T>(token: string) {
 
 export async function syncUserAssetData<T>(token: string, data: T) {
     return apiPost<T>("/api/v1/user-data/assets", { data }, token);
+}
+
+export function saveUserAssetItem(token: string, asset: Asset) {
+    return apiPost<AssetOrganizationSnapshot>("/api/v1/user-data/assets/item", { asset }, token);
+}
+
+export function deleteUserAssetItem(token: string, id: string) {
+    return apiDelete<AssetOrganizationSnapshot>(`/api/v1/user-data/assets/item/${encodeURIComponent(id)}`, token);
 }
 
 export type CreativeWorkflowRecord<T = unknown> = {
@@ -108,10 +145,7 @@ export async function draftUserWorkflow<T>(
         scope: "private" | "public";
         model?: string;
         channelId?: string;
-        channelMode?: "remote" | "local";
-        protocol?: string;
-        baseUrl?: string;
-        apiKey?: string;
+        channelMode?: "remote";
         references?: string[];
     },
 ) {

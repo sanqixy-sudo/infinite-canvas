@@ -23,6 +23,7 @@ export function CanvasToolbar({
     onAddConfig,
     onUndo,
     onRedo,
+    onArrange,
     onUpload,
     onDelete,
     onClear,
@@ -47,6 +48,7 @@ export function CanvasToolbar({
     onAddConfig: () => void;
     onUndo: () => void;
     onRedo: () => void;
+    onArrange: () => void;
     onUpload: () => void;
     onDelete: () => void;
     onClear: () => void;
@@ -83,6 +85,9 @@ export function CanvasToolbar({
                     <Redo2 className="size-4.5" />
                 </ToolbarButton>
                 <Divider theme={theme} />
+                <ToolbarButton id="tool-arrange" label="整理布局" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onArrange}>
+                    <Grid2x2 className="size-4.5" />
+                </ToolbarButton>
                 <ToolbarButton id="tool-text" label="文本" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddText}>
                     <Type className="size-4.5" />
                 </ToolbarButton>
@@ -294,6 +299,7 @@ function toolLabel(id: string) {
     if (id === "tool-pan") return "移动";
     if (id === "tool-undo") return "撤销";
     if (id === "tool-redo") return "重做";
+    if (id === "tool-arrange") return "整理选中节点；未选择时整理全部";
     if (id === "tool-text") return "文本";
     if (id === "tool-image") return "图片";
     if (id === "tool-video") return "视频";

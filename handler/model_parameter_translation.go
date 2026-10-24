@@ -68,8 +68,9 @@ func serveParameterTranslation(w http.ResponseWriter, r *http.Request, body []by
 	if r.Header.Get("X-Canvas-Node-Request") == "true" && r.Context().Err() != nil {
 		return true
 	}
-	if credits > 0 {
-		if err := service.ConsumeUserCredits(user.ID, request.Model, credits, path); err != nil {
+	creditTask := service.TaskCreditFromContext(r.Context())
+	if credits > 0 || creditTask.ID != "" {
+		if err := service.ConsumeUserCredits(user.ID, request.Model, credits, path, creditTask); err != nil {
 			FailError(w, err)
 			return true
 		}
@@ -80,7 +81,7 @@ func serveParameterTranslation(w http.ResponseWriter, r *http.Request, body []by
 	logContext = parameterTranslationLog(logContext, translation)
 	if err != nil {
 		if credits > 0 && (r.Header.Get("X-Canvas-Node-Request") != "true" || r.Context().Err() == nil) {
-			_ = service.RefundUserCredits(user.ID, request.Model, credits, path)
+			_ = service.RefundUserCredits(user.ID, request.Model, credits, path, creditTask.LedgerID())
 		}
 		saveAIProxyLog(logContext, result.StatusCode, result.ResponseBody, err.Error())
 		Fail(w, err.Error())
@@ -130,8 +131,8 @@ func serveParameterTranslationVideo(w http.ResponseWriter, r *http.Request, body
 		Fail(w, "当前渠道没有该模型的自定义配置，请刷新渠道设置")
 		return true
 	}
-	if credits > 0 {
-		if err := service.ConsumeUserCredits(user.ID, request.Model, credits, "/videos"); err != nil {
+	if credits > 0 || readClientVideoTaskID(r) != "" {
+		if err := service.ConsumeUserCredits(user.ID, request.Model, credits, "/videos", service.TaskCreditReference{ID: readClientVideoTaskID(r), Kind: "video"}); err != nil {
 			FailError(w, err)
 			return true
 		}
@@ -147,7 +148,7 @@ func serveParameterTranslationVideo(w http.ResponseWriter, r *http.Request, body
 			}
 		}
 		if credits > 0 {
-			refundVideoCredits(user.ID, request.Model, credits, "/videos")
+			refundVideoCredits(user.ID, request.Model, credits, "/videos", readClientVideoTaskID(r))
 		}
 		saveAIProxyLog(logContext, result.StatusCode, result.ResponseBody, err.Error())
 		Fail(w, err.Error())
@@ -167,13 +168,13 @@ func serveParameterTranslationVideo(w http.ResponseWriter, r *http.Request, body
 	}
 	task, err := service.CreateVideoTask(service.VideoTaskCreateInput{
 		UserID: user.ID, UserDisplayName: logContext.UserDisplayName, Model: request.Model, ChannelID: channel.ID, UserChannelID: userChannelID, ChannelName: channel.Name,
-		Source: readVideoTaskSource(r), SourceID: readVideoTaskSourceID(r), ClientTaskID: readClientVideoTaskID(r), Status: result.Status, Progress: result.Progress,
+		Source: readVideoTaskSource(r), SourceID: readVideoTaskSourceID(r), CanvasID: readVideoTaskCanvasID(r), ClientTaskID: readClientVideoTaskID(r), Status: result.Status, Progress: result.Progress,
 		Seconds: seconds, Size: size,
 		VideoURL: videoURL, RequestBody: string(body), ResponseBody: result.ResponseBody, Credits: credits, ParameterTranslationSnapshot: translation.Snapshot(*input, result),
 	})
 	if err != nil {
 		if credits > 0 {
-			refundVideoCredits(user.ID, request.Model, credits, "/videos")
+			refundVideoCredits(user.ID, request.Model, credits, "/videos", readClientVideoTaskID(r))
 		}
 		Fail(w, "视频任务保存失败")
 		return true

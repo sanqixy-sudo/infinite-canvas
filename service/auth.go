@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/tigerowo/infinite-canvas/config"
 	"github.com/tigerowo/infinite-canvas/model"
 	"github.com/tigerowo/infinite-canvas/repository"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -270,6 +270,7 @@ func SaveUser(user model.User, password string) (model.User, error) {
 	isCreate := user.ID == ""
 	if isCreate {
 		user.ID = newID("user")
+		user.StorageExtraBytes = 0
 		user.AffCode = newAffCode()
 		user.CreatedAt = now()
 	} else if saved, ok, err := repository.GetUserByID(user.ID); err != nil {
@@ -279,6 +280,7 @@ func SaveUser(user model.User, password string) (model.User, error) {
 		user.Password = saved.Password
 		user.AvatarURL = saved.AvatarURL
 		user.Credits = saved.Credits
+		user.StorageExtraBytes = saved.StorageExtraBytes
 		user.Extra = saved.Extra
 		if user.AffCode == "" {
 			user.AffCode = saved.AffCode
@@ -308,31 +310,26 @@ func SaveUser(user model.User, password string) (model.User, error) {
 }
 
 func AdjustUserCredits(id string, credits float64) (model.User, error) {
+	if math.IsNaN(credits) || math.IsInf(credits, 0) || math.IsInf(credits*100, 0) || credits < 0 {
+		return model.User{}, safeMessageError{message: "算力点余额不能为负数"}
+	}
 	credits = normalizeCredits(credits)
-	user, ok, err := repository.GetUserByID(id)
-	if err != nil || !ok {
-		if err != nil {
-			return user, err
-		}
+	timestamp := now()
+	user, ok, err := repository.AdjustUserCredits(id, credits, timestamp, model.CreditLog{
+		ID:        newID("credit"),
+		UserID:    id,
+		Type:      model.CreditLogTypeAdminAdjust,
+		Remark:    "后台手动调整",
+		CreatedAt: timestamp,
+	})
+	if err != nil {
+		return user, err
+	}
+	if !ok {
 		return user, safeMessageError{message: "用户不存在"}
 	}
-	oldCredits := user.Credits
-	user.Credits = credits
-	user.UpdatedAt = now()
-	user, err = repository.SaveUser(user)
-	if err == nil && oldCredits != credits {
-		_, err = repository.SaveCreditLog(model.CreditLog{
-			ID:        newID("credit"),
-			UserID:    user.ID,
-			Type:      model.CreditLogTypeAdminAdjust,
-			Amount:    credits - oldCredits,
-			Balance:   credits,
-			Remark:    "后台手动调整",
-			CreatedAt: now(),
-		})
-	}
 	user.Password = ""
-	return user, err
+	return user, nil
 }
 
 func ConsumeUserCredits(userID string, modelName string, credits float64, path string, task ...any) error {
@@ -341,25 +338,32 @@ func ConsumeUserCredits(userID string, modelName string, credits float64, path s
 	if len(task) > 0 {
 		workflowTask = task[0]
 	}
-	if credits <= 0 {
-		if workflowTask != nil {
-			return repository.InsertWorkflowTask(workflowTask)
-		}
-		return nil
+	relatedID := ""
+	switch value := workflowTask.(type) {
+	case TaskCreditReference: relatedID, workflowTask = value.LedgerID(), nil
+	case *model.CanvasImageTask: relatedID = "image:" + value.ID
+	case *model.CanvasAudioTask: relatedID = "audio:" + value.ID
+	case *model.VideoTask: relatedID = "video:" + value.ID
 	}
+	ids, err := currentTaskStorageReferenceIDs(workflowTask)
+	if err != nil {
+		return err
+	}
+	if credits <= 0 && workflowTask == nil && relatedID == "" { return nil }
 	timestamp := now()
 	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
 	_, ok, err := repository.ConsumeUserCredits(userID, credits, timestamp, model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
 		Type:      model.CreditLogTypeAIConsume,
+		RelatedID: relatedID,
 		Amount:    -credits,
 		Remark:    "调用模型 " + modelName,
 		Extra:     string(extra),
 		CreatedAt: timestamp,
-	}, workflowTask)
+	}, workflowTask, ids...)
 	if err != nil {
-		return err
+		return storageReferenceError(err)
 	}
 	if !ok {
 		return safeMessageError{message: "算力点不足"}
@@ -367,30 +371,32 @@ func ConsumeUserCredits(userID string, modelName string, credits float64, path s
 	return nil
 }
 
-func RefundUserCredits(userID string, modelName string, credits float64, path string) error {
+func RefundUserCredits(userID string, modelName string, credits float64, path string, taskID ...string) error {
 	credits = normalizeCredits(credits)
 	if credits <= 0 {
 		return nil
 	}
-	user, ok, err := repository.RefundUserCredits(userID, credits, now())
+	timestamp := now()
+	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
+	relatedID := ""
+	if len(taskID) > 0 { relatedID = taskID[0] }
+	_, ok, err := repository.RefundUserCredits(userID, credits, timestamp, model.CreditLog{
+		ID:        newID("credit"),
+		UserID:    userID,
+		Type:      model.CreditLogTypeAIRefund,
+		RelatedID: relatedID,
+		Amount:    credits,
+		Remark:    "模型调用失败返还 " + modelName,
+		Extra:     string(extra),
+		CreatedAt: timestamp,
+	})
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return safeMessageError{message: "用户不存在"}
 	}
-	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
-	_, err = repository.SaveCreditLog(model.CreditLog{
-		ID:        newID("credit"),
-		UserID:    userID,
-		Type:      model.CreditLogTypeAIRefund,
-		Amount:    credits,
-		Balance:   user.Credits,
-		Remark:    "模型调用失败返还 " + modelName,
-		Extra:     string(extra),
-		CreatedAt: now(),
-	})
-	return err
+	return nil
 }
 
 func ListCreditLogs(q model.Query) (model.CreditLogList, error) {
