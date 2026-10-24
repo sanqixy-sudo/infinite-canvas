@@ -212,10 +212,12 @@ Go 全量、`1115c6f` 独立 TypeScript 与 32 项 Bun 回归、`86b07b0` 完整
 | --- | --- | --- |
 | `GET /api/v1/wallet` | 无业务参数 | `{ credits, storage, commerce }` |
 | `GET /api/v1/purchase-orders` | `page`、`pageSize`、`status`、`kind`、`keyword`、`date` 可选 | `{ items: PurchaseOrder[], total }`，仅本人订单 |
-| `POST /api/v1/purchase-orders` | `{ "planId": "套餐ID", "requestId": "本次申请的唯一编号" }` | `PurchaseOrder`；同账号相同请求编号重试返回原单 |
+| `POST /api/v1/purchase-orders` | `{ "planId": "套餐ID", "requestId": "本次申请的唯一编号", "confirmation": "钱包返回的套餐确认指纹" }` | `PurchaseOrder`；同账号相同请求编号重试返回原单 |
 | `POST /api/v1/purchase-orders/:id/cancel` | 空对象 | 取消后的 `PurchaseOrder`；只能取消本人的待审订单 |
 
-`requestId` 必填，最多 64 字节，仅允许 ASCII 字母、数字、`-`、`_`；前端为一次确认操作生成编号，网络失败重试沿用编号。相同编号不能用于另一套餐。创建请求仅接受 `planId`、`requestId`，拒绝传入价格、点数、容量、用户身份等未知字段；权益以服务端套餐快照为准。
+`requestId` 必填，最多 64 字节，仅允许 ASCII 字母、数字、`-`、`_`；前端为一次确认操作生成编号，网络失败重试沿用编号。相同编号不能用于另一套餐。创建请求仅接受 `planId`、`requestId`、`confirmation`，拒绝传入价格、点数、容量、用户身份等未知字段。
+
+钱包的 `commerce.plans[].confirmation` 是当前套餐内容的确认指纹，客户端原样回传。服务端先校验指纹，建单事务中再锁定套餐配置并核对。价格、权益、名称、说明或启用状态变化以及缺少指纹时返回 HTTP 409，不创建新申请；前端刷新套餐后要求重新选择与确认。已经创建的同账号同 `requestId` 订单仍返回原快照，包括套餐后来停用的情况。该指纹不写入套餐配置，不代替登录鉴权。
 
 钱包字段：
 
@@ -255,6 +257,7 @@ Go 全量、`1115c6f` 独立 TypeScript 与 32 项 Bun 回归、`86b07b0` 完整
 | `storageBytes` | integer | 存储套餐为正整数字节且不超过 1 PiB；算力套餐为 `0` |
 | `description` | string | 最多 1000 字 |
 | `enabled` | boolean | 停用后不接受新订单，不修改已有订单快照 |
+| `confirmation` | string | 仅用户钱包返回的确认指纹；提交新申请时必填，管理员保存配置时会清空 |
 
 `plans` 最多 100 项；联系说明最多 2000 字，申请说明最多 6000 字。配置写入独立 `settings.commerce`，不会因保存模型或存储系统配置而丢失。本轮不修改供应商调用计价公式或 `modelCosts`。
 

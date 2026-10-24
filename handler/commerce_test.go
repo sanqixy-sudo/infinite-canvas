@@ -85,7 +85,40 @@ func TestCommerceOrderAudit(t *testing.T) {
 	if err != nil || wallet.Credits != 5 || len(wallet.Commerce.Plans) != 2 || wallet.Storage.LimitBytes != 1<<30 {
 		t.Fatalf("wallet = %#v, %v", wallet, err)
 	}
-	credit, err := service.CreateCurrentUserPurchaseOrder(buyer, "credits", "credit-request")
+	creditConfirmation, storageConfirmation := wallet.Commerce.Plans[0].Confirmation, wallet.Commerce.Plans[1].Confirmation
+	if len(creditConfirmation) != 64 || len(storageConfirmation) != 64 {
+		t.Fatal("wallet did not provide confirmation identities")
+	}
+	for name, change := range map[string]func(*model.CommercePlan){
+		"price":       func(p *model.CommercePlan) { p.PriceCents++ },
+		"credits":     func(p *model.CommercePlan) { p.Credits++ },
+		"name":        func(p *model.CommercePlan) { p.Name += "新" },
+		"description": func(p *model.CommercePlan) { p.Description = "权益说明变化" },
+		"disabled":    func(p *model.CommercePlan) { p.Enabled = false },
+	} {
+		changed := settings
+		changed.Plans = append([]model.CommercePlan{}, settings.Plans...)
+		change(&changed.Plans[0])
+		if _, err := service.SaveCommerceSettings(admin, changed); err != nil {
+			t.Fatal(err)
+		}
+		body, _ := json.Marshal(map[string]string{"planId": "credits", "requestId": "changed-" + name, "confirmation": creditConfirmation})
+		response := httptest.NewRecorder()
+		CreateUserPurchaseOrder(response, httptest.NewRequest(http.MethodPost, "/api/v1/purchase-orders", strings.NewReader(string(body))).WithContext(buyer))
+		if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "重新确认") {
+			t.Fatalf("%s stale confirmation accepted: %d %s", name, response.Code, response.Body.String())
+		}
+	}
+	if _, err := service.SaveCommerceSettings(admin, settings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateCurrentUserPurchaseOrder(buyer, "credits", "missing-confirmation", ""); err != service.ErrCommercePlanChanged {
+		t.Fatalf("missing confirmation accepted: %v", err)
+	}
+	if list, err := service.ListCurrentUserPurchaseOrders(buyer, model.Query{}); err != nil || list.Total != 0 {
+		t.Fatalf("rejected confirmations created orders: %+v %v", list, err)
+	}
+	credit, err := service.CreateCurrentUserPurchaseOrder(buyer, "credits", "credit-request", creditConfirmation)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,11 +126,11 @@ func TestCommerceOrderAudit(t *testing.T) {
 	if _, err := service.SaveCommerceSettings(admin, settings); err != nil {
 		t.Fatal(err)
 	}
-	retry, err := service.CreateCurrentUserPurchaseOrder(buyer, "credits", "credit-request")
+	retry, err := service.CreateCurrentUserPurchaseOrder(buyer, "credits", "credit-request", creditConfirmation)
 	if err != nil || retry.ID != credit.ID || retry.PriceCents != 199 || retry.Credits != 12.34 {
 		t.Fatalf("retry lost snapshot: %#v, %v", retry, err)
 	}
-	if _, err := service.CreateCurrentUserPurchaseOrder(buyer, "credits", "new-credit-request"); err == nil {
+	if _, err := service.CreateCurrentUserPurchaseOrder(buyer, "credits", "new-credit-request", creditConfirmation); err == nil {
 		t.Fatal("disabled plan created a new order")
 	}
 	list, err := service.ListCurrentUserPurchaseOrders(other, model.Query{})
@@ -116,7 +149,18 @@ func TestCommerceOrderAudit(t *testing.T) {
 	if err != nil || logs.Total != 1 || len(logs.Items) != 1 || logs.Items[0].RelatedID != credit.ID || logs.Items[0].Amount != 12.34 {
 		t.Fatalf("recharge log filter = %#v, %v", logs, err)
 	}
-	storage, err := service.CreateCurrentUserPurchaseOrder(buyer, "storage", "storage-request")
+	settings.Plans[1].StorageBytes++
+	if _, err := service.SaveCommerceSettings(admin, settings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateCurrentUserPurchaseOrder(buyer, "storage", "stale-storage-request", storageConfirmation); err != service.ErrCommercePlanChanged {
+		t.Fatalf("storage entitlement change accepted: %v", err)
+	}
+	settings.Plans[1].StorageBytes--
+	if _, err := service.SaveCommerceSettings(admin, settings); err != nil {
+		t.Fatal(err)
+	}
+	storage, err := service.CreateCurrentUserPurchaseOrder(buyer, "storage", "storage-request", storageConfirmation)
 	if err != nil {
 		t.Fatal(err)
 	}

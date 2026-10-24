@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -717,6 +718,7 @@ func measureS3Provider(provider model.StorageProvider) (int64, error) {
 	}
 	var total int64
 	var token string
+	seenTokens := make(map[string]struct{})
 	for {
 		query := url.Values{}
 		query.Set("list-type", "2")
@@ -744,11 +746,21 @@ func measureS3Provider(provider model.StorageProvider) (int64, error) {
 			return 0, err
 		}
 		for _, item := range result.Contents {
+			if item.Size < 0 || item.Size > math.MaxInt64-total {
+				return 0, errors.New("对象存储容量统计失败：文件大小无效或总容量溢出")
+			}
 			total += item.Size
 		}
-		if !result.IsTruncated || strings.TrimSpace(result.NextContinuationToken) == "" {
+		if !result.IsTruncated {
 			return total, nil
 		}
+		if strings.TrimSpace(result.NextContinuationToken) == "" {
+			return 0, errors.New("对象存储容量统计失败：分页游标缺失")
+		}
+		if _, exists := seenTokens[result.NextContinuationToken]; exists {
+			return 0, errors.New("对象存储容量统计失败：分页游标重复")
+		}
+		seenTokens[result.NextContinuationToken] = struct{}{}
 		token = result.NextContinuationToken
 	}
 }

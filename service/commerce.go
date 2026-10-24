@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"math"
 	"strings"
@@ -11,6 +14,15 @@ import (
 	"github.com/tigerowo/infinite-canvas/repository"
 	"gorm.io/gorm"
 )
+
+var ErrCommercePlanChanged = safeMessageError{message: "套餐价格、权益或说明已变化，请刷新套餐后重新确认"}
+
+func commercePlanConfirmation(plan model.CommercePlan) string {
+	plan.Confirmation = ""
+	encoded, _ := json.Marshal(plan)
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
+}
 
 func AccountCommerceSettings() (model.CommerceSetting, error) {
 	setting, found, err := repository.GetCommerceSettings()
@@ -53,6 +65,7 @@ func validateCommerceSettings(setting model.CommerceSetting) (model.CommerceSett
 	ids := map[string]bool{}
 	for i := range setting.Plans {
 		plan := &setting.Plans[i]
+		plan.Confirmation = ""
 		plan.ID, plan.Name, plan.Description = strings.TrimSpace(plan.ID), strings.TrimSpace(plan.Name), strings.TrimSpace(plan.Description)
 		if plan.ID == "" {
 			plan.ID = newID("plan")
@@ -101,6 +114,7 @@ func CurrentUserWallet(ctx context.Context) (model.CommerceWallet, error) {
 	plans := []model.CommercePlan{}
 	for _, plan := range setting.Plans {
 		if plan.Enabled {
+			plan.Confirmation = commercePlanConfirmation(plan)
 			plans = append(plans, plan)
 		}
 	}
@@ -128,7 +142,7 @@ func listPurchaseOrders(userID string, q model.Query) (model.PurchaseOrderList, 
 	return model.PurchaseOrderList{Items: items, Total: int(total)}, err
 }
 
-func CreateCurrentUserPurchaseOrder(ctx context.Context, planID, requestID string) (model.PurchaseOrder, error) {
+func CreateCurrentUserPurchaseOrder(ctx context.Context, planID, requestID, confirmation string) (model.PurchaseOrder, error) {
 	user, err := commerceUser(ctx, false)
 	if err != nil {
 		return model.PurchaseOrder{}, err
@@ -157,14 +171,17 @@ func CreateCurrentUserPurchaseOrder(ctx context.Context, planID, requestID strin
 		}
 	}
 	if selected == nil {
-		return model.PurchaseOrder{}, safeMessageError{message: "套餐已停用或不存在，请刷新后选择"}
+		return model.PurchaseOrder{}, ErrCommercePlanChanged
+	}
+	if confirmation != commercePlanConfirmation(*selected) {
+		return model.PurchaseOrder{}, ErrCommercePlanChanged
 	}
 	if _, err := validateCommerceSettings(model.CommerceSetting{Plans: []model.CommercePlan{*selected}}); err != nil {
 		return model.PurchaseOrder{}, err
 	}
 	timestamp := now()
 	order := model.PurchaseOrder{ID: newID("order"), UserID: user.ID, RequestID: requestID, PlanID: selected.ID, PlanName: selected.Name, Kind: selected.Kind, PriceCents: selected.PriceCents, Credits: selected.Credits, StorageBytes: selected.StorageBytes, PaymentMethod: "manual", Status: model.PurchaseOrderPending, CreatedAt: timestamp, UpdatedAt: timestamp}
-	order, err = repository.CreatePurchaseOrder(order)
+	order, err = repository.CreatePurchaseOrder(order, *selected)
 	if err == nil && order.PlanID != planID {
 		return model.PurchaseOrder{}, safeMessageError{message: "该请求编号已用于其他套餐，请刷新后重试"}
 	}
@@ -211,6 +228,9 @@ func commerceUser(ctx context.Context, admin bool) (model.AuthUser, error) {
 }
 
 func commerceOrderError(err error) error {
+	if errors.Is(err, repository.ErrCommercePlanChanged) {
+		return ErrCommercePlanChanged
+	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return safeMessageError{message: "订单或用户不存在"}
 	}

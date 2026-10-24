@@ -12,6 +12,7 @@ import { assertProductionCanvasSaved, buildProductionShotCanvas, productionShotT
 import { CanvasNodeType } from "../../../types";
 import { buildProductionCandidate } from "../../../utils/production-candidates";
 import { appendProductionBreakdown, type ProductionBreakdownDraft } from "../../../utils/production-breakdown";
+import { bindImportedProduction } from "../../../utils/canvas-transfer";
 
 type Draft = { document: ProductionDocument; dirty: boolean };
 const documentCanvasIds = (value: ProductionDocument) => [...value.assets.flatMap((asset) => asset.references.map((ref) => ref.canvasId)), ...value.shots.flatMap((shot) => [shot.canvasId, ...shot.candidates.map((candidate) => candidate.canvasId)])].filter(Boolean);
@@ -78,7 +79,7 @@ export function useProduction(workspaceId: string) {
                 const local = draft?.dirty && draft.document.workspaceId === workspaceId ? draft.document : null;
                 const value = local || remote;
                 currentDocument.current = value; setDocument(value); setDirty(Boolean(local));
-                if (local) setNotice(remote && remote.revision !== local.revision ? "已恢复本机草稿，但账号版本已变化。保存可能冲突；请先导出完整项目 ZIP 备份，再决定是否重新读取账号版本。" : "已恢复上次未保存的本机草稿，请检查后保存到账号。");
+                if (local) setNotice(!local.id ? "已恢复未完成导入的制作草稿，点击“保存计划”继续保存；无需重新导入项目包。" : remote && remote.revision !== local.revision ? "已恢复本机草稿，但账号版本已变化。保存可能冲突；请先导出完整项目 ZIP 备份，再决定是否重新读取账号版本。" : "已恢复上次未保存的本机草稿，请检查后保存到账号。");
             } catch (failure) {
                 if (!active || !sessionCurrent()) return;
                 if (draft?.document.workspaceId === workspaceId) { currentDocument.current = draft.document; setDocument(draft.document); setDirty(draft.dirty); }
@@ -131,7 +132,15 @@ export function useProduction(workspaceId: string) {
     const saveDocument = async (value: ProductionDocument, sync = true) => {
         const ids = documentCanvasIds(value);
         if (sync) await syncCanvases(ids);
-        const saved = await saveProduction(token, value);
+        let next = value;
+        if (!next.id) {
+            assertSession();
+            const created = await createProduction(token, workspaceId, next.title); assertSession();
+            next = bindImportedProduction(next, created);
+            await cache({ document: next, dirty: true }); assertSession();
+            apply(next, true);
+        }
+        const saved = await saveProduction(token, next);
         assertSession(); apply(saved, false); setNotice("制作计划已保存到账号。");
         return saved;
     };
@@ -270,7 +279,15 @@ export function useProduction(workspaceId: string) {
     const remove = () => run(async () => {
         const value = currentDocument.current;
         if (!value) return;
-        await deleteProduction(token, value.id, value.revision); assertSession();
+        if (value.id) await deleteProduction(token, value.id, value.revision);
+        else {
+            const remote = await getProduction(token, workspaceId); assertSession();
+            if (remote) {
+                const created = bindImportedProduction(value, remote);
+                await deleteProduction(token, created.id, created.revision);
+            }
+        }
+        assertSession();
         await writes.current.catch(() => undefined);
         await localforage.removeItem(key); assertSession();
         currentDocument.current = null; setDocument(null); setDirty(false);

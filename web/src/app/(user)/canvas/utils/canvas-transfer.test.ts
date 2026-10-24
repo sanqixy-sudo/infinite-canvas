@@ -3,7 +3,7 @@ import test from "node:test";
 import { createZip, readZip } from "@/lib/zip";
 import type { CanvasExportFile } from "../export-types";
 import type { CanvasProject } from "../stores/use-canvas-store";
-import { buildCanvasArchive, importCanvasProjectGroups, prepareCanvasImport, prepareCanvasBundleImport, remapCanvasBundle, remapProductionCanvases } from "./canvas-transfer";
+import { bindImportedProduction, buildCanvasArchive, importCanvasProjectGroups, prepareCanvasImport, prepareCanvasBundleImport, remapCanvasBundle, remapProductionCanvases } from "./canvas-transfer";
 import type { ProductionDocument } from "../lib/production-types";
 
 const imageKey = "server:image-old";
@@ -17,6 +17,41 @@ function projects() {
         { id: "child", workspaceId: "root", title: "画布 2", connections: [], nodes: [{ id: "audio", title: "配音", type: "audio", position: {x:0,y:0}, metadata: { storageKey: audioKey, content: audioUrl, imageStorage: [{ storageKey: imageKey, url: imageUrl }] } }] },
     ] as unknown as CanvasProject[];
 }
+
+function pendingProduction(): ProductionDocument {
+    return { id: "", workspaceId: "root", title: "导入计划", synopsis: "保留剧情", styleGuide: "", revision: 0, createdAt: "", updatedAt: "", episodes: [{ id: "episode", title: "第一集", script: "不能丢失的剧本", order: 0 }], scenes: [], assets: [], shots: [] };
+}
+
+test("导出前拒绝缺失节点、其他项目引用和遗漏根项目，不下载素材或生成不可恢复备份", async () => {
+    const canvases = projects();
+    const doc = pendingProduction();
+    doc.assets = [{ id: "actor", kind: "character", title: "角色", description: "", variantOf: "", references: [{ canvasId: "root", nodeId: "deleted-image" }] }];
+    let reads = 0;
+    const readFile = async () => { reads++; return new Blob(["media"]); };
+    await assert.rejects(buildCanvasArchive(canvases, readFile, [doc]), /画布或节点缺失/);
+    const other = { ...canvases[0], id: "other" };
+    doc.assets[0].references = [{ canvasId: "other", nodeId: "image" }];
+    await assert.rejects(buildCanvasArchive([...canvases, other], readFile, [doc]), /不属于本项目/);
+    await assert.rejects(buildCanvasArchive([canvases[1]], readFile, [doc]), /所属项目不在导出包/);
+    assert.equal(reads, 0, "无效计划在读取任何素材前被拒绝");
+    assert.equal(doc.episodes[0].script, "不能丢失的剧本");
+});
+
+test("导入草稿恢复只绑定同项目空版本1，已有编辑或其他项目不能被导入覆盖", () => {
+    const pending = pendingProduction();
+    const original = structuredClone(pending);
+    const created = { ...pending, id: "created-plan", revision: 1, createdAt: "created", updatedAt: "created", episodes: [] };
+    const restored = bindImportedProduction(pending, created);
+    assert.equal(restored.id, "created-plan");
+    assert.equal(restored.revision, 1);
+    assert.deepEqual(restored.episodes, pending.episodes);
+    assert.equal(bindImportedProduction(pending, created).id, restored.id, "创建响应丢失后可绑定同一幂等计划");
+    for (const occupied of [{ ...created, workspaceId: "another-user-project" }, { ...created, revision: 2 }, { ...created, episodes: pending.episodes }]) {
+        assert.throws(() => bindImportedProduction(pending, occupied), /草稿仍保留/);
+    }
+    assert.throws(() => bindImportedProduction(restored, created), /草稿仍保留/, "已绑定的草稿继续使用原ID和CAS版本，不能重新创建");
+    assert.deepEqual(pending, original);
+});
 
 test("服务端素材经过真实 ZIP 导出导入后使用新本地键，嵌套引用与项目归属同时保留", async () => {
     const original = projects();

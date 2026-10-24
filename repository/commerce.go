@@ -13,6 +13,7 @@ import (
 var ErrPurchaseOrderState = errors.New("purchase order state conflict")
 var ErrPurchaseOrderLimit = errors.New("purchase order account limit exceeded")
 var ErrPendingPurchaseOrderLimit = errors.New("pending purchase order limit exceeded")
+var ErrCommercePlanChanged = errors.New("commerce plan changed before confirmation")
 
 func GetCommerceSettings() (model.CommerceSetting, bool, error) {
 	db, err := DB()
@@ -59,15 +60,15 @@ func PurchaseOrderForRequest(userID, requestID string) (model.PurchaseOrder, boo
 	return order, err == nil, err
 }
 
-func CreatePurchaseOrder(order model.PurchaseOrder) (model.PurchaseOrder, error) {
+func CreatePurchaseOrder(order model.PurchaseOrder, confirmedPlan model.CommercePlan) (model.PurchaseOrder, error) {
 	db, err := DB()
 	if err != nil {
 		return order, err
 	}
-	return createPurchaseOrder(db, order)
+	return createPurchaseOrder(db, order, confirmedPlan)
 }
 
-func createPurchaseOrder(db *gorm.DB, order model.PurchaseOrder) (model.PurchaseOrder, error) {
+func createPurchaseOrder(db *gorm.DB, order model.PurchaseOrder, confirmedPlans ...model.CommercePlan) (model.PurchaseOrder, error) {
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var user model.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", order.UserID).Error; err != nil {
@@ -81,6 +82,29 @@ func createPurchaseOrder(db *gorm.DB, order model.PurchaseOrder) (model.Purchase
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
+		}
+		if len(confirmedPlans) > 0 {
+			var row model.Setting
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&row, "key = ?", model.SettingKeyCommerce).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrCommercePlanChanged
+				}
+				return err
+			}
+			var setting model.CommerceSetting
+			if err := json.Unmarshal(row.Value, &setting); err != nil {
+				return err
+			}
+			matched := false
+			for _, plan := range setting.Plans {
+				if plan.ID == order.PlanID && plan.Enabled && plan == confirmedPlans[0] {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return ErrCommercePlanChanged
+			}
 		}
 		var pending int64
 		if err := tx.Model(&model.PurchaseOrder{}).Where("user_id = ? AND status = ?", order.UserID, model.PurchaseOrderPending).Count(&pending).Error; err != nil {

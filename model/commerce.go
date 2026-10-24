@@ -21,6 +21,7 @@ type CommercePlan struct {
 	StorageBytes int64   `json:"storageBytes"`
 	Description  string  `json:"description"`
 	Enabled      bool    `json:"enabled"`
+	Confirmation string  `json:"confirmation,omitempty"`
 }
 
 type CommerceSetting struct {

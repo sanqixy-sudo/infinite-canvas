@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { fetchAdminPurchaseOrders, fetchCommerceSettings, reviewPurchaseOrder, saveCommerceSettings } from "@/services/api/admin-commerce";
 import type { CommercePlan, CommerceSetting, PurchaseOrder } from "@/services/api/commerce";
 import { useUserStore } from "@/stores/use-user-store";
+import { formatStoragePlanBytes } from "@/lib/wallet-display";
 
 const GB = 1024 ** 3;
 const kindNames = { credits: "算力充值", storage: "存储扩容" };
@@ -16,7 +17,7 @@ const statusNames: Record<string, string> = { pending: "待确认", completed: "
 type SettingForm = { defaultStorageGB: number; contactText: string; instructions: string };
 type PlanForm = { id: string; name: string; kind: "credits" | "storage"; priceYuan: number; credits: number; storageGB: number; description: string; enabled: boolean };
 const money = (cents: number) => `¥${(cents / 100).toFixed(2)}`;
-const benefit = (plan: Pick<CommercePlan, "kind" | "credits" | "storageBytes">) => plan.kind === "credits" ? `${plan.credits.toLocaleString()} 算力点` : `${Number((plan.storageBytes / GB).toFixed(3))} GB`;
+const benefit = (plan: Pick<CommercePlan, "kind" | "credits" | "storageBytes">) => plan.kind === "credits" ? `${plan.credits.toLocaleString()} 算力点` : formatStoragePlanBytes(plan.storageBytes);
 
 export default function CommercePage() {
     const { message } = App.useApp();

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -31,6 +32,52 @@ func commerceTestDB(t *testing.T) *gorm.DB {
 		}
 	}
 	return db
+}
+
+func TestPurchaseOrderChecksCurrentPlanInsideTransaction(t *testing.T) {
+	db := commerceTestDB(t)
+	if err := db.AutoMigrate(&model.Setting{}); err != nil {
+		t.Fatal(err)
+	}
+	original := testPurchaseOrder("confirmed", model.CommerceKindStorage)
+	plan := model.CommercePlan{ID: original.PlanID, Name: original.PlanName, Kind: original.Kind, PriceCents: original.PriceCents, StorageBytes: original.StorageBytes, Enabled: true}
+	save := func(plans []model.CommercePlan) {
+		t.Helper()
+		data, err := json.Marshal(model.CommerceSetting{Plans: plans})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Save(&model.Setting{Key: model.SettingKeyCommerce, Value: data}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, change := range map[string]func(*model.CommercePlan){
+		"price":       func(p *model.CommercePlan) { p.PriceCents++ },
+		"storage":     func(p *model.CommercePlan) { p.StorageBytes++ },
+		"description": func(p *model.CommercePlan) { p.Description = "新条款" },
+		"disabled":    func(p *model.CommercePlan) { p.Enabled = false },
+		"removed":     func(p *model.CommercePlan) { p.ID = "other-plan" },
+	} {
+		changed := plan
+		change(&changed)
+		save([]model.CommercePlan{changed})
+		if _, err := createPurchaseOrder(db, original, plan); !errors.Is(err, ErrCommercePlanChanged) {
+			t.Fatalf("%s accepted stale confirmation: %v", name, err)
+		}
+	}
+	var count int64
+	if err := db.Model(&model.PurchaseOrder{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("rejected orders inserted: %d %v", count, err)
+	}
+	save([]model.CommercePlan{plan})
+	if _, err := createPurchaseOrder(db, original, plan); err != nil {
+		t.Fatal(err)
+	}
+	save(nil)
+	// An already accepted request retains its original order even if the plan was removed.
+	if recovered, err := createPurchaseOrder(db, original, plan); err != nil || recovered.ID != original.ID || recovered.StorageBytes != original.StorageBytes {
+		t.Fatalf("accepted order could not be recovered: %+v %v", recovered, err)
+	}
 }
 
 func testPurchaseOrder(id, kind string) model.PurchaseOrder {

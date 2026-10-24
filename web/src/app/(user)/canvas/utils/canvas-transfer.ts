@@ -22,6 +22,8 @@ export function collectCanvasStorageReferences(value: unknown, references = new 
 }
 
 export async function buildCanvasArchive(projects: CanvasProject[], readFile: (reference: StorageReference) => Promise<Blob>, productions: ProductionDocument[] = []) {
+    if (productions.some((doc) => !projects.some((project) => project.id === doc.workspaceId && !project.workspaceId))) throw new Error("制作计划所属项目不在导出包中，请选择完整项目");
+    if (productions.length) remapCanvasBundle(projects, productions);
     const files: { name: string; data: BlobPart }[] = [];
     const requests = new Map<string, Promise<Blob>>();
     const exportedProjects = await Promise.all(projects.map(async (project) => {
@@ -94,6 +96,7 @@ export function remapCanvasBundle(projects: CanvasProject[], productions: Produc
         return { ...project, nodes: cloned.nodes.map((node, index) => ({ ...node, title: project.nodes[index].title })), connections: cloned.connections, chatSessions, activeChatId: chatSessions[activeIndex]?.id || null, pendingAgentRequest: undefined, autoTitlePending: false };
     });
     const plans = productions.map((doc) => {
+        const canvases = new Set(projects.filter((project) => project.id === doc.workspaceId || project.workspaceId === doc.workspaceId).map((project) => project.id));
         const makeMap = (items: { id: string }[]) => {
             const result = new Map<string, string>();
             for (const item of items) { if (!item?.id || result.has(item.id)) throw new Error("制作计划含缺失或重复编号"); result.set(item.id, nanoid()); }
@@ -101,7 +104,7 @@ export function remapCanvasBundle(projects: CanvasProject[], productions: Produc
         };
         const episodeIds = makeMap(doc.episodes), sceneIds = makeMap(doc.scenes), assetIds = makeMap(doc.assets), shotIds = makeMap(doc.shots);
         const remap = (ids: Map<string, string>, id: string) => { if (id && !ids.has(id)) throw new Error("制作计划关联编号缺失"); return ids.get(id) || ""; };
-        const nodeId = (canvasId: string, id: string) => { const next = nodeMaps.get(canvasId)?.get(id); if (id && !next) throw new Error("制作计划引用的画布或节点不在导入包中，请重新导出完整项目"); return next || ""; };
+        const nodeId = (canvasId: string, id: string) => { const next = canvases.has(canvasId) ? nodeMaps.get(canvasId)?.get(id) : undefined; if (id && !next) throw new Error("制作计划引用的画布或节点缺失，或不属于本项目，请检查后重新导出完整项目"); return next || ""; };
         return {
             ...doc,
             episodes: doc.episodes.map((episode) => ({ ...episode, id: remap(episodeIds, episode.id), delivery: episode.delivery ? { ...episode.delivery,
@@ -124,6 +127,12 @@ export function remapCanvasBundle(projects: CanvasProject[], productions: Produc
 export function remapProductionCanvases(doc: ProductionDocument, ids: Map<string, string>) {
     const canvasId = (id: string) => { if (id && !ids.has(id)) throw new Error("制作计划的画布归属缺失"); return ids.get(id) || ""; };
     return { ...doc, workspaceId: canvasId(doc.workspaceId), assets: doc.assets.map((asset) => ({ ...asset, references: asset.references.map((ref) => ({ ...ref, canvasId: canvasId(ref.canvasId) })) })), shots: doc.shots.map((shot) => ({ ...shot, canvasId: canvasId(shot.canvasId), candidates: shot.candidates.map((candidate) => ({ ...candidate, canvasId: canvasId(candidate.canvasId) })) })) };
+}
+
+/** Only attach a pending import to its own pristine, idempotently created plan. */
+export function bindImportedProduction(doc: ProductionDocument, created: ProductionDocument): ProductionDocument {
+    if (doc.id || !created.id || created.workspaceId !== doc.workspaceId || created.revision !== 1 || created.episodes.length || created.scenes.length || created.assets.length || created.shots.length) throw new Error("账号制作计划已变化，导入草稿仍保留，请先核对账号版本再继续");
+    return { ...doc, id: created.id, revision: created.revision, createdAt: created.createdAt, updatedAt: created.updatedAt };
 }
 
 function replaceReferences(value: unknown, replacements: Map<string, string>): unknown {

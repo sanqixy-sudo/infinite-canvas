@@ -34,7 +34,7 @@ func TestCommercePlanValidationRejectsUnsafeBenefitsAndPrices(t *testing.T) {
 }
 
 func TestCommerceServiceRequiresLoginAndAdminReviewWithRemark(t *testing.T) {
-	if _, err := CreateCurrentUserPurchaseOrder(context.Background(), "plan", "request"); err == nil {
+	if _, err := CreateCurrentUserPurchaseOrder(context.Background(), "plan", "request", ""); err == nil {
 		t.Fatal("anonymous order creation accepted")
 	}
 	if _, err := CancelCurrentUserPurchaseOrder(context.Background(), "order"); err == nil {
@@ -50,5 +50,32 @@ func TestCommerceServiceRequiresLoginAndAdminReviewWithRemark(t *testing.T) {
 	}
 	if _, err := ReviewPurchaseOrder(admin, "order", "unknown", "已收款"); err == nil {
 		t.Fatal("unknown review action accepted")
+	}
+}
+
+func TestCommercePlanConfirmationTracksDisplayedTerms(t *testing.T) {
+	plan := model.CommercePlan{ID: "storage", Name: "扩容", Kind: model.CommerceKindStorage, PriceCents: 199, StorageBytes: 10 << 30, Description: "一次性长期扩容", Enabled: true}
+	original := commercePlanConfirmation(plan)
+	for name, change := range map[string]func(*model.CommercePlan){
+		"price":       func(p *model.CommercePlan) { p.PriceCents++ },
+		"storage":     func(p *model.CommercePlan) { p.StorageBytes++ },
+		"credits":     func(p *model.CommercePlan) { p.Kind, p.StorageBytes, p.Credits = model.CommerceKindCredits, 0, 10 },
+		"name":        func(p *model.CommercePlan) { p.Name += "新" },
+		"description": func(p *model.CommercePlan) { p.Description += "新" },
+		"disabled":    func(p *model.CommercePlan) { p.Enabled = false },
+	} {
+		changed := plan
+		change(&changed)
+		if commercePlanConfirmation(changed) == original {
+			t.Fatalf("%s did not invalidate confirmation", name)
+		}
+	}
+	plan.Confirmation = "client-supplied-value"
+	if commercePlanConfirmation(plan) != original {
+		t.Fatal("confirmation recursively included itself")
+	}
+	validated, err := validateCommerceSettings(model.CommerceSetting{Plans: []model.CommercePlan{plan}})
+	if err != nil || validated.Plans[0].Confirmation != "" {
+		t.Fatalf("client confirmation persisted in configuration: %+v %v", validated, err)
 	}
 }

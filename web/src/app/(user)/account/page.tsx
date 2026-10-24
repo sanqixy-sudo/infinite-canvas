@@ -7,7 +7,7 @@ import { ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, HardDrive, Plus
 
 import { fetchAccountCreditLogs, type CreditLogType } from "@/services/api/auth";
 import { useAccountWallet } from "@/hooks/use-account-wallet";
-import { formatStorageBytes } from "@/lib/wallet-display";
+import { formatStorageBytes, formatStoragePlanBytes } from "@/lib/wallet-display";
 import { useUserStore } from "@/stores/use-user-store";
 
 const types: { value: CreditLogType | ""; label: string }[] = [
@@ -65,11 +65,11 @@ export default function AccountPage() {
                     </article>
                     <article className="flex flex-col rounded-2xl border border-border bg-card p-6 md:p-7">
                         <p className="flex items-center gap-2 text-sm text-muted-foreground"><HardDrive className="size-4" />个人云空间</p>
-                        <div className="mt-5 flex flex-wrap items-baseline gap-x-2 gap-y-1 tabular-nums"><strong className="text-[32px] font-semibold leading-none tracking-tight">{storage ? formatStorageBytes(storage.usedBytes) : "—"}</strong><span className="text-sm text-muted-foreground">/ {storage ? formatStorageBytes(storage.limitBytes) : "读取中"}</span></div>
+                        <div className="mt-5 flex flex-wrap items-baseline gap-x-2 gap-y-1 tabular-nums"><strong className="text-[32px] font-semibold leading-none tracking-tight">{storage ? formatStorageBytes(storage.usedBytes) : "—"}</strong><span className="text-sm text-muted-foreground">/ {storage ? formatStoragePlanBytes(storage.limitBytes) : "读取中"}</span></div>
                         <div role="progressbar" aria-label="个人空间使用率" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(usedPercent)} className="mt-5 h-1.5 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${storage?.overLimit ? "bg-destructive" : "bg-primary"}`} style={{ width: `${usedPercent}%` }} /></div>
                         <p className={`mb-6 mt-3 flex-1 text-xs leading-6 ${storage?.overLimit ? "text-destructive" : "text-muted-foreground"}`}>{storage ? storage.overLimit ? "当前空间已超限，请清理素材或扩容后继续上传。" : `剩余 ${formatStorageBytes(storage.remainingBytes)} · 仅统计你的账号文件` : "正在读取你的空间用量…"}</p>
                         <div className="flex flex-wrap gap-2"><Link href="/account/storage" className={actionClass}><HardDrive className="size-4" />存储设置</Link><Link href="/account/recharge?kind=storage" className={actionClass}><Plus className="size-4" />空间扩容</Link></div>
-                        {storage ? <p className="mt-3 text-[11px] text-muted-foreground">基础空间 {formatStorageBytes(storage.baseBytes)} · 已扩容 {formatStorageBytes(storage.extraBytes)}</p> : null}
+                        {storage ? <p className="mt-3 text-[11px] text-muted-foreground">基础空间 {formatStoragePlanBytes(storage.baseBytes)} · 已扩容 {formatStoragePlanBytes(storage.extraBytes)}</p> : null}
                     </article>
                 </section>
                 <section className="mt-8" aria-label="算力点流水">

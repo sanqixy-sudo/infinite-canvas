@@ -19,7 +19,7 @@ import { CanvasProjectPreview } from "./components/canvas-project-preview";
 import { CanvasLoadError } from "./components/canvas-load-error";
 import type { CanvasExportFile } from "./export-types";
 import { useCanvasStore, workspaceCanvases, workspaceRoot } from "./stores/use-canvas-store";
-import { importCanvasProjectGroups, prepareCanvasBundleImport, remapCanvasBundle, remapProductionCanvases } from "./utils/canvas-transfer";
+import { bindImportedProduction, importCanvasProjectGroups, prepareCanvasBundleImport, remapCanvasBundle, remapProductionCanvases } from "./utils/canvas-transfer";
 
 export default function CanvasPage() {
     const { message } = App.useApp();
@@ -77,20 +77,25 @@ export default function CanvasPage() {
             assertSession();
             const bundle = remapCanvasBundle(restored.projects, restored.productions);
             const ids = importCanvasProjectGroups(bundle.projects, importCanvas);
-            for (const original of bundle.productions) {
+            const drafts = bundle.productions.map((original) => ({ ...remapProductionCanvases(original, ids), id: "", revision: 0, createdAt: "", updatedAt: "" }));
+            // Preserve every imported plan before account requests can fail or lose their response.
+            for (const doc of drafts) {
                 assertSession();
-                const doc = remapProductionCanvases(original, ids);
+                await localforage.setItem(`production-draft:${auth.user?.id}:${doc.workspaceId}`, { document: doc, dirty: true });
+            }
+            for (const doc of drafts) {
+                assertSession();
                 for (const canvas of useCanvasStore.getState().projects.filter((item) => item.id === doc.workspaceId || item.workspaceId === doc.workspaceId)) { await saveCanvasProject(auth.token, canvas); assertSession(); }
                 const created = await createProduction(auth.token, doc.workspaceId, doc.title); assertSession();
-                const next = { ...doc, id: created.id, revision: created.revision, createdAt: created.createdAt, updatedAt: created.updatedAt };
+                const next = bindImportedProduction(doc, created);
                 const key = `production-draft:${auth.user?.id}:${doc.workspaceId}`;
                 await localforage.setItem(key, { document: next, dirty: true }); assertSession();
                 const saved = await saveProduction(auth.token, next); assertSession();
-                await localforage.setItem(key, { document: saved, dirty: false });
+                await localforage.setItem(key, { document: saved, dirty: false }); assertSession();
             }
             message.success(`已导入 ${bundle.projects.length} 张画布、${bundle.productions.length} 份制作计划和素材，生成任务与账单不会复制`);
         } catch (error) {
-            message.error(error instanceof Error ? `导入未完成：${error.message}。已导入部分会保留，可在项目列表和文件空间查看。` : "导入失败，请选择有效的画布压缩包");
+            message.error(error instanceof Error ? `导入未完成：${error.message}。已导入部分会保留；已缓存的制作草稿可在对应项目的“短剧制作”中继续保存，无需重新导入。` : "导入失败，请选择有效的画布压缩包");
         } finally {
             setImporting(false);
             if (inputRef.current) inputRef.current.value = "";

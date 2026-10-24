@@ -11,6 +11,7 @@ export type CommercePlan = {
     storageBytes: number;
     description: string;
     enabled: boolean;
+    confirmation?: string;
 };
 export type CommerceSetting = {
     defaultStorageBytes: number;
@@ -50,7 +51,7 @@ export function fetchPurchaseOrders(token: string, query: { page?: number; pageS
     return apiGet<{ items: PurchaseOrder[]; total: number }>("/api/v1/purchase-orders", compactApiParams(query), token);
 }
 
-export function createPurchaseOrder(token: string, input: { planId: string; requestId: string }) {
+export function createPurchaseOrder(token: string, input: { planId: string; requestId: string; confirmation: string }) {
     return apiPost<PurchaseOrder>("/api/v1/purchase-orders", input, token);
 }
 

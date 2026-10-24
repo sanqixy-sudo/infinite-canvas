@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -31,14 +32,19 @@ func UserPurchaseOrders(w http.ResponseWriter, r *http.Request) {
 
 func CreateUserPurchaseOrder(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		PlanID    string `json:"planId"`
-		RequestID string `json:"requestId"`
+		PlanID       string `json:"planId"`
+		RequestID    string `json:"requestId"`
+		Confirmation string `json:"confirmation"`
 	}
 	if !decodeCommerceBody(w, r, &request) {
 		return
 	}
-	result, err := service.CreateCurrentUserPurchaseOrder(r.Context(), request.PlanID, request.RequestID)
+	result, err := service.CreateCurrentUserPurchaseOrder(r.Context(), request.PlanID, request.RequestID, request.Confirmation)
 	if err != nil {
+		if errors.Is(err, service.ErrCommercePlanChanged) {
+			FailWithStatus(w, http.StatusConflict, service.ErrCommercePlanChanged.SafeMessage())
+			return
+		}
 		FailError(w, err)
 		return
 	}
