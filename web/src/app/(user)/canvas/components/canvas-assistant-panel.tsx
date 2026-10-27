@@ -139,7 +139,7 @@ export function CanvasAssistantPanel({
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const cleanupImages = useAssetStore((state) => state.cleanupImages);
     const { message: appMessage } = App.useApp();
-    const mode = agentConfig.mode || "api";
+    const mode = "api" as "api" | "codex";
     const abortRef = useRef<AbortController | null>(null);
     const consumedInitialRequestRef = useRef<typeof initialRequest>(null);
     const pendingDeleteRef = useRef<PendingDeleteConfirmation | null>(null);
@@ -335,6 +335,7 @@ export function CanvasAssistantPanel({
         if (signal.aborted) cancel();
     });
     const codex = useCodexAgent({
+        disabled: true,
         canvasId,
         onBootstrap: () => { if (mode === "api") switchMode(); else setView("chat"); },
         executeTool: async (action, signal) => {
@@ -363,7 +364,7 @@ export function CanvasAssistantPanel({
         },
     });
     const switchMode = () => {
-        if (isRunning) return;
+        if (isRunning || codex.status !== "ready") return;
         const next = mode === "api" ? "codex" : "api";
         if (activeSessionIdRef.current) lastSessionIds.current[mode] = activeSessionIdRef.current;
         drafts.current[mode] = { prompt, references: composerReferenceIds, skills: selectedSkills };
@@ -458,7 +459,7 @@ export function CanvasAssistantPanel({
         const jsonToolFallbackKey = [requestConfig.apiMode || "chat", requestConfig.textChannelId || requestConfig.activeChannelId || requestConfig.baseUrl, requestConfig.model].join("|");
         if (mode === "api" && !isAiConfigReady(requestConfig, requestConfig.model)) {
             updateMessage(session.id, assistantId, {
-                text: "全局文本模型尚未配置完成。请先从应用原有的全局配置入口选择文本模型和渠道，然后再继续。",
+                text: "尚未选择可用的云端文本模型，请在偏好设置中选择平台模型；如列表为空，请联系管理员配置。",
                 status: "error",
                 activity: undefined,
             });
@@ -595,9 +596,9 @@ export function CanvasAssistantPanel({
                     <div className="flex items-center gap-2 text-sm font-medium">
                         <Bot className="size-4" />
                         {view === "history" ? "历史记录" : mode === "codex" ? "Codex" : "创作 Agent"}
-                        <Tooltip title={mode === "codex" ? "切换回创作 Agent" : "切换到 Codex"}>
+                        {mode === "codex" ? <Tooltip title="切换回创作 Agent">
                             <Button size="small" className="!h-7 !rounded-md !px-2.5 !shadow-none" style={{ font: "inherit", color: theme.node.text, background: "transparent", borderColor: theme.node.stroke }} icon={<ArrowLeftRight className="size-3.5" />} disabled={isRunning} onClick={switchMode}>{mode === "codex" ? "创作 Agent" : "Codex"}</Button>
-                        </Tooltip>
+                        </Tooltip> : null}
                     </div>
                     <div className="flex items-center gap-1">
                         {mode === "codex" ? <Tooltip title="连接教程"><Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" style={iconButtonStyle} icon={<PlugZap className="size-4" />} aria-label="连接教程" disabled={isRunning} onClick={() => { setView("connect"); messageListRef.current?.scrollTo({ top: 0 }); }} /></Tooltip> : null}

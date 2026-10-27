@@ -63,7 +63,11 @@ func EnsureDefaultAgentSkills() error {
 		})
 		fileGroups = append(fileGroups, files)
 	}
-	return repository.InitializeAgentSkills(items, fileGroups, current)
+	ids, err := taskStorageReferenceIDs(items)
+	if err != nil {
+		return err
+	}
+	return storageReferenceError(repository.InitializeAgentSkills(items, fileGroups, current, ids...))
 }
 
 func readDefaultAgentSkillPackages() ([]defaultAgentSkillPackage, error) {

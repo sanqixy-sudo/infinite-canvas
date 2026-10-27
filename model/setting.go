@@ -11,6 +11,7 @@ const (
 
 	StorageProviderTypeS3     = "s3"
 	StorageProviderTypeWebDAV = "webdav"
+	StorageProviderTypeLocal  = "local"
 )
 
 // ModelChannel 模型渠道配置。
@@ -77,18 +78,28 @@ type WorkflowEntry struct {
 }
 
 type WorkflowSummary struct {
-	Provider   string  `json:"provider"`
-	Kind       string  `json:"kind"`
-	WorkflowID string  `json:"workflowId"`
-	Title      string  `json:"title"`
-	Capability string  `json:"capability"`
-	Enabled    bool    `json:"enabled"`
+	Provider   string `json:"provider"`
+	Kind       string `json:"kind"`
+	WorkflowID string `json:"workflowId"`
+	Title      string `json:"title"`
+	Capability string `json:"capability"`
+	Enabled    bool   `json:"enabled"`
 }
 
 // ModelCost 模型算力点配置。
 type ModelCost struct {
 	Model   string  `json:"model"`
 	Credits float64 `json:"credits"`
+	BillingUnit string `json:"billingUnit,omitempty"`
+	Gateway *PublicGatewayModel `json:"gateway,omitempty"`
+	TokenMode string `json:"tokenMode,omitempty"`
+	ReserveInputTokens int64 `json:"reserveInputTokens"`
+	ReserveOutputTokens int64 `json:"reserveOutputTokens"`
+	ReserveCredits float64 `json:"reserveCredits,omitempty"`
+	ReserveTokens int64 `json:"reserveTokens,omitempty"`
+	WithoutVideoCreditsPerMillion float64 `json:"withoutVideoCreditsPerMillion,omitempty"`
+	WithVideoCreditsPerMillion float64 `json:"withVideoCreditsPerMillion,omitempty"`
+	Tiers []GatewayPriceTier `json:"tiers,omitempty"`
 }
 
 // PublicModelChannelSetting 公开模型渠道配置。
@@ -116,6 +127,7 @@ type SystemPromptSetting struct {
 }
 
 type PublicModelChannelInfo struct {
+	GatewayModels []PublicGatewayModel `json:"gatewayModels,omitempty"`
 	ParameterTranslationModels []string          `json:"parameterTranslationModels,omitempty"`
 	ID                         string            `json:"id"`
 	Protocol                   string            `json:"protocol"`
@@ -160,6 +172,7 @@ type PublicLinuxDoAuthSetting struct {
 
 // PrivateSetting 私有配置。
 type PrivateSetting struct {
+	Gateway GatewaySettings `json:"gateway"`
 	Channels   []ModelChannel        `json:"channels"`
 	PromptSync PromptSyncSetting     `json:"promptSync"`
 	AILog      AILogSetting          `json:"aiLog"`

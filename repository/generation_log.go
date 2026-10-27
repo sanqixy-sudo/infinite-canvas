@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/tigerowo/infinite-canvas/model"
+	"gorm.io/gorm"
 )
 
 func ListVideoGenerationLogs(userID string, limit int) ([]model.VideoGenerationLog, error) {
@@ -29,14 +30,18 @@ func HasAnyVideoGenerationLog(userID string) (bool, error) {
 	return count > 0, err
 }
 
-func UpsertVideoGenerationLogs(userID string, logs []model.VideoGenerationLog) error {
+func UpsertVideoGenerationLogs(userID string, logs []model.VideoGenerationLog, storageIDs ...string) error {
 	db, err := DB()
 	if err != nil {
 		return err
 	}
+	return withUserStorageLock(db, userID, storageIDs, func(tx *gorm.DB) error { return upsertVideoGenerationLogs(tx, userID, logs) })
+}
+
+func upsertVideoGenerationLogs(db *gorm.DB, userID string, logs []model.VideoGenerationLog) error {
 	for _, log := range logs {
 		log.UserID = userID
-		if strings.TrimSpace(log.ID) == "" || isDeletedVideoGenerationLog(userID, log) {
+		if strings.TrimSpace(log.ID) == "" || isDeletedVideoGenerationLog(db, userID, log) {
 			continue
 		}
 		var existing model.VideoGenerationLog
@@ -131,14 +136,18 @@ func HasAnyImageGenerationLog(userID string) (bool, error) {
 	return count > 0, err
 }
 
-func UpsertImageGenerationLogs(userID string, logs []model.ImageGenerationLog) error {
+func UpsertImageGenerationLogs(userID string, logs []model.ImageGenerationLog, storageIDs ...string) error {
 	db, err := DB()
 	if err != nil {
 		return err
 	}
+	return withUserStorageLock(db, userID, storageIDs, func(tx *gorm.DB) error { return upsertImageGenerationLogs(tx, userID, logs) })
+}
+
+func upsertImageGenerationLogs(db *gorm.DB, userID string, logs []model.ImageGenerationLog) error {
 	for _, log := range logs {
 		log.UserID = userID
-		if strings.TrimSpace(log.ID) == "" || isDeletedImageGenerationLog(userID, log) {
+		if strings.TrimSpace(log.ID) == "" || isDeletedImageGenerationLog(db, userID, log) {
 			continue
 		}
 		var existing model.ImageGenerationLog
@@ -210,11 +219,7 @@ func CleanupDeletedImageGenerationLogs(before string) error {
 	return db.Where("deleted_at <> ? AND deleted_at < ?", "", before).Delete(&model.ImageGenerationLog{}).Error
 }
 
-func isDeletedVideoGenerationLog(userID string, log model.VideoGenerationLog) bool {
-	db, err := DB()
-	if err != nil {
-		return false
-	}
+func isDeletedVideoGenerationLog(db *gorm.DB, userID string, log model.VideoGenerationLog) bool {
 	keys := generationLogIdentityValues(log.ID, log.TaskID, log.VideoID)
 	if len(keys) == 0 {
 		return false
@@ -226,11 +231,7 @@ func isDeletedVideoGenerationLog(userID string, log model.VideoGenerationLog) bo
 	return count > 0
 }
 
-func isDeletedImageGenerationLog(userID string, log model.ImageGenerationLog) bool {
-	db, err := DB()
-	if err != nil {
-		return false
-	}
+func isDeletedImageGenerationLog(db *gorm.DB, userID string, log model.ImageGenerationLog) bool {
 	keys := generationLogIdentityValues(log.ID, log.TaskID, log.ImageID)
 	if len(keys) == 0 {
 		return false
@@ -254,4 +255,3 @@ func generationLogIdentityValues(values ...string) []string {
 	}
 	return result
 }
-

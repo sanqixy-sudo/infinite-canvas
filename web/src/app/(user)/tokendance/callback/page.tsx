@@ -1,16 +1,14 @@
 "use client";
 
-import { App, Button, Result, Spin } from "antd";
+import { Button, Result, Spin } from "antd";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import type { TokenDanceOAuthState } from "@/lib/tokendance-oauth";
-import { fetchUserConfig, syncUserModelConfig } from "@/services/api/user-config";
-import { normalizeLocalChannels, useConfigStore } from "@/stores/use-config-store";
+import { fetchCurrentUser } from "@/services/api/auth";
 import { useUserStore } from "@/stores/use-user-store";
 
 export default function TokenDanceCallbackPage() {
-    const { message } = App.useApp();
     const router = useRouter();
     const started = useRef(false);
     const [error, setError] = useState("");
@@ -33,6 +31,15 @@ export default function TokenDanceCallbackPage() {
                 if (!state.verifier || (state.target !== "local" && state.target !== "admin")) {
                     throw new Error("授权信息不完整，请重新登录");
                 }
+                if (state.target !== "admin") {
+                    sessionStorage.removeItem(storageKey);
+                    throw new Error("个人模型渠道授权已停用，请使用平台云端模型");
+                }
+                if (!state.draft || typeof state.draft !== "object") throw new Error("后台渠道信息不完整，请重新登录");
+                const accountToken = useUserStore.getState().token;
+                if (!accountToken) throw new Error("请先登录管理员账号后配置平台渠道");
+                const currentUser = await fetchCurrentUser(accountToken);
+                if (currentUser.role !== "admin" || useUserStore.getState().token !== accountToken) throw new Error("仅管理员可以配置平台模型渠道");
 
                 const returnTo = typeof state.returnTo === "string"
                     ? state.returnTo.replace(/[\t\n\r]/g, "")
@@ -62,63 +69,21 @@ export default function TokenDanceCallbackPage() {
 
                 const key = data.key.trim();
 
-                if (state.target === "admin") {
-                    if (!state.draft || typeof state.draft !== "object") {
-                        throw new Error("后台渠道信息不完整，请重新登录");
-                    }
-
-                    sessionStorage.setItem(`tokendance:oauth-result:${flow}`, JSON.stringify({
-                        key,
-                        draft: state.draft,
-                        editingChannelIndex: state.editingChannelIndex,
-                    }));
-                    sessionStorage.removeItem(storageKey);
-
-                    const returnUrl = new URL(safeReturnTo, window.location.origin);
-                    returnUrl.searchParams.set("tokendance_oauth", flow);
-                    router.replace(`${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`);
-                    return;
-                }
-
-                if (!state.channelId) throw new Error("对应的 TokenDance 渠道不存在");
-
-                const store = useConfigStore.getState();
-                const channels = normalizeLocalChannels(store.config);
-                const target = channels.find((channel) =>
-                    channel.id === state.channelId && channel.protocol === "tokendance",
-                );
-                if (!target) throw new Error("对应的 TokenDance 渠道不存在");
-
-                const nextChannels = channels.map((channel) =>
-                    channel.id === state.channelId ? { ...channel, apiKey: key } : channel,
-                );
-                const nextConfig = {
-                    ...store.config,
-                    localChannels: nextChannels,
-                    ...(channels[0]?.id === state.channelId ? { apiKey: key } : {}),
-                };
-
-                const accountToken = useUserStore.getState().token;
-                if (accountToken) {
-                    const remote = await fetchUserConfig(accountToken);
-                    if (useUserStore.getState().token !== accountToken) {
-                        throw new Error("登录状态已变化，请重新登录");
-                    }
-                    await syncUserModelConfig(accountToken, nextConfig, remote.modelConfig?.workflowChannels);
-                }
-
-                store.updateConfig("localChannels", nextChannels);
-                if (channels[0]?.id === state.channelId) store.updateConfig("apiKey", key);
-
+                if (useUserStore.getState().token !== accountToken) throw new Error("登录状态已变化，请重新登录");
+                sessionStorage.setItem(`tokendance:oauth-result:${flow}`, JSON.stringify({
+                    key,
+                    draft: state.draft,
+                    editingChannelIndex: state.editingChannelIndex,
+                }));
                 sessionStorage.removeItem(storageKey);
-                message.success("TokenDance 登录成功，API Key 已填入");
-                store.openConfigDialog(false);
-                router.replace(safeReturnTo);
+                const returnUrl = new URL(safeReturnTo, window.location.origin);
+                returnUrl.searchParams.set("tokendance_oauth", flow);
+                router.replace(`${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`);
             } catch (reason) {
                 setError(reason instanceof Error ? reason.message : "TokenDance 授权失败");
             }
         })();
-    }, [message, router]);
+    }, [router]);
 
     return (
         <main className="flex h-full items-center justify-center p-6">

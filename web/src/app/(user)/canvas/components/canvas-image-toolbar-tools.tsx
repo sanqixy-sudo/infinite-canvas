@@ -120,9 +120,9 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     {
         id: "superResolve",
         defaultVisible: false,
-        panelLabel: "超分",
-        label: "超分",
-        title: "AI 超分",
+        panelLabel: "AI 高清重绘",
+        label: "高清重绘",
+        title: "AI 高清重绘 · 确认费用后生成独立结果",
         icon: () => <Sparkles className="size-4" />,
         run: (node, handlers) => handlers.onSuperResolve(node),
     },

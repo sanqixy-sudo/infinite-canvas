@@ -76,18 +76,21 @@ func ListPromptTags(q model.Query) ([]string, error) {
 }
 
 // SavePrompt 保存提示词，并在更新时保留原创建时间。
-func SavePrompt(item model.Prompt) (model.Prompt, error) {
+func SavePrompt(item model.Prompt, storageIDs ...string) (model.Prompt, error) {
 	db, err := DB()
 	if err != nil {
 		return item, err
 	}
-	if saved, ok, err := findPrompt(db, item.ID); err != nil {
-		return item, err
-	} else if ok && item.CreatedAt == "" {
-		item.CreatedAt = saved.CreatedAt
-	}
 	item.GithubURL = ""
-	return item, db.Save(&item).Error
+	err = withStorageReferences(db, storageIDs, func(tx *gorm.DB) error {
+		if saved, ok, err := findPrompt(tx, item.ID); err != nil {
+			return err
+		} else if ok && item.CreatedAt == "" {
+			item.CreatedAt = saved.CreatedAt
+		}
+		return tx.Save(&item).Error
+	})
+	return item, err
 }
 
 // DeletePrompt 删除指定提示词。
@@ -109,12 +112,12 @@ func DeletePrompts(ids []string) error {
 }
 
 // ReplacePromptCategory 用远程同步结果替换整个提示词分类。
-func ReplacePromptCategory(category model.PromptCategory, items []model.Prompt) error {
+func ReplacePromptCategory(category model.PromptCategory, items []model.Prompt, storageIDs ...string) error {
 	db, err := DB()
 	if err != nil {
 		return err
 	}
-	return db.Transaction(func(tx *gorm.DB) error {
+	return withStorageReferences(db, storageIDs, func(tx *gorm.DB) error {
 		if err := tx.Where("category = ?", category.Category).Delete(&model.Prompt{}).Error; err != nil {
 			return err
 		}

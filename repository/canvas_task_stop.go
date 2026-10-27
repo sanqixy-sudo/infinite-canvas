@@ -31,8 +31,9 @@ func StopCanvasTask(userID, id, source string, task any, current time.Time) (boo
 				return err
 			}
 		}
+		statuses:=[]string{"queued", "submitting", "processing", "running", "in_progress", "cancelled"};if _,audio:=task.(*model.CanvasAudioTask);audio{statuses=append(statuses,"unknown")}
 		update := tx.Model(task).
-			Where("user_id = ? AND id = ? AND source = ? AND status IN ?", userID, id, source, []string{"queued", "processing", "running", "in_progress", "cancelled"}).
+			Where("user_id = ? AND id = ? AND source = ? AND status IN ?", userID, id, source, statuses).
 			Updates(map[string]any{"status": "cancelled", "updated_at": stamp, "completed_at": stamp})
 		if update.Error != nil {
 			return update.Error
@@ -44,6 +45,14 @@ func StopCanvasTask(userID, id, source string, task any, current time.Time) (boo
 			return err
 		}
 		stopped = true
+		switch task.(type) {
+		case *model.CanvasAudioTask:
+			if err:=RefreshProductionTask(tx,"audio",userID,id);err!=nil{return err}
+		case *model.CanvasImageTask:
+			if err := RefreshProductionTask(tx, "image", userID, id); err != nil { return err }
+		case *model.VideoTask:
+			if err := RefreshProductionTask(tx, "video", userID, id); err != nil { return err }
+		}
 		if err := tx.Model(&model.ComfyBridgeRequest{}).
 			Where("task_id = ? AND status IN ?", id, []string{"pending", "claimed"}).
 			Updates(map[string]any{"status": "failed", "error": "用户停止", "updated_at": current, "completed_at": current}).Error; err != nil {

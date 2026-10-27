@@ -1,29 +1,46 @@
 package repository
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/tigerowo/infinite-canvas/model"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-func SaveCanvasImageTask(task model.CanvasImageTask) (model.CanvasImageTask, error) {
+var ErrImageTaskConflict = errors.New("任务标识已被使用，请保留原任务或新建一次生成")
+
+func SaveCanvasImageTask(task model.CanvasImageTask, storageIDs ...string) (model.CanvasImageTask, error) {
 	db, err := DB()
 	if err != nil {
 		return task, err
 	}
-	return task, db.Save(&task).Error
+	err = withUserStorageLock(db, task.UserID, storageIDs, func(tx *gorm.DB) error {
+		if err := rejectProductionTaskReplay(tx, task.UserID, task.ID); err != nil { return err }
+		insert := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&task)
+		if insert.Error != nil { return insert.Error }
+		if insert.RowsAffected == 0 { return ErrImageTaskConflict }
+		return captureProductionTask(tx, &task, true)
+	})
+	return task, err
 }
 
-func UpdateCanvasImageTask(task model.CanvasImageTask) (model.CanvasImageTask, error) {
+func UpdateCanvasImageTask(task model.CanvasImageTask, storageIDs ...string) (model.CanvasImageTask, error) {
 	db, err := DB()
 	if err != nil {
 		return task, err
 	}
 
-	return task, db.Model(&model.CanvasImageTask{}).
-		Where("user_id = ? AND id = ? AND status <> ?", task.UserID, task.ID, "cancelled").
-		Select("*").
-		Updates(&task).Error
+	err = withUserStorageLock(db, task.UserID, storageIDs, func(tx *gorm.DB) error {
+		result := tx.Model(&model.CanvasImageTask{}).
+			Where("user_id = ? AND id = ? AND status <> ?", task.UserID, task.ID, "cancelled").
+			Select("*").
+			Updates(&task)
+		if result.Error != nil { return result.Error }
+		return RefreshProductionTask(tx, "image", task.UserID, task.ID)
+	})
+	return task, err
 }
 
 func GetUserCanvasImageTask(userID string, id string) (model.CanvasImageTask, bool, error) {

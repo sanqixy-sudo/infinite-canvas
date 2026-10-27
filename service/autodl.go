@@ -10,12 +10,14 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/tigerowo/infinite-canvas/model"
+	"github.com/tigerowo/infinite-canvas/repository"
 )
 
 const autoDLAPIPath = "/api/v1/comfyui"
@@ -78,6 +80,58 @@ func AutoDLTaskPath(id string, poll bool) string {
 		prefix += "result/"
 	}
 	return prefix + url.PathEscape(strings.TrimSpace(id))
+}
+
+func CurrentUserAutoDLWorkflows(ctx context.Context, channelID, workflowID string) (any, error) {
+	user, ok := UserFromContext(ctx)
+	if !ok || strings.TrimSpace(user.ID) == "" {
+		return nil, errors.New("请先登录")
+	}
+	if !UserCanUseRemoteModelChannel(user) {
+		return nil, errors.New("当前账号未开放云端渠道")
+	}
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	channel, allowed, err := selectAutoDLMetadataChannel(settings, channelID, workflowID, user.Role != model.UserRoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(workflowID) != "" {
+		return AutoDLWorkflowDetail(channel.BaseURL, workflowID)
+	}
+	if len(allowed) == 0 {
+		return []AutoDLWorkflow{}, nil
+	}
+	workflows, err := AutoDLWorkflows(channel.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]AutoDLWorkflow, 0, len(workflows))
+	for _, workflow := range workflows {
+		if slices.Contains(allowed, workflow.UUID) {
+			result = append(result, workflow)
+		}
+	}
+	return result, nil
+}
+
+func selectAutoDLMetadataChannel(settings model.Settings, channelID, workflowID string, publicOnly bool) (model.ModelChannel, []string, error) {
+	for _, channel := range normalizePrivateSetting(settings.Private).Channels {
+		if channel.ID != strings.TrimSpace(channelID) || !channel.Enabled || !IsAutoDLChannel(channel) {
+			continue
+		}
+		allowed := channel.Models
+		if publicOnly {
+			allowed = filterEnabledModels(settings.Public.ModelChannel.AvailableModels, channel.Models)
+		}
+		if strings.TrimSpace(workflowID) != "" && !slices.Contains(allowed, strings.TrimSpace(workflowID)) {
+			return model.ModelChannel{}, nil, errors.New("模型未开放")
+		}
+		return channel, allowed, nil
+	}
+	return model.ModelChannel{}, nil, errors.New("AutoDL 平台渠道不存在或已停用")
 }
 
 func AutoDLWorkflows(baseURL string) ([]AutoDLWorkflow, error) {

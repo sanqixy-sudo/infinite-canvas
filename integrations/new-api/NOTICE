@@ -1,0 +1,10 @@
+This directory contains a modified task plugin based on Doubao 1.3.0 from
+QuantumNous/new-api-plugins, distributed under the Apache License, Version 2.0.
+
+Source: https://github.com/QuantumNous/new-api-plugins/tree/main/plugins/tasks/doubao/1.3.0
+API contract: https://github.com/QuantumNous/new-api-plugins/blob/main/docs/plugin-api/v1.md
+
+The Xiaomeng adaptation supports four NewToken Seedance models within the
+fixed 720x1280 portrait account group, applies strict total-token or separate input/output
+accounting, persists the submitted billing mode, preserves pending usage
+responses, and exposes separate native routes.

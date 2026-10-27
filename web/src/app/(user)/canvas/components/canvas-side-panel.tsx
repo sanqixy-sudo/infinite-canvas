@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Empty, Input, Pagination, Select, Spin } from "antd";
+import { Alert, App, Empty, Input, Pagination, Select, Spin, TreeSelect } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, ChevronRight, Clapperboard, Eye, FileText, Group, Image as ImageIcon, Music2, Plus, Search, Settings2, Type, Video } from "lucide-react";
 import { motion } from "motion/react";
@@ -15,6 +15,8 @@ import { fetchAssetLibrary, type AssetLibraryItem } from "@/services/api/assets"
 import { fetchPrompts, type Prompt } from "@/services/api/prompts";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useUserStore } from "@/stores/use-user-store";
+import { folderDescendantIds, folderTreeOptions, type AssetScope } from "@/lib/asset-organization";
 
 import { CanvasNodeType, type CanvasNodeData } from "../types";
 import { isCanvasImageNodeType } from "../utils/canvas-panorama";
@@ -40,7 +42,7 @@ type Props = {
     onFocusNode: (nodeId: string) => void;
     onAssetDragStart: (payload: InsertAssetPayload) => void;
     onAssetDragEnd: () => void;
-    onInsertAsset: (payload: InsertAssetPayload) => void;
+    onInsertAsset: (payload: InsertAssetPayload) => void | Promise<void>;
 };
 
 const NODE_TYPE_ICON = {
@@ -154,7 +156,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, open, width, onWidthCh
                     {tab === "canvas" ? (
                         <CanvasNodesTab nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={onFocusNode} theme={theme} />
                     ) : tab === "assets" ? (
-                        <CanvasAssetsTab theme={theme} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />
+                        <CanvasAssetsTab theme={theme} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} onInsert={onInsertAsset} />
                     ) : (
                         <CanvasPromptsTab theme={theme} onInsert={onInsertAsset} />
                     )}
@@ -263,9 +265,9 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, theme }: { nodes:
     );
 }
 
-const CanvasAssetsTab = memo(function CanvasAssetsTab({ theme, onAssetDragStart, onAssetDragEnd }: { theme: CanvasTheme; onAssetDragStart: (payload: InsertAssetPayload) => void; onAssetDragEnd: () => void }) {
+type AssetInsertAction = (payload: InsertAssetPayload) => void | Promise<void>;
+const CanvasAssetsTab = memo(function CanvasAssetsTab({ theme, onAssetDragStart, onAssetDragEnd, onInsert }: { theme: CanvasTheme; onAssetDragStart: (payload: InsertAssetPayload) => void; onAssetDragEnd: () => void; onInsert: AssetInsertAction }) {
     const [source, setSource] = useState<"mine" | "library">("mine");
-    const [formOpen, setFormOpen] = useState(false);
 
     return (
         <div className="flex h-full flex-col">
@@ -274,11 +276,10 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ theme, onAssetDragStart,
                 <AssetSourceTab label="素材库" active={source === "library"} theme={theme} onClick={() => setSource("library")} />
             </div>
             {source === "mine" ? (
-                <MyAssetsTab theme={theme} onAdd={() => setFormOpen(true)} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />
+                <MyAssetsTab theme={theme} onInsert={onInsert} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />
             ) : (
-                <LibraryAssetsTab theme={theme} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />
+                <LibraryAssetsTab theme={theme} onInsert={onInsert} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />
             )}
-            <AssetFormModal open={formOpen} onClose={() => setFormOpen(false)} />
         </div>
     );
 });
@@ -292,8 +293,19 @@ function AssetSourceTab({ label, active, theme, onClick }: { label: string; acti
     );
 }
 
-function MyAssetsTab({ theme, onAdd, onAssetDragStart, onAssetDragEnd }: { theme: CanvasTheme; onAdd: () => void; onAssetDragStart: (payload: InsertAssetPayload) => void; onAssetDragEnd: () => void }) {
-    const assets = useAssetStore((state) => state.assets);
+function MyAssetsTab({ theme, onInsert, onAssetDragStart, onAssetDragEnd }: { theme: CanvasTheme; onInsert: AssetInsertAction; onAssetDragStart: (payload: InsertAssetPayload) => void; onAssetDragEnd: () => void }) {
+    const token = useUserStore((state) => state.token);
+    const localAssets = useAssetStore((state) => state.localAssets);
+    const cloudAssets = useAssetStore((state) => state.cloudAssets);
+    const localFolders = useAssetStore((state) => state.localFolders);
+    const cloudFolders = useAssetStore((state) => state.cloudFolders);
+    const loading = useAssetStore((state) => state.cloudLoading);
+    const error = useAssetStore((state) => state.error);
+    const [scope, setScope] = useState<AssetScope>(token ? "cloud" : "local");
+    const [folderId, setFolderId] = useState("");
+    const [formOpen, setFormOpen] = useState(false);
+    const assets = scope === "cloud" ? cloudAssets : localAssets;
+    const folders = scope === "cloud" ? cloudFolders : localFolders;
     const [keyword, setKeyword] = useState("");
     const [type, setType] = useState("");
     const [category, setCategory] = useState("");
@@ -303,15 +315,24 @@ function MyAssetsTab({ theme, onAdd, onAssetDragStart, onAssetDragEnd }: { theme
     const tags = useMemo(() => Array.from(new Set(assets.flatMap((asset) => asset.tags || []))), [assets]);
     const filtered = useMemo(() => {
         const query = keyword.trim().toLowerCase();
-        return assets.filter((asset) => (!type || asset.kind === type) && (!category || asset.category === category) && (!selectedTags.length || selectedTags.some((tag) => asset.tags.includes(tag))) && (!query || [asset.title, asset.category || "", ...(asset.tags || [])].join(" ").toLowerCase().includes(query)));
-    }, [assets, keyword, type, category, selectedTags]);
+        const branch = new Set(folderId && folderId !== "__unfiled__" ? folderDescendantIds(folders, folderId) : []);
+        return assets.filter((asset) => (!type || asset.kind === type) && (!category || asset.category === category) && selectedTags.every((tag) => asset.tags.includes(tag))
+            && (!folderId || (folderId === "__unfiled__" ? !asset.folderIds?.length : asset.folderIds?.some((id) => branch.has(id))))
+            && (!query || [asset.title, asset.category || "", ...(asset.tags || [])].join(" ").toLowerCase().includes(query)));
+    }, [assets, keyword, type, category, selectedTags, folderId, folders]);
     const items = filtered.slice((page - 1) * ASSET_PAGE_SIZE, page * ASSET_PAGE_SIZE);
 
     useEffect(() => setPage((value) => Math.min(value, Math.max(1, Math.ceil(filtered.length / ASSET_PAGE_SIZE)))), [filtered.length]);
-    useEffect(() => setPage(1), [keyword, type, category, selectedTags]);
+    useEffect(() => setPage(1), [keyword, type, category, selectedTags, folderId, scope]);
+    useEffect(() => { setScope(token ? "cloud" : "local"); setFolderId(""); setCategory(""); setSelectedTags([]); setKeyword(""); setFormOpen(false); }, [token]);
+    useEffect(() => { if (folderId && folderId !== "__unfiled__" && !loading && !folders.some((folder) => folder.id === folderId)) setFolderId(""); }, [folderId, folders, loading]);
 
     return (
         <>
+            <div className="space-y-2 px-3 pb-3">
+                <Select<AssetScope> aria-label="侧栏素材保存位置" size="small" className="w-full" value={scope} options={[{ value: "cloud", label: `账号素材库 · ${cloudAssets.length}`, disabled: !token }, { value: "local", label: `当前浏览器 · ${localAssets.length}` }]} onChange={(value) => { setScope(value); setFolderId(""); setCategory(""); setSelectedTags([]); }} />
+                <TreeSelect aria-label="侧栏素材文件夹" size="small" className="w-full" value={folderId || undefined} placeholder="全部文件夹" allowClear treeDefaultExpandAll treeData={[{ value: "__unfiled__", title: "未整理" }, ...folderTreeOptions(folders)]} onChange={(value) => setFolderId(value || "")} />
+            </div>
             <div className="flex items-center gap-4 px-3 pb-2">
                 {ASSET_TYPE_OPTIONS.map((option) => <AssetSourceTab key={option.value || "all"} label={option.label} active={type === option.value} theme={theme} onClick={() => setType(option.value)} />)}
             </div>
@@ -321,26 +342,29 @@ function MyAssetsTab({ theme, onAdd, onAssetDragStart, onAssetDragEnd }: { theme
                     <Select size="small" className="w-full" value={category} onChange={setCategory} options={[{ label: "全部", value: "" }, ...categories.map((item) => ({ label: item, value: item }))]} />
                 </div>
                 <div className="min-w-0">
-                    <div className="mb-1 text-xs opacity-50" style={{ color: theme.node.text }}>标签</div>
+                    <div className="mb-1 text-xs opacity-50" style={{ color: theme.node.text }}>标签（同时满足）</div>
                     <Select mode="multiple" size="small" className="w-full" value={selectedTags} placeholder="全部" allowClear maxTagCount={1} onChange={(values) => setSelectedTags(values.includes("") ? [] : values)} options={[{ label: "全部", value: "" }, ...tags.map((tag) => ({ label: tag, value: tag }))]} />
                 </div>
             </div>
             <div className="flex items-center gap-2 px-3 pb-2">
                 <Input size="small" allowClear prefix={<Search className="size-3.5 text-stone-400" />} placeholder="搜索素材" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
-                <button type="button" onClick={onAdd} className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }}>
+                <button type="button" onClick={() => setFormOpen(true)} className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }}>
                     <Plus className="size-3.5" />
                     添加
                 </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-                {filtered.length ? <div className="grid grid-cols-2 gap-2 px-1 pt-1">{items.map((asset) => <AssetDragCard key={asset.id} asset={asset} theme={theme} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无素材" className="pt-16" />}
+                {scope === "cloud" && error && <Alert className="mb-2" type="error" title={error} />}
+                {scope === "cloud" && loading ? <div className="py-10 text-center"><Spin size="small" /></div> : filtered.length ? <div className="grid grid-cols-2 gap-2 px-1 pt-1">{items.map((asset) => <AssetDragCard key={`${scope}:${asset.id}`} asset={asset} theme={theme} onInsert={onInsert} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前范围暂无素材" className="pt-16" />}
                 {filtered.length > ASSET_PAGE_SIZE ? <Pagination className="!mt-3 flex justify-center" size="small" current={page} pageSize={ASSET_PAGE_SIZE} total={filtered.length} showSizeChanger={false} onChange={setPage} /> : null}
             </div>
+            <p className="px-3 pb-3 text-[11px] opacity-50">点击插入，或拖到画布指定位置</p>
+            <AssetFormModal open={formOpen} scope={scope} defaultFolderIds={folderId && folderId !== "__unfiled__" ? [folderId] : []} onClose={() => setFormOpen(false)} />
         </>
     );
 }
 
-function LibraryAssetsTab({ theme, onAssetDragStart, onAssetDragEnd }: { theme: CanvasTheme; onAssetDragStart: (payload: InsertAssetPayload) => void; onAssetDragEnd: () => void }) {
+function LibraryAssetsTab({ theme, onInsert, onAssetDragStart, onAssetDragEnd }: { theme: CanvasTheme; onInsert: AssetInsertAction; onAssetDragStart: (payload: InsertAssetPayload) => void; onAssetDragEnd: () => void }) {
     const [keyword, setKeyword] = useState("");
     const [type, setType] = useState("");
     const [category, setCategory] = useState("");
@@ -374,36 +398,57 @@ function LibraryAssetsTab({ theme, onAssetDragStart, onAssetDragEnd }: { theme: 
                 <Select size="small" variant="borderless" className="w-16" value={type} onChange={setType} options={ASSET_TYPE_OPTIONS} />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-                {query.isLoading ? <div className="flex justify-center pt-16"><Spin size="small" /></div> : items.length ? <div className="grid grid-cols-2 gap-2 px-1 pt-1">{items.map((asset) => <LibraryAssetDragCard key={asset.id} asset={asset} theme={theme} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无素材" className="pt-16" />}
+                {query.isLoading ? <div className="flex justify-center pt-16"><Spin size="small" /></div> : query.isError ? <button className="w-full py-10 text-xs" onClick={() => void query.refetch()}>素材加载失败，点击重试</button> : items.length ? <div className="grid grid-cols-2 gap-2 px-1 pt-1">{items.map((asset) => <LibraryAssetDragCard key={asset.id} asset={asset} theme={theme} onInsert={onInsert} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无素材" className="pt-16" />}
                 {query.data?.total && query.data.total > ASSET_PAGE_SIZE ? <Pagination className="!mt-3 flex justify-center" size="small" current={page} pageSize={ASSET_PAGE_SIZE} total={query.data.total} showSizeChanger={false} onChange={setPage} /> : null}
             </div>
         </>
     );
 }
 
-function AssetDragCard({ asset, theme, onAssetDragStart, onAssetDragEnd }: { asset: Asset; theme: CanvasTheme; onAssetDragStart: (payload: InsertAssetPayload) => void; onAssetDragEnd: () => void }) {
-    return <DraggableAssetCard theme={theme} title={asset.title} payload={assetPayload(asset)} kind={asset.kind} imageUrl={asset.kind === "text" ? asset.coverUrl : asset.kind === "image" ? asset.coverUrl || asset.data.dataUrl : asset.kind === "video" ? asset.coverUrl || asset.data.url : ""} text={asset.kind === "text" ? asset.data.content : ""} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />;
+function AssetDragCard({ asset, theme, onInsert, onAssetDragStart, onAssetDragEnd }: { asset: Asset; theme: CanvasTheme; onInsert: AssetInsertAction; onAssetDragStart: (payload: InsertAssetPayload) => void; onAssetDragEnd: () => void }) {
+    return <DraggableAssetCard theme={theme} title={asset.title} payload={assetPayload(asset)} kind={asset.kind} imageUrl={asset.kind === "text" ? asset.coverUrl : asset.kind === "image" ? asset.coverUrl || asset.data.dataUrl : asset.kind === "video" ? asset.data.url : ""} poster={asset.kind === "video" ? asset.coverUrl : undefined} text={asset.kind === "text" ? asset.data.content : ""} onInsert={onInsert} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />;
 }
 
-function LibraryAssetDragCard({ asset, theme, onAssetDragStart, onAssetDragEnd }: { asset: AssetLibraryItem; theme: CanvasTheme; onAssetDragStart: (payload: InsertAssetPayload) => void; onAssetDragEnd: () => void }) {
-    return <DraggableAssetCard theme={theme} title={asset.title} payload={libraryPayload(asset)} kind={asset.type} imageUrl={asset.coverUrl || asset.url} text={asset.content || asset.description} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />;
+function LibraryAssetDragCard({ asset, theme, onInsert, onAssetDragStart, onAssetDragEnd }: { asset: AssetLibraryItem; theme: CanvasTheme; onInsert: AssetInsertAction; onAssetDragStart: (payload: InsertAssetPayload) => void; onAssetDragEnd: () => void }) {
+    return <DraggableAssetCard theme={theme} title={asset.title} payload={libraryPayload(asset)} kind={asset.type} imageUrl={asset.type === "video" ? asset.url : asset.coverUrl || asset.url} poster={asset.type === "video" ? asset.coverUrl : undefined} text={asset.content || asset.description} onInsert={onInsert} onAssetDragStart={onAssetDragStart} onAssetDragEnd={onAssetDragEnd} />;
 }
 
-function DraggableAssetCard({ theme, title, payload, kind, imageUrl, text, onAssetDragStart, onAssetDragEnd }: { theme: CanvasTheme; title: string; payload: InsertAssetPayload; kind: "text" | "image" | "video" | "audio"; imageUrl: string; text: string; onAssetDragStart: (payload: InsertAssetPayload) => void; onAssetDragEnd: () => void }) {
+function DraggableAssetCard({ theme, title, payload, kind, imageUrl, poster, text, onInsert, onAssetDragStart, onAssetDragEnd }: { theme: CanvasTheme; title: string; payload: InsertAssetPayload; kind: "text" | "image" | "video" | "audio"; imageUrl: string; poster?: string; text: string; onInsert: AssetInsertAction; onAssetDragStart: (payload: InsertAssetPayload) => void; onAssetDragEnd: () => void }) {
+    const { message } = App.useApp();
+    const dragged = useRef(false);
+    const inserting = useRef(false);
+    const [busy, setBusy] = useState(false);
+    const insert = async () => {
+        if (inserting.current) return;
+        inserting.current = true;
+        setBusy(true);
+        try { await onInsert(payload); }
+        catch (cause) { message.error(cause instanceof Error ? cause.message : "素材插入失败"); }
+        finally { inserting.current = false; setBusy(false); }
+    };
     return (
         <div
-            draggable
-            title={title}
+            role="button"
+            tabIndex={busy ? -1 : 0}
+            aria-label={`插入素材：${title}`}
+            aria-disabled={busy}
+            draggable={!busy}
+            title={`${title} · 点击插入或拖到画布`}
+            onPointerDown={() => { dragged.current = false; }}
+            onClick={() => { if (!dragged.current) void insert(); }}
+            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); void insert(); } }}
             onDragStart={(event) => {
+                dragged.current = true;
                 event.dataTransfer.setData(CANVAS_ASSET_DRAG_TYPE, "asset");
                 event.dataTransfer.effectAllowed = "copy";
                 onAssetDragStart(payload);
             }}
             onDragEnd={onAssetDragEnd}
-            className="group relative aspect-square cursor-grab overflow-hidden rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:shadow-lg active:cursor-grabbing"
+            className="group relative aspect-square cursor-grab overflow-hidden rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-ring active:cursor-grabbing"
             style={{ borderColor: theme.node.stroke, background: theme.node.panel }}
         >
-            {kind === "text" ? imageUrl ? <div className="flex size-full flex-col"><img src={imageUrl} alt={title} className="h-1/2 w-full object-cover" /><div className="h-1/2 overflow-hidden whitespace-pre-wrap break-words p-2.5 text-[11px] leading-snug opacity-80">{text}</div></div> : <div className="size-full overflow-hidden whitespace-pre-wrap break-words p-2.5 text-[11px] leading-snug opacity-80">{text}</div> : kind === "audio" ? <span className="grid size-full place-items-center"><Music2 className="size-8 opacity-45" /></span> : imageUrl ? kind === "video" ? <video src={imageUrl + "#t=0.1"} muted playsInline preload="metadata" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" /> : <img src={imageUrl} alt={title} className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" /> : <span className="grid size-full place-items-center"><FileText className="size-8 opacity-45" /></span>}
+            {kind === "text" ? imageUrl ? <div className="flex size-full flex-col"><img draggable={false} src={imageUrl} alt={title} className="h-1/2 w-full object-cover" /><div className="h-1/2 overflow-hidden whitespace-pre-wrap break-words p-2.5 text-[11px] leading-snug opacity-80">{text}</div></div> : <div className="size-full overflow-hidden whitespace-pre-wrap break-words p-2.5 text-[11px] leading-snug opacity-80">{text}</div> : kind === "audio" ? <span className="grid size-full place-items-center"><Music2 className="size-8 opacity-45" /></span> : imageUrl ? kind === "video" ? <video src={imageUrl + "#t=0.1"} poster={poster} muted playsInline preload="metadata" className="pointer-events-none size-full object-cover transition duration-300 group-hover:scale-[1.04]" /> : <img draggable={false} src={imageUrl} alt={title} className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" /> : <span className="grid size-full place-items-center"><FileText className="size-8 opacity-45" /></span>}
+            <span className="absolute inset-x-0 bottom-0 truncate px-2 py-1.5 text-[10px]" style={{ background: theme.toolbar.panel, color: theme.node.text }}>{busy ? "正在插入…" : title}</span>
         </div>
     );
 }

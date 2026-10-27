@@ -8,10 +8,14 @@ import type { ReactNode } from "react";
 import { useEffect } from "react";
 
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { BrandMark } from "@/components/brand/brand-mark";
 import { adminLayoutStyle } from "@/lib/app-theme";
+import { loginHrefForPath } from "@/lib/auth-navigation";
 import { useUserStore } from "@/stores/use-user-store";
 
 const adminMenus = [
+    { key: "/admin/model-gateway", icon: <ToolOutlined />, label: "模型中间件" },
+    { key: "/admin/commerce", icon: <TransactionOutlined />, label: "充值与空间" },
     { key: "/admin/users", icon: <UserOutlined />, label: "用户管理" },
     { key: "/admin/credit-logs", icon: <TransactionOutlined />, label: "算力点日志" },
     { key: "/admin/ai-logs", icon: <AuditOutlined />, label: "AI 日志" },
@@ -28,8 +32,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const token = useUserStore((state) => state.token);
     const user = useUserStore((state) => state.user);
     const isReady = useUserStore((state) => state.isReady);
+    const isLoading = useUserStore((state) => state.isLoading);
+    const authError = useUserStore((state) => state.authError);
     const logout = useUserStore((state) => state.clearSession);
-    const activeKey = pathname.startsWith("/admin/settings")
+    const activeKey = pathname.startsWith("/admin/model-gateway") ? "/admin/model-gateway" : pathname.startsWith("/admin/commerce") ? "/admin/commerce" : pathname.startsWith("/admin/settings")
         ? "/admin/settings"
         : pathname.startsWith("/admin/assets")
           ? "/admin/assets"
@@ -44,23 +50,23 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                   : pathname.startsWith("/admin/users")
                     ? "/admin/users"
                     : "";
-    const pageTitle = pathname.startsWith("/admin/settings") ? "系统设置" : pathname.startsWith("/admin/assets") ? "素材库管理" : pathname.startsWith("/admin/skills") ? "Skill 管理" : pathname.startsWith("/admin/prompts") ? "提示词管理" : pathname.startsWith("/admin/ai-logs") ? "AI 日志" : pathname.startsWith("/admin/credit-logs") ? "算力点日志" : "用户管理";
+    const pageTitle = pathname.startsWith("/admin/model-gateway") ? "模型中间件" : pathname.startsWith("/admin/commerce") ? "充值与存储空间" : pathname.startsWith("/admin/settings") ? "系统设置" : pathname.startsWith("/admin/assets") ? "素材库管理" : pathname.startsWith("/admin/skills") ? "Skill 管理" : pathname.startsWith("/admin/prompts") ? "提示词管理" : pathname.startsWith("/admin/ai-logs") ? "AI 日志" : pathname.startsWith("/admin/credit-logs") ? "算力点日志" : "用户管理";
 
     useEffect(() => {
-        if (!isReady) return;
+        if (!isReady || isLoading || (token && authError)) return;
         if (!token) {
-            router.replace("/login?redirect=/admin");
+            router.replace(loginHrefForPath(`${window.location.pathname}${window.location.search}${window.location.hash}`));
             return;
         }
         if (user?.role !== "admin") {
-            router.replace("/");
+            router.replace("/workspace");
         }
-    }, [isReady, router, token, user?.role]);
+    }, [isReady, isLoading, authError, pathname, router, token, user?.role]);
 
-    if (!isReady || !token || user?.role !== "admin") {
+    if (!isReady || authError || !token || user?.role !== "admin") {
         return (
             <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", background: antToken.colorBgLayout }}>
-                <span />
+                <div role={authError && token ? "alert" : "status"} style={{ color: antToken.colorTextSecondary, textAlign: "center" }}>{authError && token ? <><p>暂时无法确认登录状态，请重试。</p><Button type="link" onClick={() => void useUserStore.getState().hydrateUser()}>重新连接</Button></> : "正在确认登录状态…"}</div>
             </div>
         );
     }
@@ -69,9 +75,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <Layout hasSider style={{ height: "100vh", overflow: "hidden", background: antToken.colorBgLayout }}>
             <Layout.Sider width={adminLayoutStyle.siderWidth} style={{ height: "100vh", overflow: "hidden", background: antToken.colorBgContainer, borderRight: `1px solid ${antToken.colorBorder}` }}>
                 <Flex align="center" gap={12} style={{ height: adminLayoutStyle.brandHeight, padding: "0 20px", borderBottom: `1px solid ${antToken.colorBorderSecondary}` }}>
-                    <span aria-hidden style={{ display: "inline-block", width: 30, height: 30, background: antToken.colorText, WebkitMask: "url(/logo.svg) center / contain no-repeat", mask: "url(/logo.svg) center / contain no-repeat" }} />
+                    <BrandMark width={30} height={30} style={{ flexShrink: 0, color: antToken.colorText }} />
                     <Typography.Text strong style={{ fontSize: 18, letterSpacing: 0 }}>
-                        无限画布
+                        小盟视频工作台
                     </Typography.Text>
                 </Flex>
                 <Menu

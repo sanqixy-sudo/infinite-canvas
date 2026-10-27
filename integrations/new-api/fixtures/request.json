@@ -1,0 +1,13 @@
+{
+  "model": "doubao-seedance-2-0-fast-260128",
+  "content": [
+    { "type": "text", "text": "镜头沿河岸缓慢移动，保持参考画面的色调" },
+    { "type": "image_url", "image_url": { "url": "https://media.example.com/reference.jpg" }, "role": "reference_image" },
+    { "type": "video_url", "video_url": { "url": "https://media.example.com/reference.mp4" }, "role": "reference_video" }
+  ],
+  "resolution": "720p",
+  "duration": 6,
+  "ratio": "9:16",
+  "seed": 0,
+  "generate_audio": true
+}

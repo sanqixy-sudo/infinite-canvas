@@ -1,0 +1,5 @@
+{
+  "id": "ultra720_fixture_003",
+  "status": "failed",
+  "error": { "code": "invalid_reference", "message": "参考素材无法读取" }
+}

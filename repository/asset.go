@@ -8,6 +8,15 @@ import (
 )
 
 // ListAssets 按查询条件返回素材分页列表。
+func GetAsset(id string) (model.Asset, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.Asset{}, false, err
+	}
+	return findAsset(db, id)
+}
+
+// ListAssets 按查询条件返回素材分页列表。
 func ListAssets(q model.Query) ([]model.Asset, int64, error) {
 	db, err := DB()
 	if err != nil {
@@ -53,17 +62,20 @@ func ListAssetFilters(q model.Query) ([]string, []string, error) {
 }
 
 // SaveAsset 保存素材，并在更新时保留原创建时间。
-func SaveAsset(item model.Asset) (model.Asset, error) {
+func SaveAsset(item model.Asset, storageIDs ...string) (model.Asset, error) {
 	db, err := DB()
 	if err != nil {
 		return item, err
 	}
-	if saved, ok, err := findAsset(db, item.ID); err != nil {
-		return item, err
-	} else if ok && item.CreatedAt == "" {
-		item.CreatedAt = saved.CreatedAt
-	}
-	return item, db.Save(&item).Error
+	err = withStorageReferences(db, storageIDs, func(tx *gorm.DB) error {
+		if saved, ok, err := findAsset(tx, item.ID); err != nil {
+			return err
+		} else if ok && item.CreatedAt == "" {
+			item.CreatedAt = saved.CreatedAt
+		}
+		return tx.Save(&item).Error
+	})
+	return item, err
 }
 
 // DeleteAsset 删除指定素材。

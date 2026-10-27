@@ -1,4 +1,5 @@
 import { apiPost } from "@/services/api/request";
+import { requireCloudModelAccess } from "./cloud-model-access";
 
 export type AutoDLInputRule = {
     type: string;
@@ -15,10 +16,10 @@ export type AutoDLWorkflow = {
     input_rules?: Record<string, AutoDLInputRule>;
 };
 
-export function fetchAutoDLWorkflows(baseUrl: string) {
-    return apiPost<AutoDLWorkflow[]>("/api/ai/autodl/workflows", { baseUrl });
+export function fetchAutoDLWorkflows(channelId: string) {
+	return apiPost<AutoDLWorkflow[]>("/api/ai/autodl/workflows", { channelId }, requireCloudModelAccess());
 }
 
-export function fetchAutoDLWorkflow(baseUrl: string, workflowId: string) {
-    return apiPost<AutoDLWorkflow>("/api/ai/autodl/workflows", { baseUrl, workflowId });
+export function fetchAutoDLWorkflow(channelId: string, workflowId: string) {
+	return apiPost<AutoDLWorkflow>("/api/ai/autodl/workflows", { channelId, workflowId }, requireCloudModelAccess());
 }

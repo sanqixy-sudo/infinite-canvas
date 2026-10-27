@@ -136,14 +136,20 @@ func saveAgentSkill(input model.AgentSkill, source string, ownerUserID string) (
 		CreatedAt:       createdAt,
 		UpdatedAt:       current,
 	}
+	ids, err := taskStorageReferenceIDs(item)
+	if err != nil {
+		return model.AgentSkill{}, err
+	}
 	if source == model.AgentSkillSourceSystem {
 		files, err := normalizeAgentSkillFiles(id, input.Files, current)
 		if err != nil {
 			return model.AgentSkill{}, err
 		}
-		return repository.SaveAgentSkillPackage(item, files)
+		saved, err := repository.SaveAgentSkillPackage(item, files, ids...)
+		return saved, storageReferenceError(err)
 	}
-	return repository.SaveAgentSkill(item)
+	saved, err := repository.SaveAgentSkill(item, ids...)
+	return saved, storageReferenceError(err)
 }
 
 func normalizeAgentSkillFiles(skillID string, files []model.AgentSkillFile, current string) ([]model.AgentSkillFile, error) {

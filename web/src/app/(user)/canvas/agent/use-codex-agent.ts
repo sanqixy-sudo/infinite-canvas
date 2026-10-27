@@ -29,6 +29,7 @@ const agentTools = [...CANVAS_AGENT_TOOLS, CANVAS_AGENT_SKILL_FILE_TOOL].map(({ 
 const stopped = () => new DOMException("Agent 已停止", "AbortError");
 
 export function useCodexAgent(options: {
+    disabled?: boolean;
     canvasId: string;
     executeTool: (action: CanvasAgentAction, signal: AbortSignal) => Promise<CanvasAgentToolResult>;
     onApproval: (request: CodexRpcEvent, signal: AbortSignal) => Promise<unknown>;
@@ -57,6 +58,7 @@ export function useCodexAgent(options: {
         setError("");
     };
     const connect = async (next: CodexConnection) => {
+        if (options.disabled) return false;
         disconnect();
         const attempt = connectionAttempt.current;
         setStatus("connecting");
@@ -80,6 +82,7 @@ export function useCodexAgent(options: {
         }
     };
     useEffect(() => {
+        if (options.disabled) return;
         try {
             const stored = JSON.parse(localStorage.getItem(CONNECTION_KEY) || "null");
             if (stored && typeof stored.endpoint === "string" && typeof stored.token === "string") setConnectionState(stored);
@@ -106,7 +109,7 @@ export function useCodexAgent(options: {
     }, []);
 
     useEffect(() => {
-        if (!enabled || !connection.token || !options.canvasId) return;
+        if (options.disabled || !enabled || !connection.token || !options.canvasId) return;
         try { normalizeCodexEndpoint(connection.endpoint); }
         catch (reason) { setError((reason as Error).message); setStatus("error"); return; }
         setStatus("connecting");
@@ -234,13 +237,14 @@ export function useCodexAgent(options: {
             if (client.current === link) { client.current = null; dispatch.current = null; }
             link.close();
         };
-    }, [options.canvasId, connection.endpoint, connection.token, retry, enabled]);
+    }, [options.disabled, options.canvasId, connection.endpoint, connection.token, retry, enabled]);
 
     const getClient = () => {
         if (!client.current?.connected() || status !== "ready") throw new Error(error || "请先连接本地 Agent");
         return client.current;
     };
     const run = async (input: RunInput): Promise<RunCanvasAgentResult> => {
+        if (options.disabled) throw new Error("本地 Agent 已停用，请使用平台云端创作助手");
         const link = getClient();
         const threadId = input.serviceId === link.serviceId ? input.threadId : undefined;
         if (active.current) throw new Error("当前 Codex 对话仍在运行");

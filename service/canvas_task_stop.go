@@ -34,7 +34,7 @@ func CanvasTaskContext(kind, userID, id string) (context.Context, func(), error)
 	if err != nil {
 		return nil, nil, err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(WithTaskCreditReference(context.Background(), kind, id))
 	key := kind + ":" + userID + ":" + id
 	run := &canvasTaskRun{cancel: cancel}
 	canvasTaskRuns.Store(key, run)
@@ -64,11 +64,19 @@ func StopCanvasTask(userID, kind, id string, workflow bool, source string) (bool
 	if id == "" {
 		return false, errors.New("缺少任务 ID")
 	}
+	if kind == "video" && !workflow {
+		lookup := id
+		if strings.HasPrefix(id,"client_video_task_") { lookup="gateway_"+gatewayHash([]string{userID,id}) }
+		if video,found,err:=repository.GetUserVideoTask(userID,lookup);err!=nil{return false,err}else if found && video.GatewaySnapshot!="" {
+			return false,safeMessageError{message:"该渠道暂不支持取消已提交任务，任务会在后台继续生成并按实际用量结算"}
+		}
+	}
 	task, err := canvasTaskModel(kind)
 	if err != nil {
 		return false, err
 	}
 	current := time.Now().UTC()
+	if kind=="audio"&&!workflow&&strings.HasPrefix(id,"production_voice_") { if len(id)>128||strings.ContainsAny(id,"/:\\\x00\r\n"){return false,errors.New("配音任务 ID 无效")};if err:=repository.EnsureCancelledAudioRequest(userID,id,current.Format(time.RFC3339Nano));err!=nil{return false,err} }
 	if workflow {
 		id = workflowTaskID(userID, kind, id)
 	} else if kind == "video" && strings.HasPrefix(id, "client_video_task_") {

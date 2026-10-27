@@ -2,13 +2,16 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { AppProviders } from "@/components/layout/app-providers";
-import "antd/dist/reset.css";
 import "./globals.css";
 import React from "react";
 
 export const metadata: Metadata = {
-    title: "无限画布",
-    description: "一个无限画布创作工具",
+    title: "小盟视频工作台",
+    description: "小盟视频工作台，管理画布、素材与 AI 创作任务。",
+    icons: {
+        icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/favicon.ico", sizes: "16x16 32x32 48x48" }],
+        shortcut: "/favicon.ico",
+    },
 };
 
 export default function RootLayout({
@@ -18,6 +21,7 @@ export default function RootLayout({
 }>) {
     return (
         <html lang="zh-CN" suppressHydrationWarning className="font-sans">
+            <head><style>{"@layer theme, base, antd, components, utilities;"}</style></head>
             <body
                 className="bg-background text-foreground antialiased"
                 style={{

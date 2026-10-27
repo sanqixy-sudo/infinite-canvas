@@ -53,6 +53,11 @@ func TestStorageProviderConfigured(t *testing.T) {
 	}) {
 		t.Fatal("complete S3 provider should be configured")
 	}
+	if storageProviderConfigured(model.StorageProvider{
+		Type: model.StorageProviderTypeS3, Endpoint: "https://user:password@s3.example.com", Bucket: "media", AccessKeyID: "key", SecretAccessKey: "secret",
+	}) {
+		t.Fatal("S3 endpoint containing credentials should be rejected")
+	}
 
 	webDAV := normalizeStorageProvider(model.StorageProvider{
 		Type: model.StorageProviderTypeWebDAV, Endpoint: "https://dav.example.com", Username: "user", Password: "password",
@@ -67,6 +72,19 @@ func TestStorageProviderConfigured(t *testing.T) {
 		Type: model.StorageProviderTypeWebDAV, Endpoint: "https://dav.example.com",
 	}) {
 		t.Fatal("WebDAV provider without credentials should be incomplete")
+	}
+}
+
+func TestS3EndpointAcceptsR2AndRejectsInvalidPaths(t *testing.T) {
+	provider := model.StorageProvider{Endpoint: "https://account.r2.cloudflarestorage.com", Region: "auto", Bucket: "media", AccessKeyID: "key", SecretAccessKey: "secret"}
+	request, err := newS3Request("PUT", provider, "files/test.png", nil, 0)
+	if err != nil || request.URL.String() != "https://account.r2.cloudflarestorage.com/media/files/test.png" {
+		t.Fatalf("R2 request URL = %v, err = %v", request, err)
+	}
+	for _, endpoint := range []string{"ftp://s3.example.com", "https://user:pass@s3.example.com", "https://s3.example.com/prefix", "https://s3.example.com/?debug=1"} {
+		if err := validateS3Endpoint(endpoint); err == nil {
+			t.Fatalf("invalid endpoint accepted: %s", endpoint)
+		}
 	}
 }
 

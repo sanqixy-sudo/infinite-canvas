@@ -1,0 +1,7 @@
+{
+  "id": "ultra720_fixture_002",
+  "model": "doubao-seedance-2-0-fast-260128",
+  "status": "succeeded",
+  "content": { "video_url": "https://media.example.com/result.mp4" },
+  "usage": { "completion_tokens": 93366 }
+}

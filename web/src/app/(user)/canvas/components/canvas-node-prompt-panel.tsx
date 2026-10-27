@@ -7,6 +7,7 @@ import { Button, Modal, Tooltip } from "antd";
 import { ModelPicker } from "@/components/model-picker";
 import { useAutoDLWorkflow } from "@/hooks/use-autodl-workflow";
 import { getAutoDLCapabilities, isAutoDLConfig } from "@/lib/autodl";
+import { withFixedGatewayVideoSize, gatewayCountError, gatewayModel, gatewayParameters, gatewayReferenceMode } from "@/lib/model-gateway";
 import { defaultConfig, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -49,14 +50,17 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = defaultMode(node.type);
     const config = buildNodeConfig(globalConfig, node, mode);
+    const gateway = mode === "video" ? gatewayModel(config) : undefined;
+    const inputLimitError = gateway ? gatewayCountError(gateway, connectedNodes.flatMap<{ kind: "image" | "video" | "audio" }>((item) => isCanvasImageNodeType(item.type) ? [{ kind: "image" }] : item.type === CanvasNodeType.Video ? [{ kind: "video" }] : item.type === CanvasNodeType.Audio ? [{ kind: "audio" }] : []), gatewayParameters(config)) : "";
     const { data: autodlWorkflow } = useAutoDLWorkflow(config, mode === "video" ? config.model : "");
     const isPanorama = isPanoramaNodeType(node.type);
     const mediaLoading = (isCanvasImageNodeType(node.type) || node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && node.metadata?.status === "loading";
     const isStopping = node.metadata?.status === "stopping";
     const stopFailed = isStopping && Boolean(node.metadata?.errorDetails);
-    const canStop = Boolean(node.metadata?.clientTaskId) && !node.metadata?.isBatchRoot && (mediaLoading || stopFailed);
+    const gatewaySubmitted = node.metadata?.channelId === "model-gateway" && (node.metadata?.taskBackend === "account" || node.metadata?.videoTaskId?.startsWith("gateway_"));
+    const canStop = !gatewaySubmitted && Boolean(node.metadata?.clientTaskId) && !node.metadata?.isBatchRoot && (mediaLoading || stopFailed);
     const generating = (isRunning && node.metadata?.status !== "stopped") || mediaLoading;
-    const showStop = canStop || isStopping;
+    const showStop = canStop || (isStopping && !gatewaySubmitted);
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = isCanvasImageNodeType(node.type) && Boolean(node.metadata?.content);
     const sourcePrompt = isPanorama ? node.metadata?.panoramaSourcePrompt || "" : node.metadata?.prompt || "";
@@ -66,7 +70,10 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const billingModel = workflowRef
         ? `workflow:${workflowRef.scope}:${workflowRef.channelId}:${workflowRef.kind}:${workflowRef.workflowId}`
         : config.model;
-    const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: billingModel, count: mode === "image" ? config.count : 1, seconds: mode === "video" ? config.videoSeconds : undefined });
+    const billingMode = workflowRef ? workflowRef.scope === "system" ? "remote" : "local" : config.channelMode;
+    const tokenBilling = modelCosts?.some((item) => item.model === billingModel && (item.billingUnit === "token" || Boolean(item.gateway)));
+    const splitBilling = tokenBilling && modelCosts?.some((item) => item.model === billingModel && item.tokenMode === "input_output_tokens");
+    const credits = requestCreditCost({ channelMode: billingMode, modelCosts, model: billingModel, count: !workflowRef && mode === "image" ? config.count : 1, seconds: !workflowRef && mode === "video" ? config.videoSeconds : undefined, resolution: mode === "video" ? config.vquality : undefined, ratio: gateway ? gatewayParameters(config).ratio : undefined, generateAudio: gateway ? gatewayParameters(config).generateAudio : undefined, referenceMode: gateway ? gatewayReferenceMode(connectedNodes.flatMap<{ kind: "image" | "video" | "audio" }>((item) => isCanvasImageNodeType(item.type) ? [{ kind: "image" }] : item.type === CanvasNodeType.Video ? [{ kind: "video" }] : item.type === CanvasNodeType.Audio ? [{ kind: "audio" }] : [])) : undefined, hasReferenceVideo: connectedNodes.some((item) => item.type === CanvasNodeType.Video && Boolean(item.metadata?.content)) });
 
     useEffect(() => {
         setPrompt(sourcePrompt);
@@ -81,7 +88,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
 
     const submit = () => {
         const text = prompt.trim();
-        if (!canSubmit || generating || isStopping) return;
+        if (!canSubmit || generating || isStopping || credits === null) return;
         onGenerate(node.id, mode, text);
     };
 
@@ -95,6 +102,8 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
             onWheel={(event) => event.stopPropagation()}
         >
             <CanvasNodeReferenceBar nodeId={node.id} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} />
+            {inputLimitError ? <p role="alert" className="mb-2 text-xs leading-5" style={{ color: theme.node.text }}>{inputLimitError}。请调整连线后再生成。</p> : null}
+            {gatewaySubmitted && generating ? <p className="mb-2 text-xs leading-5" style={{ color: theme.node.text }}>任务已提交，无法取消；后台会继续生成并按实际用量结算。</p> : null}
             <CanvasPromptChipInput
                 value={prompt}
                 references={mentionReferences}
@@ -145,13 +154,14 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     type="primary"
                     danger={showStop}
                     className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3"
-                    disabled={(isStopping && !stopFailed) || (!canStop && (generating || !canSubmit))}
+                    disabled={(isStopping && !stopFailed) || (!canStop && (generating || !canSubmit || credits === null))}
+                    title={gatewaySubmitted && generating ? "任务已提交，后台会继续生成并结算，当前渠道不支持取消" : credits === null ? "平台模型尚未配置价格或参数无效，请联系管理员" : splitBilling ? "输入与输出分别计价后合计预扣；完成后按实际输入 × 输入价 + 实际输出 × 输出价多退少补，缺少分项用量时待结算" : tokenBilling ? "提交时预扣算力，完成后按该规格的 Token、秒或次规则多退少补；未返回用量时待结算" : "预计扣点，实际以任务流水为准；自动视频时长按 15 秒预估"}
                     onClick={canStop ? () => onStop(node.id) : submit}
                     aria-label={canStop ? stopFailed ? "重试停止" : "停止" : isStopping ? "停止中" : "生成"}
                 >
                     <span className="relative inline-flex">
                         <span className={`flex items-center gap-1.5${showStop ? " invisible" : ""}`}>
-                            <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums"><CreditSymbol />{credits.toLocaleString()}</span>
+                            <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums">{billingMode === "local" ? "自有渠道" : credits === null ? "未定价" : <>{tokenBilling ? "预扣" : null}<CreditSymbol />{credits.toLocaleString()}</>}</span>
                             {generating ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
                         </span>
                         {showStop ? <span className="absolute inset-0 flex items-center justify-center">
@@ -189,7 +199,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
     const textChannelId = mode === "text" ? channelId || globalConfig.textChannelId : globalConfig.textChannelId;
     const audioChannelId = mode === "audio" ? channelId || globalConfig.audioChannelId : globalConfig.audioChannelId;
     const activeChannelId = mode === "image" ? imageChannelId : mode === "video" ? videoChannelId : mode === "text" ? textChannelId : mode === "audio" ? audioChannelId || globalConfig.activeChannelId : globalConfig.activeChannelId;
-    return {
+    const result: AiConfig = {
         ...globalConfig,
         model: mode === "text" ? resolveModelForCapability(globalConfig, node.metadata?.model, "text") : node.metadata?.model || defaultModel || (mode === "audio" ? defaultConfig.audioModel : globalConfig.model || defaultConfig.model),
         activeChannelId,
@@ -225,6 +235,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         geminiTtsVoice: node.metadata?.geminiTtsVoice || globalConfig.geminiTtsVoice || defaultConfig.geminiTtsVoice,
         count: String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
     };
+    return mode === "video" ? withFixedGatewayVideoSize(result) : result;
 }
 
 function promptPlaceholder(mode: CanvasNodeGenerationMode, hasImageContent: boolean, hasTextContent: boolean) {

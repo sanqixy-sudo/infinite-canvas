@@ -48,7 +48,7 @@ func DeleteUserVideoTask(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	if err := service.DeleteUserVideoTask(user.ID, id); err != nil {
 		log.Printf("delete video task failed: user=%s id=%s err=%v", user.ID, id, err)
-		Fail(w, "AI 接口请求失败")
+		FailError(w, err)
 		return
 	}
 	OK(w, map[string]any{"deleted": true})
@@ -69,18 +69,10 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	taskContext := context.Background()
 	if id := readClientVideoTaskID(r); id != "" {
-		var cleanup func()
-		taskContext, cleanup, err = service.CanvasTaskContext("video", user.ID, id)
-		if err != nil {
+		if err := service.CheckVideoTaskOrigin(user.ID, id, readVideoTaskSource(r), readVideoTaskSourceID(r), readVideoTaskCanvasID(r)); err != nil {
 			FailError(w, err)
 			return
 		}
-		defer cleanup()
-		requestContext, cancel := context.WithCancel(r.Context())
-		stopCancel := context.AfterFunc(taskContext, cancel)
-		defer stopCancel()
-		defer cancel()
-		r = r.WithContext(requestContext)
 	}
 	channel, userChannelID, err := selectAIRequestChannel(user, modelName, r.Header.Get("X-Model-Channel-ID"), r.Header.Get(userModelChannelHeader), true)
 	if err != nil {
@@ -96,7 +88,29 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 			Fail(w, "AI 接口请求失败")
 			return
 		}
-		credits *= float64(readAIRequestCount(body, contentType, true))
+		count, countErr := readAIRequestCount(body, contentType, true)
+		if countErr != nil {
+			Fail(w, countErr.Error())
+			return
+		}
+		credits *= float64(count)
+	}
+	if id := readClientVideoTaskID(r); id != "" && readVideoTaskSource(r) == "canvas" {
+		task, created, err := service.PrepareCanvasVideoSubmission(service.VideoTaskCreateInput{UserID: user.ID, ClientTaskID: id, Model: modelName, ChannelID: channel.ID, ChannelName: channel.Name, Source: "canvas", SourceID: readVideoTaskSourceID(r), CanvasID: readVideoTaskCanvasID(r), RequestBody: summarizeAIRequest(body, contentType)}, body)
+		if err != nil { FailError(w, err); return }
+		if !created { OK(w, service.VideoTaskResponse(task)); return }
+		defer service.FinishCanvasVideoSubmission(user.ID, id)
+	}
+	if id := readClientVideoTaskID(r); id != "" {
+		var cleanup func()
+		taskContext, cleanup, err = service.CanvasTaskContext("video", user.ID, id)
+		if err != nil { FailError(w, err); return }
+		defer cleanup()
+		requestContext, cancel := context.WithCancel(r.Context())
+		stopCancel := context.AfterFunc(taskContext, cancel)
+		defer stopCancel()
+		defer cancel()
+		r = r.WithContext(requestContext)
 	}
 	if serveParameterTranslationVideo(w, r, body, channel, user, credits, startedAt) {
 		return
@@ -141,8 +155,8 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 		Credits:         credits,
 		RequestBody:     summarizeAIRequest(body, contentType),
 	}
-	if credits > 0 {
-		if err := service.ConsumeUserCredits(user.ID, modelName, credits, upstreamPath); err != nil {
+	if credits > 0 || readClientVideoTaskID(r) != "" {
+		if err := service.ConsumeUserCredits(user.ID, modelName, credits, upstreamPath, service.TaskCreditReference{ID: readClientVideoTaskID(r), Kind: "video"}); err != nil {
 			FailError(w, err)
 			return
 		}
@@ -154,7 +168,7 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		if credits > 0 {
-			refundVideoCredits(user.ID, modelName, credits, upstreamPath)
+			refundVideoCredits(user.ID, modelName, credits, upstreamPath, readClientVideoTaskID(r))
 		}
 		saveAIProxyLog(logContext, 0, "", err.Error())
 		Fail(w, "AI 接口请求失败")
@@ -163,7 +177,7 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 	if status >= http.StatusBadRequest {
 		message := readUpstreamAIErrorMessage(payload, status)
 		if credits > 0 {
-			refundVideoCredits(user.ID, modelName, credits, upstreamPath)
+			refundVideoCredits(user.ID, modelName, credits, upstreamPath, readClientVideoTaskID(r))
 		}
 		saveAIProxyLog(logContext, status, string(payload), strings.TrimSpace(string(payload)))
 		Fail(w, message)
@@ -172,7 +186,7 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 	transformed := transformVideoCreatePayload(payload, request, channel, modelName)
 	if message := readVideoCreateErrorMessage(payload, transformed, channel, modelName); message != "" {
 		if credits > 0 {
-			refundVideoCredits(user.ID, modelName, credits, upstreamPath)
+			refundVideoCredits(user.ID, modelName, credits, upstreamPath, readClientVideoTaskID(r))
 		}
 		saveAIProxyLog(logContext, status, string(payload), message)
 		Fail(w, message)
@@ -181,7 +195,7 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 	parsed := parseVideoTaskPayload(transformed, modelName)
 	if parsed.UpstreamTaskID == "" && parsed.UpstreamVideoID == "" {
 		if credits > 0 {
-			refundVideoCredits(user.ID, modelName, credits, upstreamPath)
+			refundVideoCredits(user.ID, modelName, credits, upstreamPath, readClientVideoTaskID(r))
 		}
 		saveAIProxyLog(logContext, status, string(transformed), "视频接口没有返回任务 ID")
 		Fail(w, "视频接口没有返回任务 ID")
@@ -196,6 +210,7 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 		ChannelName:     channel.Name,
 		Source:          readVideoTaskSource(r),
 		SourceID:        readVideoTaskSourceID(r),
+		CanvasID:        readVideoTaskCanvasID(r),
 		ClientTaskID:    readClientVideoTaskID(r),
 		UpstreamTaskID:  parsed.UpstreamTaskID,
 		UpstreamVideoID: parsed.UpstreamVideoID,
@@ -212,6 +227,9 @@ func proxyAIVideoTaskRequest(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Printf("save video task failed: model=%s err=%v", modelName, err)
+		if credits > 0 {
+			refundVideoCredits(user.ID, modelName, credits, upstreamPath, readClientVideoTaskID(r))
+		}
 		Fail(w, "AI 接口请求失败")
 		return
 	}
@@ -233,6 +251,10 @@ func readVideoTaskSource(r *http.Request) string {
 
 func readVideoTaskSourceID(r *http.Request) string {
 	return strings.TrimSpace(r.Header.Get("X-Video-Task-Source-ID"))
+}
+
+func readVideoTaskCanvasID(r *http.Request) string {
+	return strings.TrimSpace(r.Header.Get("X-Video-Task-Canvas-ID"))
 }
 
 func isClientVideoTaskID(id string) bool {
@@ -310,6 +332,7 @@ func serveGeminiVideoTaskContent(w http.ResponseWriter, r *http.Request, id stri
 }
 
 func pollVideoTaskFromUpstream(ctx context.Context, task model.VideoTask) (service.VideoTaskPollUpdate, error) {
+	if task.GatewaySnapshot != "" { return service.PollGatewayVideoTask(ctx,task) }
 	var channel model.ModelChannel
 	var err error
 	if strings.TrimSpace(task.UserChannelID) != "" {
@@ -652,8 +675,9 @@ func findFirstHTTPURL(value any) string {
 	return ""
 }
 
-func refundVideoCredits(userID string, modelName string, credits float64, endpoint string) {
-	if err := service.RefundUserCredits(userID, modelName, credits, endpoint); err != nil {
+func refundVideoCredits(userID string, modelName string, credits float64, endpoint string, taskID ...string) {
+	if len(taskID) > 0 { taskID[0] = (service.TaskCreditReference{ID: taskID[0], Kind: "video"}).LedgerID() }
+	if err := service.RefundUserCredits(userID, modelName, credits, endpoint, taskID...); err != nil {
 		log.Printf("AI video refund credits failed: user=%s model=%s credits=%g err=%v", userID, modelName, credits, err)
 	}
 }

@@ -7,6 +7,7 @@ import { Button, Input, Switch } from "antd";
 
 import { VideoSettingsPanel, isAPIMartKlingMotionControlConfig, isKIEKlingMotionControlConfig, isAPIMartKlingV3Config, isKIEKlingV3Config, kieKlingOmniVariant, videoResolutionLabel, videoSecondsLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { isAutoDLConfig } from "@/lib/autodl";
+import { gatewayModel, gatewayParameters, gatewayReferenceMode, gatewayVariants, type GatewayInput } from "@/lib/model-gateway";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { modelKey, supportsVideoFrameReferences } from "@/lib/video-model-capabilities";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -95,7 +96,11 @@ function VideoSettingsPortal({ buttonRect, panelRef, placement, theme, config, o
     const kieKlingOmni = kieKlingOmniVariant(config, model);
     const isKlingMotionControl = isAPIMartKlingMotionControlConfig(config, model) || isKIEKlingMotionControlConfig(config, model) || (channelProtocolForConfig({ ...config, model, videoModel: model }) === "tokendance" && modelKey(model) === "kling-3-0");
     const isKlingV3 = isAPIMartKlingV3 || isKIEKlingV3;
-    const frameReferencesEnabled = !isKlingV3 && supportsVideoFrameReferences(model, channelProtocolForConfig({ ...config, model }));
+    const gateway = gatewayModel(config, model);
+    const referenceInputs = resourceOptions.flatMap<Pick<GatewayInput, "kind" | "role">>((item) => item.kind === "text" ? [] : [{ kind: item.kind, role: item.nodeId === firstFrameNodeId ? "first_frame" : item.nodeId === lastFrameNodeId ? "last_frame" : `reference_${item.kind}` }]);
+    const matchingSpecs = gateway ? gatewayVariants(gateway, gatewayParameters(config), gatewayReferenceMode(referenceInputs)) : [];
+    const gatewayCaps = matchingSpecs.length === 1 ? matchingSpecs[0].capabilities : gateway?.capabilities;
+    const frameReferencesEnabled = gatewayCaps ? gatewayCaps.firstFrame || gatewayCaps.lastFrame : !isKlingV3 && supportsVideoFrameReferences(model, channelProtocolForConfig({ ...config, model }));
     const optionIds = useMemo(() => new Set(frameOptions.map((item) => item.nodeId)), [frameOptions]);
     const firstFrameValue = firstFrameNodeId && optionIds.has(firstFrameNodeId) ? firstFrameNodeId : "";
     const lastFrameValue = lastFrameNodeId && optionIds.has(lastFrameNodeId) ? lastFrameNodeId : "";
@@ -109,12 +114,12 @@ function VideoSettingsPortal({ buttonRect, panelRef, placement, theme, config, o
                 {!visualOnly && frameReferencesEnabled ? (
                     <CanvasSettingGroup title="首尾帧" color={theme.node.muted}>
                         <div className="grid gap-2 rounded-xl border p-2.5" style={{ borderColor: theme.node.stroke }}>
-                            <FrameReferencePicker label="首帧" value={firstFrameValue} options={frameOptions} theme={theme} onChange={(value) => onFrameChange?.({ firstFrameNodeId: value || undefined })} />
-                            <FrameReferencePicker label="尾帧" value={lastFrameValue} options={frameOptions} theme={theme} onChange={(value) => onFrameChange?.({ lastFrameNodeId: value || undefined })} />
+                            {!gatewayCaps || gatewayCaps.firstFrame ? <FrameReferencePicker label="首帧" value={firstFrameValue} options={frameOptions} theme={theme} onChange={(value) => onFrameChange?.({ firstFrameNodeId: value || undefined })} /> : null}
+                            {!gatewayCaps || gatewayCaps.lastFrame ? <FrameReferencePicker label="尾帧" value={lastFrameValue} options={frameOptions} theme={theme} onChange={(value) => onFrameChange?.({ lastFrameNodeId: value || undefined })} /> : null}
                         </div>
                     </CanvasSettingGroup>
                 ) : null}
-                <VideoSettingsPanel config={config} modelName={visualOnly ? config.videoModel || config.model : undefined} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} showTitle={false} className="space-y-4" hideNegativePrompt={isKlingV3} visualOnly={visualOnly} />
+                <VideoSettingsPanel referenceInputs={visualOnly ? undefined : referenceInputs} config={config} modelName={visualOnly ? config.videoModel || config.model : undefined} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} showTitle={false} className="space-y-4" hideNegativePrompt={isKlingV3} visualOnly={visualOnly} />
             </div>
         </div>,
         document.body,

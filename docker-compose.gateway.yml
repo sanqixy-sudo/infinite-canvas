@@ -1,0 +1,22 @@
+services:
+  model-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-8088}:8088"
+    environment:
+      GATEWAY_API_TOKEN: "${GATEWAY_API_TOKEN:?Set GATEWAY_API_TOKEN}"
+      GATEWAY_ADMIN_TOKEN: "${GATEWAY_ADMIN_TOKEN:?Set GATEWAY_ADMIN_TOKEN}"
+      GATEWAY_ENCRYPTION_KEY: "${GATEWAY_ENCRYPTION_KEY:?Set GATEWAY_ENCRYPTION_KEY}"
+    volumes:
+      - model-gateway-data:/data
+    stop_grace_period: 70s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+volumes:
+  model-gateway-data:

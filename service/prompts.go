@@ -12,6 +12,10 @@ func ListPrompts(q model.Query) (model.PromptList, error) {
 	if err != nil {
 		return model.PromptList{}, err
 	}
+	for i := range items {
+		items[i].CoverURL = refreshPublishedStorageURL(items[i].CoverURL)
+		items[i].Preview = refreshPublishedStorageURL(items[i].Preview)
+	}
 	tags, err := repository.ListPromptTags(q)
 	if err != nil {
 		return model.PromptList{}, err
@@ -41,7 +45,12 @@ func SavePrompt(item model.Prompt) (model.Prompt, error) {
 		item.Category = category.Category
 	}
 	item.GithubURL = ""
-	return repository.SavePrompt(item)
+	ids, err := taskStorageReferenceIDs(item)
+	if err != nil {
+		return item, err
+	}
+	saved, err := repository.SavePrompt(item, ids...)
+	return saved, storageReferenceError(err)
 }
 
 func DeletePrompt(id string) error {

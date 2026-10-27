@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { App, Modal, Segmented, Tooltip } from "antd";
+import { App, Dropdown, Modal, Segmented, Tooltip } from "antd";
 import { Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, MessageSquare, Minus, Music2, Plus, RefreshCw, Scissors, Settings2, Trash2, Upload, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, getDataUrlByteSize } from "@/lib/image-utils";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useCanvasAssetSaveState } from "../hooks/use-canvas-asset-save-state";
 import { CanvasNodeType, type CanvasNodeData, type ViewportTransform } from "../types";
 import { isCanvasImageNodeType, isPanoramaNodeType } from "../utils/canvas-panorama";
 import { ImageToolSettingsModal, type ImageToolbarSettingsTool } from "./canvas-image-toolbar-settings-modal";
@@ -28,8 +29,7 @@ type CanvasNodeHoverToolbarProps = {
     onTrimAudio: (node: CanvasNodeData) => void;
     onDownload: (node: CanvasNodeData) => void;
     onSaveAsset: (node: CanvasNodeData) => void;
-    onUploadMediaToCloud: (node: CanvasNodeData) => void;
-    onUploadImageToCloud: (node: CanvasNodeData) => void;
+    assetSaving: boolean;
     onMaskEdit: (node: CanvasNodeData) => void;
     onCrop: (node: CanvasNodeData) => void;
     onSplit: (node: CanvasNodeData) => void;
@@ -51,6 +51,7 @@ type ToolbarTool = {
     onClick: () => void;
     active?: boolean;
     danger?: boolean;
+    disabled?: boolean;
 };
 
 export function CanvasNodeHoverToolbar({
@@ -68,8 +69,7 @@ export function CanvasNodeHoverToolbar({
     onTrimAudio,
     onDownload,
     onSaveAsset,
-    onUploadMediaToCloud,
-    onUploadImageToCloud,
+    assetSaving,
     onMaskEdit,
     onCrop,
     onSplit,
@@ -89,8 +89,11 @@ export function CanvasNodeHoverToolbar({
     const [draftImageToolIds, setDraftImageToolIds] = useState<ImageQuickToolId[]>(defaultImageQuickToolIds);
     const [draftShowImageToolLabels, setDraftShowImageToolLabels] = useState(true);
     const [imageToolSettingsOpen, setImageToolSettingsOpen] = useState(false);
+    const [moreOpen, setMoreOpen] = useState(false);
     const { message } = App.useApp();
     const copyText = useCopyText();
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const storage = useCanvasAssetSaveState(node, assetSaving);
     const isPanorama = isPanoramaNodeType(node?.type);
     const quickToolsStorageKey = isPanorama ? PANORAMA_QUICK_TOOLS_STORAGE_KEY : IMAGE_QUICK_TOOLS_STORAGE_KEY;
     const { ids: quickImageToolIds, showLabels: showImageToolLabels } = quickToolsConfigs[quickToolsStorageKey];
@@ -120,6 +123,7 @@ export function CanvasNodeHoverToolbar({
 
     useEffect(() => {
         setImageToolSettingsOpen(false);
+        setMoreOpen(false);
     }, [node?.id]);
 
     if (!node) return null;
@@ -160,9 +164,7 @@ export function CanvasNodeHoverToolbar({
     ];
     const nodeToolbarTools: ToolbarTool[] = [
         ...(canRetry ? [{ id: "retry", title: "重新生成", label: "重试", icon: <RefreshCw className="size-4" />, onClick: () => onRetry(node) }] : []),
-        ...(hasImage || hasVideo || isText ? [{ id: "saveAsset", title: "加入我的素材", label: "存素材", icon: <FolderPlus className="size-4" />, onClick: () => onSaveAsset(node) }] : []),
-        ...((hasVideo || hasAudio) && !node.metadata?.storageKey?.startsWith("server:") ? [{ id: "uploadMediaToCloud", title: "上传至云存储", label: "上传至云存储", icon: <Upload className="size-4" />, onClick: () => onUploadMediaToCloud(node) }] : []),
-        ...(hasImage && !node.metadata?.storageKey?.startsWith("server:") ? [{ id: "uploadImageToCloud", title: "上传至云存储", label: "上传至云存储", icon: <Upload className="size-4" />, onClick: () => onUploadImageToCloud(node) }] : []),
+        ...(hasImage || hasVideo || hasAudio || isText ? [{ id: "saveAsset", title: storage.saved ? "已存入账号素材库" : "存入账号素材库", label: storage.saved ? "已入库" : "存入账号", icon: <FolderPlus className="size-4" />, disabled: assetSaving || storage.saved, onClick: () => onSaveAsset(node) }] : []),
         ...(hasVideo ? [{
             id: "extractAudio",
             title: "分离音频",
@@ -188,8 +190,8 @@ export function CanvasNodeHoverToolbar({
         ...(isAudio ? [{ id: "uploadAudio", title: hasAudio ? "替换音频" : "上传音频", label: hasAudio ? "替换音频" : "上传音频", icon: <Music2 className="size-4" />, onClick: () => onUpload(node) }] : []),
         ...(hasImage ? imageTools.map((tool) => ({ id: tool.id, title: tool.title, label: tool.label, icon: tool.icon, active: tool.active, onClick: tool.onClick })) : []),
     ];
-    const toolbarTools = hasImage ? [...baseToolbarTools, ...nodeToolbarTools].filter((tool) => tool.id === "uploadImageToCloud" || quickImageToolIdSet.has(tool.id as ImageQuickToolId)) : [...baseToolbarTools, ...nodeToolbarTools];
-    const selectableImageToolbarTools = [...baseToolbarTools, ...nodeToolbarTools].filter((tool) => tool.id !== "retry" && tool.id !== "uploadImageToCloud") as ImageToolbarSettingsTool[];
+    const toolbarTools = hasImage ? [...baseToolbarTools, ...nodeToolbarTools].filter((tool) => tool.id === "saveAsset" || quickImageToolIdSet.has(tool.id as ImageQuickToolId)) : [...baseToolbarTools, ...nodeToolbarTools];
+    const selectableImageToolbarTools = [...baseToolbarTools, ...nodeToolbarTools].filter((tool) => tool.id !== "retry" && tool.id !== "saveAsset") as ImageToolbarSettingsTool[];
 
     const closeImageToolSettings = () => {
         setImageToolSettingsOpen(false);
@@ -223,19 +225,20 @@ export function CanvasNodeHoverToolbar({
     return (
         <>
             <div
-                className="absolute z-[70] flex flex-wrap -translate-x-1/2 -translate-y-full items-center justify-center gap-x-2 overflow-visible rounded-xl border border-white/10 bg-[#242424] px-2 text-[13px] text-[#f3f3f3] shadow-[0_8px_28px_rgba(0,0,0,.28)]"
-                style={{ left, top, maxWidth: "min(800px, calc(100vw - 32px))" }}
+                className="absolute z-[70] flex flex-wrap -translate-x-1/2 -translate-y-full items-center justify-center gap-x-2 overflow-visible rounded-xl border px-2 text-[13px]"
+                style={{ left, top, maxWidth: "min(800px, calc(100vw - 32px))", background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
                 onMouseEnter={() => onKeep(node.id)}
                 onMouseLeave={() => {
-                    if (!imageToolSettingsOpen) onLeave();
+                    if (!imageToolSettingsOpen && !moreOpen) onLeave();
                 }}
                 onMouseDown={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
             >
+                {hasImage || hasVideo || hasAudio ? <span className="px-2 text-[10px]" aria-live="polite" title={storage.detail} style={{ color: theme.node.muted }}>{storage.label}</span> : null}
                 {toolbarTools.map((tool) => (
                     <ToolbarAction key={tool.id} {...tool} showLabel={showImageToolLabels} />
                 ))}
-                {hasImage ? <ToolbarAction id="more" title="配置快捷工具" label="更多" icon={<Ellipsis className="size-4" />} active={imageToolSettingsOpen} onClick={openImageToolSettings} showLabel={showImageToolLabels} /> : null}
+                {hasImage || hasVideo || hasAudio || isText ? <Dropdown open={moreOpen} onOpenChange={(open) => { setMoreOpen(open); if (open) onKeep(node.id); }} trigger={["click"]} menu={{ items: [{ key: "save", label: storage.saved ? "已存入账号素材库" : "存入账号素材库", disabled: assetSaving || storage.saved, onClick: () => onSaveAsset(node) }, ...(hasImage ? [{ key: "tools", label: "配置快捷工具", onClick: openImageToolSettings }] : [])] }}><button type="button" aria-label="素材更多操作" className="flex h-12 items-center gap-1.5 px-2 text-xs"><Ellipsis className="size-4" /><span>更多</span></button></Dropdown> : null}
             </div>
             {hasImage ? (
                 <ImageToolSettingsModal
@@ -304,6 +307,13 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
                             <InfoRow label="尺寸" value={`${Math.round(node.width)} x ${Math.round(node.height)}`} />
                             <InfoRow label="位置" value={`${Math.round(node.position.x)}, ${Math.round(node.position.y)}`} />
                             <InfoRow label="状态" value={node.metadata?.status || "idle"} />
+                            {node.metadata?.billingStatus ? <>
+                                <InfoRow label="计费状态" value={({ reserved: "已预扣", settled: "已结算", pending_usage: node.metadata.tokenMode === "input_output_tokens" ? "待结算：等待完整输入 / 输出用量" : "待结算：等待有效 Token 用量", pending: "待结算", pending_balance: "待补扣：余额不足", released: "预扣已退回" } as Record<string, string>)[node.metadata.billingStatus] || node.metadata.billingStatus} />
+                                <InfoRow label="计费方式" value={node.metadata.tokenMode === "input_output_tokens" ? "输入 / 输出分别计费" : "总 Token 计费"} />
+                                {node.metadata.reservedCredits !== undefined ? <InfoRow label="预扣算力" value={node.metadata.reservedCredits} /> : null}
+                                {node.metadata.tokenMode === "input_output_tokens" ? <><InfoRow label="实际输入 Token" value={typeof node.metadata.actualInputTokens === "number" ? node.metadata.actualInputTokens.toLocaleString() : "等待返回"} /><InfoRow label="实际输出 Token" value={typeof node.metadata.actualOutputTokens === "number" ? node.metadata.actualOutputTokens.toLocaleString() : "等待返回"} /></> : node.metadata.actualTokens !== undefined && (node.metadata.actualTokens > 0 || node.metadata.billingStatus === "settled") ? <InfoRow label="实际 Token" value={node.metadata.actualTokens.toLocaleString()} /> : null}
+                                {node.metadata.billingStatus === "settled" && node.metadata.settledCredits !== undefined ? <InfoRow label="实际算力" value={node.metadata.settledCredits} /> : null}
+                            </> : null}
                             {batchCount > 1 ? <InfoRow label="图片组" value={`${batchCount} 张`} /> : null}
                             {(isPanoramaNodeType(node.type) ? node.metadata?.panoramaSourcePrompt : node.metadata?.prompt) ? <InfoRow label="提示词" value={isPanoramaNodeType(node.type) ? node.metadata?.panoramaSourcePrompt : node.metadata?.prompt} /> : null}
                             {imageBytes ? <InfoRow label="图片大小" value={formatBytes(imageBytes)} /> : null}
@@ -324,11 +334,11 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
     );
 }
 
-function ToolbarAction({ title, label, icon, onClick, showLabel, active = false, danger = false }: ToolbarTool & { showLabel: boolean }) {
+function ToolbarAction({ title, label, icon, onClick, showLabel, active = false, danger = false, disabled = false }: ToolbarTool & { showLabel: boolean }) {
     const hasText = showLabel && Boolean(label);
     return (
         <Tooltip title={title} placement="top" mouseEnterDelay={0.2} color="#ffffff">
-            <button type="button" className={`group relative flex h-12 items-center whitespace-nowrap ${danger ? "text-[#ef4444]" : ""}`} onClick={onClick} aria-label={title}>
+            <button type="button" disabled={disabled} className={`group relative flex h-12 items-center whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 ${danger ? "text-[#ef4444]" : ""}`} onClick={onClick} aria-label={title}>
                 <span className={`flex h-8 items-center ${hasText ? "gap-2 px-2.5" : "justify-center px-2"} rounded-lg transition group-hover:bg-white/10 ${active ? "bg-white/10" : ""}`}>
                     {icon}
                     {hasText ? <span>{label}</span> : null}

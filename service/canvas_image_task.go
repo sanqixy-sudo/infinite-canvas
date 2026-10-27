@@ -8,6 +8,9 @@ import (
 	"github.com/tigerowo/infinite-canvas/repository"
 )
 
+var ErrCanvasImageTaskConflict = repository.ErrImageTaskConflict
+var ErrProductionTaskReplay = repository.ErrProductionTaskReplay
+
 type CanvasImageTaskCreateInput struct {
 	UserID          string
 	UserDisplayName string
@@ -57,15 +60,19 @@ func CreateCanvasImageTask(input CanvasImageTaskCreateInput) (model.CanvasImageT
 	}
 	saved := task
 	var err error
+	ids, err := taskStorageReferenceIDs(task)
+	if err != nil {
+		return task, err
+	}
 	if input.WorkflowRef != "" {
 		err = ConsumeUserCredits(task.UserID, input.BillingName, task.Credits, input.BillingPath, &task)
 	} else {
-		saved, err = repository.SaveCanvasImageTask(task)
+		saved, err = repository.SaveCanvasImageTask(task, ids...)
 	}
 	if err == nil {
 		WakeVideoTaskPoller()
 	}
-	return saved, err
+	return saved, storageReferenceError(err)
 }
 
 func GetUserCanvasImageTask(userID string, id string) (model.CanvasImageTask, bool, error) {
@@ -97,12 +104,20 @@ func BatchUserCanvasImageTasks(userID string, ids []string) ([]map[string]any, e
 }
 
 func DeleteUserCanvasImageTask(userID string, id string) error {
+	if task, found, err := repository.GetUserCanvasImageTask(userID, id); err != nil { return err } else if found && task.Status != "completed" && task.Status != "failed" && task.Status != "cancelled" {
+		return safeMessageError{message: "任务仍在执行或结果未知，请先等待或核对原任务"}
+	}
 	return repository.DeleteUserCanvasImageTask(strings.TrimSpace(userID), strings.TrimSpace(id))
 }
 
 func SaveCanvasImageTask(task model.CanvasImageTask) (model.CanvasImageTask, error) {
 	task.UpdatedAt = now()
-	return repository.UpdateCanvasImageTask(task)
+	ids, err := taskStorageReferenceIDs(task)
+	if err != nil {
+		return task, err
+	}
+	saved, err := repository.UpdateCanvasImageTask(task, ids...)
+	return saved, storageReferenceError(err)
 }
 
 func CanvasImageTaskResponse(task model.CanvasImageTask) map[string]any {
