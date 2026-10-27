@@ -26,6 +26,12 @@ description: 画布本地存储、节点结构、媒体文件与清理机制
 type CanvasProject = {
   id: string;
   title: string;
+  workspaceId?: string;
+  workspaceTitle?: string;
+  workspaceSettings?: {
+    defaultModels?: Partial<Record<"text" | "image" | "video" | "audio", { model: string; channelId: string }>>;
+    cover?: { canvasId: string; nodeId: string };
+  };
   createdAt: string;
   updatedAt: string;
   nodes: CanvasNodeData[];
@@ -41,6 +47,8 @@ type CanvasProject = {
 
 - `id`：画布项目 ID，当前前端生成。
 - `title`：画布名称。
+- `workspaceId`：子画布所属根项目；根画布通过 `workspaceTitle` 命名项目。
+- `workspaceSettings`：仅根项目保存默认平台模型与真实图片封面引用。默认模型只在新建节点时写入，不覆盖已有选择或任务；失效时显示提示并沿用当前创作设置。封面不复制文件，删除引用后自动回退；完整导入会映射画布与节点 ID。
 - `createdAt` / `updatedAt`：ISO 字符串。
 - `nodes`：画布节点列表。
 - `connections`：节点连线列表。

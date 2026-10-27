@@ -73,7 +73,7 @@ fca 阶段曾部署 `fca04adc3709c4bdede7d7ea47b11313bdeb8ceb6`，此处保留�
 | `team_members` | `team_id/user_id`复合主键、`role/can_view_costs/joined_at` | owner/admin/member；can_view_costs控制普通成员成本可见性；display_name为只读联表字段，不建列、不带用户余额 |
 | `team_invites` | `id/team_id/code_hash/created_by/expires_at/used_at/revoked_at/created_at` | code_hash唯一；随机邀请码仅存SHA256，24小时单次有效 |
 | `production_reviews` | `id/team_id/publisher_id/workspace_id/title/source_revision/snapshot/media_object_ids/created_at/revoked_at` | 服务端由本人已保存计划构造冻结快照；私有JSON含媒体映射，仅输出白名单字段；media_object_ids为JSON数组用于文件删除保护 |
-| `production_review_comments` | `id/review_id/shot_id/author_id/body/created_at` | 意见绑定冻结版本的镜头，author_name仅只读联表字段；正文最多2000字 |
+| `production_review_comments` | `id/review_id/shot_id/author_id/body/at_seconds/resolved_at/resolved_by/created_at` | 意见绑定冻结版本镜头；at_seconds可空，仅视频时间标记；resolved_at/resolved_by默认为空，记录解决状态。author_name/can_resolve仅响应字段；正文最多2000字 |
 | `team_projects` | `id/team_id/owner_user_id/workspace_id/title/edit_allowed/created_at/revoked_at` | 原拥有者明确共享单份已保存制作计划；workspace_id不下发。正文沿用production表与revision CAS，不复制私有canvas/候选 |
 | `team_assets` | `id/team_id/owner_user_id/object_id/title/kind/created_at/revoked_at` | 图片/视频/音频的明确共享授权；object_id不下发，文件所有权与个人占额不变；活跃授权参与删除保护 |
 | `team_audits` | `id/team_id/actor_id/action/target_id/summary/created_at` | 团队关键业务写入同事务记录，owner/admin分页可见；不保存供应商Key或媒体签名URL |
@@ -550,6 +550,8 @@ Bridge 持久化请求队列表。普通执行请求由服务端按设备分配�
 | `created_at` | string | 项目创建时间 |
 | `updated_at` | string | 项目更新时间 |
 | `deleted_at` | string | 软删除时间，空字符串表示未删除；超过 7 天由启动时和每天定时任务物理清理 |
+
+根画布的 `project_data.workspaceSettings` 保存项目默认模型（text/image/video/audio 的 model+channelId）及封面引用（canvasId+nodeId）；子画布不保存该配置。没有新增项目表、价格副本或密钥字段。默认模型仅用于新节点，运行时仍由平台校验权限与价格；封面仅解析同项目真实图片节点，删除后回退自动预览。导入项目时映射画布与节点新 ID，账号同步复用现有 JSON 保存流程。
 
 索引：`idx_canvas_projects_user_deleted_updated (user_id, deleted_at, updated_at)`、`idx_canvas_projects_deleted_at (deleted_at)`
 

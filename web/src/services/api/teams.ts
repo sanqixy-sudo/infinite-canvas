@@ -9,7 +9,7 @@ export type TeamInvite = { id: string; createdBy: string; createdAt: string; exp
 export type TeamReview = { id: string; teamId: string; publisherId: string; title: string; sourceRevision: number; createdAt: string };
 export type ReviewShot = { id: string; episodeId: string; title: string; sceneTitle: string; description: string; dialogue: string; camera: string; seconds: number; imageUrl?: string; videoUrl?: string; unavailableMedia: boolean };
 export type TeamReviewDetail = TeamReview & { episodes: { id: string; title: string; script?: string }[]; shots: ReviewShot[]; canRevoke: boolean };
-export type ReviewComment = { id: string; reviewId: string; shotId: string; authorId: string; authorName: string; body: string; createdAt: string };
+export type ReviewComment = { id: string; reviewId: string; shotId: string; authorId: string; authorName: string; body: string; atSeconds: number | null; resolvedAt: string; resolvedBy: string; canResolve: boolean; createdAt: string };
 export type TeamList<T> = { items: T[]; total: number };
 const path = (id: string) => `/api/v1/teams/${encodeURIComponent(id)}`;
 const reviewPath = (id: string) => `/api/v1/team-reviews/${encodeURIComponent(id)}`;
@@ -28,8 +28,9 @@ export const getTeamReviews = (token: string, id: string, page = 1) => apiGet<Te
 export const publishTeamReview = (token: string, id: string, body: { workspaceId: string; revision: number; episodeIds: string[]; includeScript: boolean }) => apiPost<TeamReview>(`${path(id)}/reviews`, body, token);
 export const getTeamReview = (token: string, id: string) => apiGet<TeamReviewDetail>(reviewPath(id), undefined, token);
 export const revokeTeamReview = (token: string, id: string) => apiDelete<null>(reviewPath(id), token);
-export const getReviewComments = (token: string, id: string, shotId: string, page = 1) => apiGet<TeamList<ReviewComment>>(`${reviewPath(id)}/comments`, { shotId, page, pageSize: 20 }, token);
-export const addReviewComment = (token: string, id: string, shotId: string, body: string) => apiPost<null>(`${reviewPath(id)}/comments`, { shotId, body }, token);
+export const getReviewComments = (token: string, id: string, shotId: string, page = 1, status = "all") => apiGet<TeamList<ReviewComment>>(`${reviewPath(id)}/comments`, { shotId, page, pageSize: 20, status }, token);
+export const addReviewComment = (token: string, id: string, shotId: string, body: string, atSeconds: number | null = null) => apiPost<null>(`${reviewPath(id)}/comments`, { shotId, body, atSeconds }, token);
+export const setReviewCommentResolved = (token: string, id: string, commentId: string, resolved: boolean) => apiPut<null>(`${reviewPath(id)}/comments/${encodeURIComponent(commentId)}`, { resolved }, token);
 export const deleteReviewComment = (token: string, id: string, commentId: string) => apiDelete<null>(`${reviewPath(id)}/comments/${encodeURIComponent(commentId)}`, token);
 
 export type TeamProject = { id: string; teamId: string; ownerUserId: string; title: string; editAllowed: boolean; createdAt: string };

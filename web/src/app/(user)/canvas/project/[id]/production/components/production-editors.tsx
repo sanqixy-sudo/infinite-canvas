@@ -1,31 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Checkbox, Input, InputNumber, Modal, Select } from "antd";
-import { Search } from "lucide-react";
+import { FolderOpen, Search } from "lucide-react";
 import { ProductionReferencePreview } from "./production-reference-preview";
 import type { CanvasProject } from "../../../../stores/use-canvas-store";
-import { CanvasNodeType } from "../../../../types";
+import { CanvasNodeType, type InsertAssetPayload } from "../../../../types";
+import { AssetPickerModal } from "../../../../components/asset-picker-modal";
 import { productionAssetLabels, type ProductionAsset, type ProductionDocument, type ProductionShot } from "../../../../lib/production-types";
 
 const fieldClass = "flex min-w-0 flex-col gap-2 text-xs font-medium";
 
-export function ProductionAssetEditor({ asset, document, canvases, busy, saveError, onSave, onClose }: {
+export function ProductionAssetEditor({ asset, document, canvases, busy, saveError, onSave, onImport, onClose }: {
     asset: ProductionAsset; document: ProductionDocument; canvases: CanvasProject[]; busy: boolean;
     saveError: string;
     onSave: (asset: ProductionAsset) => Promise<unknown>; onClose: () => void;
+    onImport: (payload: InsertAssetPayload, canvasId: string) => Promise<{ canvasId: string; nodeId: string } | undefined>;
 }) {
     const [draft, setDraft] = useState(asset);
     const [query, setQuery] = useState("");
     const [canvasId, setCanvasId] = useState("");
     const [error, setError] = useState("");
+    const [picker, setPicker] = useState(false), [targetCanvasId, setTargetCanvasId] = useState(canvases[0]?.id || "");
+    const mounted = useRef(false), pickerRequest = useRef(0), importing = useRef(false);
+    const pickerVersion = pickerRequest.current;
+    useEffect(() => { mounted.current = true; return () => { mounted.current = false; pickerRequest.current++; }; }, []);
+    const close = () => { pickerRequest.current++; onClose(); };
+    const closePicker = () => { if (!busy && !importing.current) { pickerRequest.current++; setPicker(false); } };
     const candidates = canvases.filter((canvas) => !canvasId || canvas.id === canvasId).flatMap((canvas) => canvas.nodes.filter((node) => [CanvasNodeType.Text, CanvasNodeType.Image, CanvasNodeType.Video, CanvasNodeType.Audio, CanvasNodeType.Panorama].includes(node.type) && node.title.toLowerCase().includes(query.toLowerCase())).map((node) => ({ canvas, node })));
     const variantOptions = document.assets.filter((item) => item.kind === draft.kind && item.id !== draft.id && !item.variantOf).map((item) => ({ value: item.id, label: item.title }));
     const save = async () => {
         if (!draft.title.trim()) { setError("请输入资产名称"); return; }
-        if (await onSave({ ...draft, title: draft.title.trim() })) onClose();
+        if (await onSave({ ...draft, title: draft.title.trim() })) close();
     };
-    return <Modal open title={document.assets.some((item) => item.id === asset.id) ? "编辑项目资产" : "新建项目资产"} width={780} onCancel={() => !busy && onClose()} onOk={() => void save()} okText="保存资产" cancelText="取消" confirmLoading={busy} cancelButtonProps={{ disabled: busy }} mask={{ closable: false }}>
+    return <><Modal open title={document.assets.some((item) => item.id === asset.id) ? "编辑项目资产" : "新建项目资产"} width={780} onCancel={() => !busy && !importing.current && close()} onOk={() => void save()} okText="保存资产" cancelText="取消" confirmLoading={busy} cancelButtonProps={{ disabled: busy }} mask={{ closable: false }}>
         <div className="space-y-5 py-3">
             <div className="grid gap-4 sm:grid-cols-[140px_1fr]"><label className={fieldClass}>资产类型<Select value={draft.kind} disabled={Boolean(asset.variantOf) || document.assets.some((item) => item.variantOf === asset.id) || busy} options={Object.entries(productionAssetLabels).map(([value, label]) => ({ value, label }))} onChange={(kind) => setDraft({ ...draft, kind, variantOf: "" })} /></label><label className={fieldClass}>名称<Input maxLength={100} value={draft.title} disabled={busy} placeholder="例如：林晚 · 雨夜便装" onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label></div>
             <label className={fieldClass}>设定与使用说明<Input.TextArea rows={4} maxLength={20000} disabled={busy} value={draft.description} placeholder="记录外貌、服装、声音特点、场景氛围或风格约束，便于各镜头保持一致。" onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
@@ -33,6 +41,7 @@ export function ProductionAssetEditor({ asset, document, canvases, busy, saveErr
             <div className="border-t border-border pt-5">
                 <div className="mb-3 flex items-center justify-between gap-3"><h3 className="text-sm font-medium">从画布关联参考</h3><span className="text-xs text-muted-foreground">已选 {draft.references.length} 个</span></div>
                 <p className="mb-3 text-xs leading-6 text-muted-foreground">制作计划与关联画布保存到账号。这里关联已有节点，不复制素材文件；在生成时仍需确认实际参考和模型限制。</p>
+                <div className="mb-4 space-y-2 rounded-lg bg-muted/40 p-3"><div className="flex flex-wrap gap-2"><Select aria-label="素材参考目标画布" className="min-w-40 flex-1" value={targetCanvasId || undefined} disabled={busy} options={canvases.map((canvas) => ({ value: canvas.id, label: canvas.title }))} onChange={setTargetCanvasId} /><Button disabled={busy || !targetCanvasId || draft.references.length >= 50} icon={<FolderOpen className="size-3.5" />} onClick={() => { pickerRequest.current++; setPicker(true); }}>从素材库选择／上传</Button></div><p className="text-xs leading-5 text-muted-foreground">选择素材后，在目标画布新增一个参考节点并关联。原文件复用；新增上传按你的素材保存设置处理。取消资产编辑会保留已添加的画布节点。</p></div>
                 <div className="mb-3 flex flex-wrap gap-2"><Input prefix={<Search className="size-3.5 text-muted-foreground" />} className="min-w-40 flex-1" aria-label="搜索参考节点" placeholder="搜索节点名称" value={query} onChange={(event) => setQuery(event.target.value)} /><Select className="min-w-40" value={canvasId} options={[{ value: "", label: "本项目全部画布" }, ...canvases.map((canvas) => ({ value: canvas.id, label: canvas.title }))]} onChange={setCanvasId} /></div>
                 <div className="grid max-h-64 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
                     {candidates.map(({ canvas, node }) => {
@@ -47,17 +56,28 @@ export function ProductionAssetEditor({ asset, document, canvases, busy, saveErr
             </div>
             {(error || saveError) && <p className="text-xs text-destructive" role="alert">{error || saveError}</p>}
         </div>
-    </Modal>;
+    </Modal>{picker && <AssetPickerModal open onClose={closePicker} onInsert={async (payload) => {
+        if (!mounted.current || pickerRequest.current !== pickerVersion || importing.current || busy || draft.references.length >= 50) return;
+        const request = ++pickerRequest.current;
+        importing.current = true;
+        try {
+            const reference = await onImport(payload, targetCanvasId);
+            if (!mounted.current || pickerRequest.current !== request) return;
+            if (reference) setDraft((value) => ({ ...value, references: [...value.references, reference] }));
+            setPicker(false);
+        } finally { importing.current = false; }
+    }} />}</>;
 }
 
-export function ProductionShotEditor({ shot, document, onSave, onClose }: { shot: ProductionShot; document: ProductionDocument; onSave: (value: ProductionShot) => void; onClose: () => void }) {
+export function ProductionShotEditor({ shot, document, onSave, onClose }: { shot: ProductionShot; document: ProductionDocument; onSave: (value: ProductionShot) => boolean; onClose: () => void }) {
     const [draft, setDraft] = useState(shot);
     const [error, setError] = useState("");
     const save = () => {
         if (!draft.title.trim()) { setError("请输入镜头名称"); return; }
         if (!Number.isInteger(draft.seconds) || draft.seconds < 1 || draft.seconds > 86400) { setError("计划时长请输入 1 至 86400 的整数秒"); return; }
         if (draft.status === "ready" && !draft.description.trim()) { setError("标记已规划前，请先补充镜头画面"); return; }
-        onSave({ ...draft, title: draft.title.trim() }); onClose();
+        if (onSave({ ...draft, title: draft.title.trim() })) onClose();
+        else setError("镜头未保存，请检查制作计划的错误提示。输入内容已保留，可调整后重试。");
     };
     return <Modal open title="编辑镜头" width={740} onCancel={onClose} onOk={save} okText="保存镜头" cancelText="取消" mask={{ closable: false }}>
         <div className="space-y-4 py-3">

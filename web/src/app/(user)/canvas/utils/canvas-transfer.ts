@@ -4,6 +4,7 @@ import type { ProductionDocument } from "../lib/production-types";
 import { nanoid } from "nanoid";
 import { cloneCanvasSelection } from "./canvas-node-duplicate";
 import type { CanvasAssistantSession } from "../types";
+import { normalizeWorkspaceSettings, remapWorkspaceCover, resolveWorkspaceCover, type WorkspaceSettings } from "./workspace-settings";
 
 type StorageReference = { storageKey: string; urls: string[] };
 type RestoredFile = { storageKey: string; url: string };
@@ -95,6 +96,13 @@ export function remapCanvasBundle(projects: CanvasProject[], productions: Produc
         const activeIndex = (project.chatSessions || []).findIndex((session) => session.id === project.activeChatId);
         return { ...project, nodes: cloned.nodes.map((node, index) => ({ ...node, title: project.nodes[index].title })), connections: cloned.connections, chatSessions, activeChatId: chatSessions[activeIndex]?.id || null, pendingAgentRequest: undefined, autoTitlePending: false };
     });
+    for (const project of copied) {
+        if (project.workspaceId || !project.workspaceSettings) { project.workspaceSettings = undefined; continue; }
+        const settings = normalizeWorkspaceSettings(project.workspaceSettings);
+        const cover = resolveWorkspaceCover(projects, project.id, settings.cover);
+        const nodeId = cover ? nodeMaps.get(cover.canvas.id)?.get(cover.node.id) : undefined;
+        project.workspaceSettings = { ...settings, cover: cover && nodeId ? { canvasId: cover.canvas.id, nodeId } : undefined };
+    }
     const plans = productions.map((doc) => {
         const canvases = new Set(projects.filter((project) => project.id === doc.workspaceId || project.workspaceId === doc.workspaceId).map((project) => project.id));
         const makeMap = (items: { id: string }[]) => {
@@ -142,10 +150,11 @@ function replaceReferences(value: unknown, replacements: Map<string, string>): u
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replaceReferences(item, replacements)]));
 }
 
-export function importCanvasProjectGroups(projects: CanvasProject[], importProject: (project: CanvasProject, workspaceId?: string) => string) {
+export function importCanvasProjectGroups(projects: CanvasProject[], importProject: (project: CanvasProject, workspaceId?: string) => string, updateSettings?: (id: string, settings: WorkspaceSettings) => void) {
     const ids = new Map<string, string>();
     projects.filter((project) => !project.workspaceId).forEach((project) => ids.set(project.id, importProject(project)));
     projects.filter((project) => project.workspaceId).forEach((project) => ids.set(project.id, importProject(project, ids.get(project.workspaceId!))));
+    projects.filter((project) => !project.workspaceId && project.workspaceSettings).forEach((project) => updateSettings?.(ids.get(project.id)!, remapWorkspaceCover(project.workspaceSettings, ids)));
     return ids;
 }
 

@@ -76,7 +76,7 @@ export default function CanvasPage() {
             });
             assertSession();
             const bundle = remapCanvasBundle(restored.projects, restored.productions);
-            const ids = importCanvasProjectGroups(bundle.projects, importCanvas);
+            const ids = importCanvasProjectGroups(bundle.projects, importCanvas, (id, settings) => useCanvasStore.getState().updateWorkspaceSettings(id, settings));
             const drafts = bundle.productions.map((original) => ({ ...remapProductionCanvases(original, ids), id: "", revision: 0, createdAt: "", updatedAt: "" }));
             // Preserve every imported plan before account requests can fail or lose their response.
             for (const doc of drafts) {
@@ -117,7 +117,7 @@ export default function CanvasPage() {
             {hydrated && roots.length > 0 ? <p className="mb-4 text-xs text-muted-foreground">{query ? `找到 ${filtered.length} 个项目` : `共 ${roots.length} 个项目`}</p> : null}
             {!hydrated ? <div className="py-28 text-center text-sm text-muted-foreground">正在读取项目...</div> : filtered.length ? <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">{filtered.map(({ root, group, latest, cover }) => {
                 return <Link href={`/canvas/project/${root.id}`} key={root.id} className="group overflow-hidden rounded-2xl border border-border/70 bg-card transition duration-200 hover:-translate-y-0.5 hover:border-primary/35 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring motion-reduce:transform-none">
-                    <CanvasProjectPreview project={cover} className="aspect-[16/10] w-full" />
+                    <CanvasProjectPreview project={cover} workspaceId={root.id} className="aspect-[16/10] w-full" />
                     <div className="px-4 pb-4 pt-3.5"><div className="flex items-center justify-between gap-3"><h2 className="truncate text-[15px] font-medium transition-colors group-hover:text-primary">{root.workspaceTitle || root.title}</h2><ArrowUpRight className="size-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-primary" /></div><div className="mt-2.5 flex items-center justify-between gap-2 text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Layers3 className="size-3.5" />{group.length} 张画布</span><time dateTime={group[0]?.updatedAt || root.updatedAt}>{latest ? `${new Date(latest).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })} 更新` : ""}</time></div></div>
                 </Link>;
             })}</div> : <div className="flex min-h-80 flex-col items-center justify-center rounded-2xl border border-border/70 bg-card px-6 py-12 text-center"><span className="mb-5 flex size-16 items-center justify-center rounded-2xl bg-accent text-primary">{query ? <Search className="size-6" /> : <Layers3 className="size-7" />}</span><h2 className="text-lg font-medium">{query ? "没有找到匹配的项目" : "为下一个灵感，留一张画布"}</h2><p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">{query ? "试试其他名称，或清除搜索查看全部项目。" : "从右上角新建项目，把脚本、分镜与素材放在一起。"}</p>{query ? <Button className="mt-5 rounded-xl" onClick={() => setQuery("")}>清除搜索</Button> : null}</div>}

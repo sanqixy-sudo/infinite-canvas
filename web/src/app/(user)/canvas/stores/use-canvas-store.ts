@@ -8,6 +8,7 @@ import { fetchUserConfig } from "@/services/api/user-config";
 import { useUserStore } from "@/stores/use-user-store";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import type { CanvasAgentConfig, CanvasAssistantSession, CanvasConnection, CanvasNodeData, CanvasPendingAgentRequest, ViewportTransform } from "../types";
+import { normalizeWorkspaceSettings, remapWorkspaceCover, resolveWorkspaceCover, type WorkspaceSettings } from "../utils/workspace-settings";
 
 export type CanvasSidePanelState = {
     open: boolean;
@@ -24,6 +25,7 @@ export type CanvasProject = {
     workspaceId?: string;
     /** Independent display name for the workspace's root canvas. */
     workspaceTitle?: string;
+    workspaceSettings?: WorkspaceSettings;
     createdAt: string;
     updatedAt: string;
     nodes: CanvasNodeData[];
@@ -52,6 +54,7 @@ type CanvasStore = {
     openProject: (id: string) => CanvasProject | null;
     renameProject: (id: string, title: string) => void;
     renameWorkspace: (id: string, title: string) => void;
+    updateWorkspaceSettings: (id: string, settings: WorkspaceSettings) => boolean;
     deleteProjects: (ids: string[]) => void;
     updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "agentConfig" | "autoTitlePending" | "backgroundMode" | "showImageInfo" | "viewport" | "sidePanel" | "agentPanel" | "pendingAgentRequest">>) => void;
     syncWithRemote: (token: string, syncEnabled: boolean) => Promise<void>;
@@ -318,6 +321,7 @@ export const useCanvasStore = create<CanvasStore>()(
                     title: source.title || "导入画布",
                     workspaceId,
                     workspaceTitle: workspaceId ? undefined : source.workspaceTitle,
+                    workspaceSettings: workspaceId ? undefined : { defaultModels: normalizeWorkspaceSettings(source.workspaceSettings).defaultModels },
                     createdAt: source.createdAt || now,
                     updatedAt: now,
                     nodes: source.nodes || [],
@@ -375,6 +379,17 @@ export const useCanvasStore = create<CanvasStore>()(
                         (project) => !ids.includes(project.id),
                     ),
                 }));
+            },
+            updateWorkspaceSettings: (id, settings) => {
+                if (!canEditCanvas()) return false;
+                const project = get().projects.find((item) => item.id === id && !item.workspaceId);
+                if (!project) return false;
+                const normalized = normalizeWorkspaceSettings(settings);
+                if (normalized.cover && !resolveWorkspaceCover(get().projects, id, normalized.cover)) return false;
+                const next = { ...project, workspaceSettings: normalized, updatedAt: new Date().toISOString() };
+                set((state) => ({ projects: state.projects.map((item) => item.id === id ? next : item) }));
+                queueProjectSave(next);
+                return true;
             },
             updateProject: (id, patch) => {
                 if (!canEditCanvas()) return;
@@ -448,7 +463,7 @@ export const useCanvasStore = create<CanvasStore>()(
                 const projects = legacy.filter((project) => roots.has(project.id) || Boolean(project.workspaceId && roots.has(project.workspaceId)));
                 const ids = new Map(projects.map((project) => [project.id, nanoid()]));
                 const timestamp = new Date().toISOString();
-                const restored = projects.map((project) => ({ ...project, id: ids.get(project.id)!, workspaceId: project.workspaceId ? ids.get(project.workspaceId) : undefined, updatedAt: timestamp, chatSessions: (project.chatSessions || []).map((session) => ({ ...session, codexThreadId: undefined, codexServiceId: undefined })) }));
+                const restored = projects.map((project) => ({ ...project, id: ids.get(project.id)!, workspaceId: project.workspaceId ? ids.get(project.workspaceId) : undefined, workspaceSettings: project.workspaceId ? undefined : remapWorkspaceCover(project.workspaceSettings, ids), updatedAt: timestamp, chatSessions: (project.chatSessions || []).map((session) => ({ ...session, codexThreadId: undefined, codexServiceId: undefined })) }));
                 if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
                 const snapshot = { projects: [...restored, ...get().projects], ownerId: session.userId, restoredLegacyRootIds: [...new Set([...get().restoredLegacyRootIds, ...roots])] };
                 await localForageStorage.setItem(canvasBucket(session.userId), JSON.stringify({ state: snapshot, version: 0 }));

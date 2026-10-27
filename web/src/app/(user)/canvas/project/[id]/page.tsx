@@ -4,7 +4,7 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Dropdown, Input } from "antd";
-import { ArrowLeft, Check, Download, Layers3, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, Download, Layers3, MoreHorizontal, Pencil, Plus, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
 
 import { CanvasDeleteProjectsDialog } from "../../components/canvas-delete-projects-dialog";
 import { CanvasProjectCard } from "../../components/canvas-project-card";
@@ -12,6 +12,7 @@ import { CanvasLoadError } from "../../components/canvas-load-error";
 import { useCanvasStore, workspaceCanvases } from "../../stores/use-canvas-store";
 import { useCanvasUiStore } from "../../stores/use-canvas-ui-store";
 import { useCanvasExport } from "../../hooks/use-canvas-export";
+import { ProjectSettingsDialog } from "./components/project-settings-dialog";
 
 export default function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
@@ -32,6 +33,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     const [draft, setDraft] = useState("");
     const [query, setQuery] = useState("");
     const [sort, setSort] = useState("updated");
+    const [settingsOpen, setSettingsOpen] = useState(false);
     const visible = canvases.filter((canvas) => canvas.title.toLowerCase().includes(query.trim().toLowerCase())).sort((a, b) => sort === "name" ? a.title.localeCompare(b.title, "zh-CN") : sort === "created" ? Date.parse(b.createdAt) - Date.parse(a.createdAt) : Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
     const canDeleteSelection = !selectedIds.includes(id) || canvases.length === 1;
 
@@ -57,7 +59,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                         {editing ? <div className="flex max-w-xl items-center gap-2"><Input autoFocus className="h-10 rounded-xl" aria-label="项目名称" maxLength={80} value={draft} onChange={(event) => setDraft(event.target.value)} onPressEnter={saveTitle} onKeyDown={(event) => { if (event.key === "Escape") setEditing(false); }} /><Button className="h-10 rounded-xl" icon={<Check className="size-4" />} onClick={saveTitle} aria-label="保存项目名" /><Button className="h-10 rounded-xl" icon={<X className="size-4" />} onClick={() => setEditing(false)} aria-label="取消" /></div> : <h1 className="truncate text-[28px] font-semibold tracking-tight">{title}</h1>}
                         <p className="mt-2 text-sm leading-6 text-muted-foreground">{canvases.length} 张画布<span className="mx-2 text-border">/</span>最近修改 {new Date(canvases[0]?.updatedAt || root.updatedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })}</p>
                     </div>
-                    <div className="flex items-center gap-2"><Button className="h-10 rounded-xl" onClick={() => router.push(`/canvas/project/${id}/production`)}>短剧制作</Button><Button type="primary" className="h-10 rounded-xl px-5" icon={<Plus className="size-4" />} onClick={createAndEnter}>新建画布</Button><Dropdown trigger={["click"]} menu={{ items: [
+                    <div className="flex flex-wrap items-center gap-2"><Button className="h-10 rounded-xl" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>项目设置</Button><Button className="h-10 rounded-xl" onClick={() => router.push(`/canvas/project/${id}/production`)}>短剧制作</Button><Button type="primary" className="h-10 rounded-xl px-5" icon={<Plus className="size-4" />} onClick={createAndEnter}>新建画布</Button><Dropdown trigger={["click"]} menu={{ items: [
                         { key: "rename", label: "重命名项目", icon: <Pencil className="size-4" />, onClick: () => { setDraft(title); setEditing(true); } },
                         { key: "export", label: "完整项目包 ZIP（含计划与素材）", icon: <Download className="size-4" />, onClick: () => void exportProjects(canvases, title) },
                         { type: "divider" },
@@ -71,5 +73,6 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
         </div>
         </main>
         <CanvasDeleteProjectsDialog />
+        {settingsOpen && root ? <ProjectSettingsDialog workspaceId={id} onClose={() => setSettingsOpen(false)} /> : null}
     </>;
 }

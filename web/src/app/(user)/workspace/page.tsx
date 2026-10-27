@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { App, Button, Checkbox, Input, Modal } from "antd";
-import { ArrowRight, ArrowUpRight, Clapperboard, Clock3, FolderOpen, Image, Layers3, Plus, ScanLine } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Clapperboard, Clock3, Film, FolderOpen, Image, Layers3, ListChecks, Plus, ScanLine, Wrench } from "lucide-react";
 import { useUserStore } from "@/stores/use-user-store";
 import { CanvasProjectPreview } from "../canvas/components/canvas-project-preview";
 import { CanvasLoadError } from "../canvas/components/canvas-load-error";
@@ -110,11 +110,19 @@ export default function WorkspacePage() {
                     </div>}
             </section>
 
+            <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="创作功能入口">
+                {[
+                    { href: "/production", label: "短剧制作", description: "剧本、分集、拆镜与生产", icon: Clapperboard },
+                    { href: "/tasks", label: "任务中心", description: "跨项目查看进度和费用", icon: ListChecks },
+                    { href: "/deliveries", label: "我的成片", description: "预览、下载与继续交付", icon: Film },
+                    { href: "/tools", label: "创作工具", description: "图像、视频、声音与工作流", icon: Wrench },
+                ].map(({ href, label, description, icon: Icon }) => <Link key={href} href={href} className="group flex items-start gap-3 rounded-xl border border-border bg-card px-4 py-5 transition hover:border-foreground/35"><Icon className="mt-0.5 size-5 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">{label}</strong><span className="mt-2 block text-xs leading-5 text-muted-foreground">{description}</span></span><ArrowUpRight className="mt-0.5 size-3.5 text-muted-foreground transition group-hover:text-foreground" /></Link>)}
+            </section>
             <section className="mt-9" aria-labelledby="recent-projects">
                 <div className="mb-5 flex items-center justify-between gap-4"><div className="flex items-center gap-2.5"><h2 id="recent-projects" className="text-[16px] font-semibold">最近项目</h2>{hydrated && workspaces.length > 0 ? <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">{workspaces.length}</span> : null}</div><Link href="/canvas" className="inline-flex items-center gap-2 text-xs text-muted-foreground transition hover:text-primary">查看全部 <ArrowRight className="size-3.5" /></Link></div>
                 {!hydrated ? <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3" aria-label="正在读取项目">{[0, 1, 2].map((index) => <div key={index} className="h-56 animate-pulse rounded-2xl bg-muted/60" />)}</div>
                     : workspaces.length ? <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">{workspaces.slice(0, 6).map(({ root, canvases, cover, latest }) => <Link key={root.id} href={`/canvas/project/${root.id}`} className="group min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card transition duration-200 hover:border-primary/35 hover:shadow-md hover:shadow-primary/5 motion-safe:hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-                        <CanvasProjectPreview project={cover} className="aspect-[16/10]" />
+                        <CanvasProjectPreview project={cover} workspaceId={root.id} className="aspect-[16/10]" />
                         <div className="px-4 py-4"><div className="flex items-center justify-between gap-3"><h3 className="truncate text-[15px] font-medium transition-colors group-hover:text-primary">{root.workspaceTitle || root.title}</h3><ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground/60" /></div><div className="mt-2.5 flex items-center justify-between gap-3 text-[11px] text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Layers3 className="size-3" />{canvases.length} 张画布</span><time dateTime={latest}>{new Date(latest).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })} 更新</time></div></div>
                     </Link>)}</div>
                         : <div className="flex items-center gap-4 rounded-2xl border border-dashed border-border bg-card/40 px-5 py-7 sm:px-7"><span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-muted/80 text-muted-foreground"><FolderOpen className="size-5" strokeWidth={1.5} /></span><div><h3 className="text-[13px] font-medium">为下一部作品，留一个位置</h3><p className="mt-1.5 text-xs leading-5 text-muted-foreground">创建项目后，你的画布与创作进度会整理在这里。</p></div></div>}

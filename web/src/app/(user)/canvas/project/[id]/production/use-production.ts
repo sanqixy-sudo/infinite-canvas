@@ -5,11 +5,16 @@ import localforage from "localforage";
 import { createProduction, deleteProduction, getProduction, saveProduction } from "@/services/api/production";
 import { saveCanvasProject } from "@/services/api/canvas-tasks";
 import { resolveImageUrl } from "@/services/image-storage";
+import { resolveMediaUrl } from "@/services/file-storage";
+import { readImageMeta } from "@/lib/image-utils";
+import { nanoid } from "nanoid";
 import { useUserStore } from "@/stores/use-user-store";
 import { useCanvasStore, workspaceCanvases } from "../../../stores/use-canvas-store";
 import type { ProductionDocument } from "../../../lib/production-types";
 import { assertProductionCanvasSaved, buildProductionShotCanvas, productionShotText } from "../../../utils/production-canvas";
-import { CanvasNodeType } from "../../../types";
+import { CanvasNodeType, type CanvasNodeData, type InsertAssetPayload } from "../../../types";
+import { NODE_DEFAULT_SIZE } from "../../../constants";
+import { fitNodeSize } from "../../../utils/canvas-node-size";
 import { buildProductionCandidate } from "../../../utils/production-candidates";
 import { appendProductionBreakdown, type ProductionBreakdownDraft } from "../../../utils/production-breakdown";
 import { bindImportedProduction } from "../../../utils/canvas-transfer";
@@ -79,7 +84,7 @@ export function useProduction(workspaceId: string) {
                 const local = draft?.dirty && draft.document.workspaceId === workspaceId ? draft.document : null;
                 const value = local || remote;
                 currentDocument.current = value; setDocument(value); setDirty(Boolean(local));
-                if (local) setNotice(!local.id ? "已恢复未完成导入的制作草稿，点击“保存计划”继续保存；无需重新导入项目包。" : remote && remote.revision !== local.revision ? "已恢复本机草稿，但账号版本已变化。保存可能冲突；请先导出完整项目 ZIP 备份，再决定是否重新读取账号版本。" : "已恢复上次未保存的本机草稿，请检查后保存到账号。");
+                if (local) setNotice(!local.id ? "已恢复本机制作草稿，点击“保存计划”同步到账号；无需重新创建或导入项目。" : remote && remote.revision !== local.revision ? "已恢复本机草稿，但账号版本已变化。保存可能冲突；请先导出完整项目 ZIP 备份，再决定是否重新读取账号版本。" : "已恢复上次未保存的本机草稿，请检查后保存到账号。");
             } catch (failure) {
                 if (!active || !sessionCurrent()) return;
                 if (draft?.document.workspaceId === workspaceId) { currentDocument.current = draft.document; setDocument(draft.document); setDirty(draft.dirty); }
@@ -174,7 +179,33 @@ export function useProduction(workspaceId: string) {
         setNotice("资产设定已加入本机草稿，点击“保存计划”同步到账号。");
         return true;
     });
-    const placeShot = (shotId: string, canvasId: string, rebuild = false) => run(async () => {
+    const importAssetReference = (payload: InsertAssetPayload, canvasId: string) => run(async () => {
+        const before = useCanvasStore.getState().projects.find((canvas) => canvas.id === canvasId && (canvas.id === workspaceId || canvas.workspaceId === workspaceId));
+        if (!before) throw new Error("请选择本项目中的目标画布。");
+        const type = payload.kind === "text" ? CanvasNodeType.Text : payload.kind === "image" ? CanvasNodeType.Image : payload.kind === "video" ? CanvasNodeType.Video : CanvasNodeType.Audio;
+        const spec = NODE_DEFAULT_SIZE[type];
+        let size = { width: spec.width, height: spec.height }, content = "", metadata: CanvasNodeData["metadata"] = { status: payload.kind === "text" ? "idle" : "success" };
+        if (payload.kind === "text") content = payload.content;
+        else {
+            content = payload.kind === "image" ? await resolveImageUrl(payload.storageKey, payload.dataUrl) : await resolveMediaUrl(payload.storageKey, payload.url);
+            if (!content) throw new Error("素材暂时无法读取，请在素材库检查文件。");
+            metadata = { ...metadata, storageKey: payload.storageKey, bytes: payload.bytes, mimeType: payload.mimeType };
+            if (payload.kind === "image" || payload.kind === "video") {
+                const dimensions = payload.width && payload.height ? { width: payload.width, height: payload.height } : payload.kind === "image" ? await readImageMeta(content) : size;
+                size = fitNodeSize(dimensions.width, dimensions.height);
+                metadata = { ...metadata, naturalWidth: dimensions.width, naturalHeight: dimensions.height };
+            } else metadata = { ...metadata, durationMs: payload.durationMs };
+        }
+        if (!content.trim()) throw new Error("所选素材没有可用内容。");
+        assertSession();
+        const canvas = useCanvasStore.getState().projects.find((item) => item.id === canvasId);
+        if (!canvas) throw new Error("目标画布已不存在。");
+        assertProductionCanvasSaved(before, canvas);
+        const node: CanvasNodeData = { id: nanoid(), type, title: payload.title || "资产参考", ...size, position: { x: canvas.nodes.length ? Math.max(...canvas.nodes.map((item) => item.position.x + item.width)) + 80 : 80, y: 80 }, metadata: { ...metadata, content } };
+        useCanvasStore.getState().updateProject(canvasId, { nodes: [...canvas.nodes, node] });
+        return { canvasId, nodeId: node.id };
+    });
+    const placeShotOperation = async (shotId: string, canvasId: string, rebuild = false) => {
         const value = currentDocument.current;
         const shot = value?.shots.find((item) => item.id === shotId);
         if (!value || !shot) return;
@@ -223,6 +254,19 @@ export function useProduction(workspaceId: string) {
         await syncCanvases([canvasId]);
         await saveDocument(next, false);
         return { canvasId, nodeId: built.shot.textNodeId };
+    };
+    const placeShot = (shotId: string, canvasId: string, rebuild = false) => run(() => placeShotOperation(shotId, canvasId, rebuild));
+    const placeShots = (shotIds: string[], canvasId: string) => run(async () => {
+        const ids = [...new Set(shotIds)];
+        if (!ids.length || ids.length > 50) throw new Error("每批请选择 1–50 个镜头。");
+        if (ids.some((id) => !currentDocument.current?.shots.some((shot) => shot.id === id))) throw new Error("所选镜头已变化，请重新选择。");
+        let completed = 0;
+        setNotice(`正在处理 ${ids.length} 个镜头；创建节点不会发起生成。`);
+        for (const id of ids) {
+            await placeShotOperation(id, canvasId); assertSession(); completed++;
+            setNotice(`已完成 ${completed} / ${ids.length} 个镜头的画布绑定并保存。若中断，已完成项保留；重试会复用完整绑定，不重复创建。`);
+        }
+        return true;
     });
     const addCandidate = (shotId: string, sourceCanvasId: string, sourceNodeId: string) => run(async () => {
         const value = currentDocument.current;
@@ -293,5 +337,5 @@ export function useProduction(workspaceId: string) {
         currentDocument.current = null; setDocument(null); setDirty(false);
         return true;
     });
-    return { document: documentScope.current === scope && document?.workspaceId === workspaceId ? document : null, dirty, loading, busy, error, notice, root, canvases, edit, create, save, applyBreakdown, commitAsset, placeShot, addCandidate, syncShotText, discardDraft, remove, isCurrent: sessionCurrent, retry: () => setReload((value) => value + 1) };
+    return { document: documentScope.current === scope && document?.workspaceId === workspaceId ? document : null, dirty, loading, busy, error, notice, root, canvases, edit, create, save, applyBreakdown, commitAsset, importAssetReference, placeShot, placeShots, addCandidate, syncShotText, discardDraft, remove, isCurrent: sessionCurrent, retry: () => setReload((value) => value + 1) };
 }

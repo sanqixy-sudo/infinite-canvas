@@ -30,6 +30,9 @@ description: 业务接口统一响应结构与前端处理约定
 | 方法 | 路径 | 入参与返回 |
 | --- | --- | --- |
 | GET | `/api/v1/productions?workspaceId=根画布ID` | 当前账号制作文档；无计划返回`data:null` |
+| GET | `/api/v1/productions/overview` | 当前账号制作概览；`page/pageSize/keyword`，返回分页计划及分集、镜头、资产、已选候选与完成合成数量 |
+| GET | `/api/v1/productions/deliveries` | 当前账号跨项目成片记录；`page/pageSize/keyword/type/workspaceId`，type 为合成状态；文件索引有效性与实际播放下载权限分别核对 |
+| GET | `/api/v1/tasks` | 当前账号图/视频/音频/成片任务及已持久镜头历史，按 `page/pageSize/type/status/keyword` 筛选；类型+编号去重，费用取真实流水；不提供自动付费重放 |
 | POST | `/api/v1/productions` | `{workspaceId,title}`；创建后返回文档；同账号同项目重复创建返回已有计划 |
 | POST | `/api/v1/productions/save` | 完整文档含`id/workspaceId/revision/title/synopsis/styleGuide/createdAt/updatedAt/episodes/scenes/assets/shots`；成功返回revision+1文档 |
 | DELETE | `/api/v1/productions?id=计划ID&revision=版本` | CAS删除计划及四类子记录，成功`data:null`；保留画布/媒体 |
@@ -73,7 +76,8 @@ AI拆镜使用既有平台文字接口，不新增绕过服务端计费的模型
 | DELETE | `/api/v1/teams/:teamId/invites/:inviteId` | 管理者撤销未使用邀请 |
 | GET / POST | `/api/v1/teams/:teamId/reviews` | 分页分享列表 / `{workspaceId,revision,episodeIds,includeScript}`发布本人保存计划中的分集快照 |
 | GET / DELETE | `/api/v1/team-reviews/:reviewId` | 成员只读详情 / 发布者或管理者撤销 |
-| GET / POST | `/api/v1/team-reviews/:reviewId/comments` | 按shotId分页 / `{shotId,body}`逐镜留言，正文最多2000字 |
+| GET / POST | `/api/v1/team-reviews/:reviewId/comments` | 按shotId与status分页 / `{shotId,body,atSeconds?}`逐镜留言，正文最多2000字；时间仅视频允许，并校验冻结快照计划秒数 |
+| PUT | `/api/v1/team-reviews/:reviewId/comments/:commentId` | `{resolved}`解决/重开意见；作者或管理者可操作，每次复核成员和审片有效性 |
 | DELETE | `/api/v1/team-reviews/:reviewId/comments/:commentId` | 本人、发布者或管理者删除意见 |
 | GET / HEAD | `/api/team-reviews/:reviewId/media/:shotId/:kind` | kind=image/video；按当前成员身份读取该镜采用文件，支持Range |
 
@@ -318,7 +322,7 @@ Go 全量、`1115c6f` 独立 TypeScript 与 32 项 Bun 回归、`86b07b0` 完整
 
 `POST /api/v1/model-gateway/media`接收multipart的`file`字段，返回临时签名`url/expiresAt`，不创建账号素材条目。公开读取`GET/HEAD /api/model-gateway/media/:id/content?token=...`须有效文件专用签名，不能用登录Token替代。生成结果内容`GET /api/v1/videos/:id/content`按账号鉴权代理，遵循现有公网地址访问限制。
 
-当前源码将四个Seedance模型收窄为特殊分组，每个模型仅接受`resolution: "720p"`、`ratio: "9:16"`（720×1280），并保留各自Token单价、时长和素材数量上限。中间件配置保存、业务目录读取和任务提交均校验该限制；已发布无效能力会阻止目录同步，需管理员重新保存后再由画布同步发布。配套插件为0.2.2，本轮固定规格与模型弹窗修改尚未构建或部署，不属于上面的历史部署记录。
+当前源码将四个Seedance模型收窄为特殊分组，每个模型仅接受`resolution: "720p"`、`ratio: "9:16"`（720×1280），并保留各自Token单价、时长和素材数量上限。中间件配置保存、业务目录读取和任务提交均校验该限制；已发布无效能力会阻止目录同步，需管理员重新保存后再由画布同步发布。配套插件为0.2.2，固定规格与模型弹窗已通过自动检查并随生产镜像部署；New API 实际安装及真实渠道计价仍需联调，快照范围见待测试记录。
 
 ### P5 多规格公开目录与真实路由
 
@@ -329,6 +333,6 @@ Go 全量、`1115c6f` 独立 TypeScript 与 32 项 Bun 回归、`86b07b0` 完整
 - 中间件管理员保存`routes:[{variantId,channelId,upstreamModel,adapter}]`；这些私有字段和密钥不在业务`/v1/models`或画布公开配置下发。能力/价格/路由变更须新revision，画布同步新版本后须重新核对发布；旧任务保留已解析的渠道、上游ID和计费快照。
 - 当前支持原四模型专用插件、Seedance原生任务协议与NewToken第三方`/v1/videos`按秒协议。第三方协议使用reference_*与ratio，每个规格只允许一个720p/1080p、4～15秒和文档比例，固定生成音频条件且不开放水印；不等同于官方extra_*混合计费协议。新协议需单独开发和部署，同协议新增规格在后台即可完成。
 
-本轮P5协议扩展正在集中验证，真实渠道用量/计价和实际输出尚待联调；不以文档或源码完成代替验收通过。
+P5协议扩展已通过集中自动检查与隔离验证并部署；真实渠道用量/计价和实际输出尚待联调，具体快照范围见 docs/progress/pending-test.md。
 
 独立中间件自身契约、服务认证、管理端口和插件原生路由见[gateway/README](../../gateway/README.md)。任务最终Token只来自生成任务响应，不查询供应商消费账单。

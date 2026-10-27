@@ -4,6 +4,7 @@ import axios from "axios";
 import { localForageStorage } from "@/lib/localforage-storage";
 import { useUserStore } from "@/stores/use-user-store";
 import { useCanvasStore, type CanvasProject } from "./use-canvas-store";
+import { CanvasNodeType } from "../types";
 
 const legacyKey = "infinite-canvas:canvas_store";
 const bucket = (id: string) => `${legacyKey}:user:${id}`;
@@ -119,5 +120,39 @@ test("recovery failures and delayed old-account reads leave the new account and 
         localForageStorage.setItem = setItem;
         axios.defaults.adapter = adapter;
         globalThis.fetch = originalFetch;
+    }
+});
+
+test("项目设置只写当前账号的根画布，封面不越项目且不改节点与在途任务", async () => {
+    const getItem = localForageStorage.getItem, setItem = localForageStorage.setItem, adapter = axios.defaults.adapter, originalFetch = globalThis.fetch;
+    const data = new Map<string, string>();
+    localForageStorage.getItem = async (name) => data.get(name) || null;
+    localForageStorage.setItem = async (name, value) => { data.set(name, value); };
+    globalThis.fetch = async () => new Response("{}", { status: 200 });
+    axios.defaults.adapter = async (config) => ({ data: { code: 0, data: config.url === "/api/v1/user-config" ? { syncCapabilities: { userData: false } } : [], msg: "" }, status: 200, statusText: "", headers: {}, config });
+    try {
+        useUserStore.getState().setSession("token-settings-owner", user("settings-owner"));
+        await settled("settings-owner");
+        const root = project("settings-root"), child = project("settings-child", root.id), other = project("other-root");
+        child.nodes = [{ id: "picture", title: "候选图", type: CanvasNodeType.Image, width: 320, height: 480, position: { x: 0, y: 0 }, metadata: { storageKey: "image:real" } }, { id: "inflight", title: "生成中", type: CanvasNodeType.Video, width: 320, height: 480, position: { x: 0, y: 0 }, metadata: { videoTaskId: "task-paid", model: "original", status: "loading" } }];
+        useCanvasStore.setState({ projects: [root, child, other] });
+        const nodes = structuredClone(child.nodes);
+        const settings = { defaultModels: { video: { model: "portrait", channelId: "fixed" } }, cover: { canvasId: child.id, nodeId: "picture" } };
+        assert.equal(useCanvasStore.getState().updateWorkspaceSettings(root.id, settings), true);
+        assert.deepEqual(useCanvasStore.getState().projects.find((item) => item.id === root.id)?.workspaceSettings, settings);
+        assert.equal(useCanvasStore.getState().updateWorkspaceSettings(child.id, settings), false);
+        assert.equal(useCanvasStore.getState().updateWorkspaceSettings(other.id, settings), false);
+        assert.deepEqual(useCanvasStore.getState().projects.find((item) => item.id === child.id)?.nodes, nodes);
+        useUserStore.getState().setSession("token-settings-other", user("settings-other"));
+        await settled("settings-other");
+        assert.equal(useCanvasStore.getState().updateWorkspaceSettings(root.id, settings), false);
+        useUserStore.getState().setSession("token-settings-owner", user("settings-owner"));
+        await settled("settings-owner");
+        assert.deepEqual(useCanvasStore.getState().projects.find((item) => item.id === root.id)?.workspaceSettings, settings);
+        useUserStore.getState().clearSession();
+        assert.equal(useCanvasStore.getState().updateWorkspaceSettings(root.id, settings), false);
+    } finally {
+        useUserStore.getState().clearSession();
+        localForageStorage.getItem = getItem; localForageStorage.setItem = setItem; axios.defaults.adapter = adapter; globalThis.fetch = originalFetch;
     }
 });

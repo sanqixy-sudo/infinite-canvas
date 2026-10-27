@@ -1,10 +1,10 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { Suspense, use, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { App, Alert, Button, ConfigProvider, Dropdown, Input, Modal, Select, Tabs } from "antd";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Clapperboard, Download, FileText, Film, Images, Layers3, LayoutGrid, ListChecks, Pencil, Plus, Save, Sparkles, Trash2 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { App, Alert, Button, Checkbox, ConfigProvider, Dropdown, Input, Modal, Select, Tabs } from "antd";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Clapperboard, Copy, Download, FileText, Film, Images, Layers3, LayoutGrid, ListChecks, Pencil, Plus, Save, Search, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useProduction } from "./use-production";
 import { ProductionAssetEditor, ProductionShotEditor } from "./components/production-editors";
@@ -17,16 +17,35 @@ import { productionAssetLabels, type ProductionAsset, type ProductionAssetKind, 
 import { productionChecklist, productionShotText } from "../../../utils/production-canvas";
 import { getProductionShotState } from "../../../utils/production-candidates";
 import { useCanvasExport } from "../../../hooks/use-canvas-export";
+import ProductionScriptImport from "./components/production-script-import";
+import { changeProductionShots, duplicateProductionEpisode, reorderProductionEpisode } from "./production-operations";
 
 export default function ProductionPage({ params }: { params: Promise<{ id: string }> }) {
+    return <Suspense fallback={<p className="p-8 text-sm text-muted-foreground">正在读取制作页面…</p>}><ProductionEditor params={params} /></Suspense>;
+}
+
+function ProductionEditor({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { modal, message } = App.useApp();
     const plan = useProduction(id);
     const exportProjects = useCanvasExport();
     const { document: doc, edit, busy } = plan;
-    const [tab, setTab] = useState("script");
-    const [episodeId, setEpisodeId] = useState("");
+    const tab = ["script", "assets", "shots", "tasks", "delivery"].includes(searchParams.get("tab") || "") ? searchParams.get("tab")! : "script";
+    const episodeId = searchParams.get("episode") || "";
+    const navigate = (next: { tab?: string; episode?: string }, replace = false) => {
+        const query = new URLSearchParams(searchParams.toString());
+        if (next.tab) query.set("tab", next.tab);
+        if (next.episode) query.set("episode", next.episode); else if (next.episode === "") query.delete("episode");
+        const href = `/canvas/project/${encodeURIComponent(id)}/production?${query}`;
+        if (replace) router.replace(href, { scroll: false }); else router.push(href, { scroll: false });
+    };
+    const setTab = (value: string) => navigate({ tab: value });
+    const setEpisodeId = (value: string) => navigate({ episode: value });
+    const [scriptImport, setScriptImport] = useState(false);
+    const [selection, setSelection] = useState<string[]>([]), [shotQuery, setShotQuery] = useState(""), [sceneFilter, setSceneFilter] = useState("all"), [statusFilter, setStatusFilter] = useState("all");
+    const [batch, setBatch] = useState<{ mode: "place" | "copy" | "move" | "episode"; ids: string[]; sourceEpisodeId: string; targetEpisodeId: string; canvasId: string; keepAssets: boolean } | null>(null);
     const [assetKind, setAssetKind] = useState<ProductionAssetKind | "all">("all");
     const [assetEditor, setAssetEditor] = useState<ProductionAsset | null>(null);
     const [shotEditor, setShotEditor] = useState<ProductionShot | null>(null);
@@ -37,14 +56,33 @@ export default function ProductionPage({ params }: { params: Promise<{ id: strin
     const episode = episodes.find((item) => item.id === episodeId) || episodes[0];
     const scenes = (doc?.scenes || []).filter((item) => item.episodeId === episode?.id).sort((a, b) => a.order - b.order);
     const shots = (doc?.shots || []).filter((item) => item.episodeId === episode?.id).sort((a, b) => a.order - b.order);
+    const visibleShots = shots.filter((shot) => (sceneFilter === "all" || shot.sceneId === sceneFilter) && (statusFilter === "all" || (statusFilter === "unbound" ? !shot.canvasId : shot.status === statusFilter)) && [shot.title, shot.description, shot.dialogue, shot.camera, ...shot.assetIds.map((assetId) => doc?.assets.find((asset) => asset.id === assetId)?.title || "")].join(" ").toLowerCase().includes(shotQuery.trim().toLowerCase()));
+    const selectedShots = visibleShots.filter((shot) => selection.includes(shot.id));
     const candidateShot = doc?.shots.find((item) => item.id === candidateShotId);
 
-    useEffect(() => { setAssetEditor(null); setShotEditor(null); setPlace(null); setCandidateShotId(""); setBreakdownEpisodeId(""); }, [doc?.id]);
+    useEffect(() => { setAssetEditor(null); setShotEditor(null); setPlace(null); setCandidateShotId(""); setBreakdownEpisodeId(""); setScriptImport(false); setBatch(null); }, [doc?.id]);
+    useEffect(() => { setSelection([]); setSceneFilter("all"); setStatusFilter("all"); setShotQuery(""); }, [episode?.id]);
+    useEffect(() => {
+        if (doc && !plan.loading && episodeId && !doc.episodes.some((item) => item.id === episodeId)) navigate({ episode: episode?.id || "" }, true);
+        // Correct removed or invalid deep links only after the plan has loaded.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [doc, plan.loading, episodeId]);
 
     const addEpisode = () => {
         const nextId = nanoid();
-        edit((value) => ({ ...value, episodes: [...value.episodes, { id: nextId, title: `第 ${value.episodes.length + 1} 集`, script: "", order: Math.max(-1, ...value.episodes.map((item) => item.order)) + 1 }] }));
-        setEpisodeId(nextId); setTab("script");
+        if (edit((value) => ({ ...value, episodes: [...value.episodes, { id: nextId, title: `第 ${value.episodes.length + 1} 集`, script: "", order: Math.max(-1, ...value.episodes.map((item) => item.order)) + 1 }] }))) navigate({ episode: nextId, tab: "script" });
+    };
+    const openBatch = (mode: NonNullable<typeof batch>["mode"], ids = selectedShots.map((shot) => shot.id)) => setBatch({ mode, ids, sourceEpisodeId: episode?.id || "", targetEpisodeId: mode === "move" ? episodes.find((item) => item.id !== episode?.id)?.id || "" : episode?.id || "", canvasId: plan.canvases[0]?.id || "", keepAssets: true });
+    const applyBatch = async () => {
+        if (!batch) return;
+        const mode = batch.mode;
+        if (mode === "place") { if (await plan.placeShots(batch.ids, batch.canvasId) && plan.isCurrent()) { setBatch(null); setSelection([]); } return; }
+        let target = batch.targetEpisodeId;
+        const changed = edit((value) => {
+            if (mode === "episode") { const result = duplicateProductionEpisode(value, batch.sourceEpisodeId, batch.keepAssets); target = result.episodeId; return result.document; }
+            return changeProductionShots(value, batch.ids, batch.targetEpisodeId, mode, batch.keepAssets);
+        });
+        if (changed) { setBatch(null); setSelection([]); navigate({ episode: target, tab: batch.mode === "episode" ? "script" : "shots" }); void message.success("已更新本机草稿，请检查后保存计划。"); }
     };
     const deleteEpisode = () => {
         if (!episode || !doc) return;
@@ -118,7 +156,7 @@ export default function ProductionPage({ params }: { params: Promise<{ id: strin
                     { key: "tasks", label: <span className="flex items-center gap-2"><ListChecks className="size-4" />镜头任务</span> },
                     { key: "delivery", label: <span className="flex items-center gap-2"><Film className="size-4" />分集交付</span> },
                 ]} />
-                {tab !== "assets" && <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap items-center gap-2"><Select aria-label="选择分集" className="min-w-48" value={episode?.id} placeholder="先添加第一集" options={episodes.map((item) => ({ value: item.id, label: item.title }))} onChange={setEpisodeId} /><Button icon={<Plus className="size-4" />} onClick={addEpisode}>添加分集</Button></div>{episode && <span className="text-xs text-muted-foreground">{scenes.length} 个场次 · {shots.length} 个镜头 · 计划 {Number(shots.reduce((sum, shot) => sum + shot.seconds, 0).toFixed(1))} 秒</span>}</div>}
+                {tab !== "assets" && <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap items-center gap-2"><Select aria-label="选择分集" className="min-w-48" value={episode?.id} placeholder="先添加第一集" options={episodes.map((item) => ({ value: item.id, label: item.title }))} onChange={setEpisodeId} /><Button icon={<Plus className="size-4" />} disabled={episodes.length >= 100} onClick={addEpisode}>添加分集</Button>{episode && <Dropdown trigger={["click"]} menu={{ items: [{ key: "copy", label: "复制本集剧本与镜头设定", icon: <Copy className="size-3.5" />, onClick: () => openBatch("episode") }, { key: "up", label: "分集前移", disabled: episodes[0]?.id === episode.id, onClick: () => edit((value) => reorderProductionEpisode(value, episode.id, -1)) }, { key: "down", label: "分集后移", disabled: episodes.at(-1)?.id === episode.id, onClick: () => edit((value) => reorderProductionEpisode(value, episode.id, 1)) }] }}><Button>整理分集</Button></Dropdown>}{tab === "script" && <Button icon={<Upload className="size-4" />} onClick={() => setScriptImport(true)}>导入剧本</Button>}</div>{episode && <span className="text-xs text-muted-foreground">{scenes.length} 个场次 · {shots.length} 个镜头 · 计划 {Number(shots.reduce((sum, shot) => sum + shot.seconds, 0).toFixed(1))} 秒</span>}</div>}
                 {tab === "script" && <div className="grid items-start gap-7 lg:grid-cols-[minmax(0,1fr)_340px]">
                     <section>{episode ? <><div className="mb-4 flex items-center gap-2"><Input aria-label="分集名称" variant="borderless" className="min-w-0 flex-1 !px-0 !text-lg !font-semibold" maxLength={100} value={episode.title} onChange={(event) => edit((value) => ({ ...value, episodes: value.episodes.map((item) => item.id === episode.id ? { ...item, title: event.target.value } : item) }))} /><Button type="text" danger icon={<Trash2 className="size-4" />} aria-label="删除当前分集" onClick={deleteEpisode} /></div><Input.TextArea aria-label="本集剧本" className="!p-5 !leading-8" autoSize={{ minRows: 18, maxRows: 36 }} maxLength={100000} value={episode.script} placeholder="粘贴或写下本集剧本。保留人物、对白和场景信息，再按右侧场次和镜头清单逐步整理。" onChange={(event) => edit((value) => ({ ...value, episodes: value.episodes.map((item) => item.id === episode.id ? { ...item, script: event.target.value } : item) }))} /><div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs leading-6 text-muted-foreground">AI 拆镜会生成可编辑草案，由你选择后追加，已有镜头保留。</p><Button icon={<Sparkles className="size-4" />} disabled={!episode.script.trim()} onClick={() => setBreakdownEpisodeId(episode.id)}>AI 辅助拆镜</Button></div></> : <div className="rounded-2xl border border-dashed border-border px-6 py-20 text-center"><FileText className="mx-auto mb-4 size-7 text-muted-foreground" /><h3 className="font-medium">先建立一集剧本</h3><p className="mt-2 text-sm text-muted-foreground">从一集开始，把故事整理为可制作的镜头。</p><Button className="mt-5" onClick={addEpisode}>添加第一集</Button></div>}</section>
                     <aside className="space-y-6"><section className="space-y-4 rounded-xl bg-muted/40 p-5"><h2 className="text-sm font-semibold">项目基调</h2><label className="block text-xs font-medium">故事概述<Input.TextArea className="mt-2" rows={3} maxLength={20000} value={doc.synopsis} placeholder="核心人物、冲突与故事方向" onChange={(event) => edit((value) => ({ ...value, synopsis: event.target.value }))} /></label><label className="block text-xs font-medium">视觉风格<Input.TextArea className="mt-2" rows={3} maxLength={20000} value={doc.styleGuide} placeholder="时代、色调、摄影质感与统一要求" onChange={(event) => edit((value) => ({ ...value, styleGuide: event.target.value }))} /></label></section>
@@ -132,31 +170,49 @@ export default function ProductionPage({ params }: { params: Promise<{ id: strin
                 })}</div>{!doc.assets.length && <div className="rounded-2xl border border-dashed border-border p-12 text-center"><Layers3 className="mx-auto mb-4 size-8 text-muted-foreground" /><h3 className="font-medium">给故事建立共同的参考</h3><p className="mt-2 text-sm text-muted-foreground">先建立主角设定，再添加场景、道具、声音与风格。</p></div>}</section>}
                 {tab === "shots" && <section>
                     <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><p className="text-xs leading-6 text-muted-foreground">先整理镜头，再放入画布。生成后将结果保存为候选，再选择采用的图片和视频。</p><div className="flex flex-wrap items-center gap-2"><Button disabled={!episode?.script.trim()} icon={<Sparkles className="size-4" />} onClick={() => episode && setBreakdownEpisodeId(episode.id)}>AI 辅助拆镜</Button><Button type="primary" disabled={!episode} icon={<Plus className="size-4" />} onClick={newShot}>添加镜头</Button></div></div>
-                    {shots.length ? <div className="overflow-x-auto rounded-xl border border-border"><table className="w-full min-w-[1080px] text-left text-sm">
-                        <thead className="bg-muted/40 text-xs text-muted-foreground"><tr><th className="w-20 px-4 py-3 font-medium">镜号</th><th className="px-4 py-3 font-medium">镜头与场次</th><th className="px-4 py-3 font-medium">画面／对白</th><th className="px-4 py-3 font-medium">计划</th><th className="px-4 py-3 font-medium">资产</th><th className="px-4 py-3 font-medium">制作状态</th><th className="px-4 py-3 font-medium">操作</th></tr></thead>
-                        <tbody>{shots.map((shot, index) => {
+                    <div className="mb-4 flex flex-wrap gap-2"><Input aria-label="搜索镜头" prefix={<Search className="size-3.5" />} className="!w-full sm:!w-64" placeholder="搜索画面、对白、角色…" allowClear value={shotQuery} onChange={(event) => { setShotQuery(event.target.value); setSelection([]); }} /><Select aria-label="按场次筛选镜头" className="min-w-36" value={sceneFilter} options={[{ value: "all", label: "全部场次" }, { value: "", label: "未分场" }, ...scenes.map((scene) => ({ value: scene.id, label: scene.title }))]} onChange={(value) => { setSceneFilter(value); setSelection([]); }} /><Select aria-label="按计划状态筛选镜头" className="min-w-36" value={statusFilter} options={[{ value: "all", label: "全部计划状态" }, { value: "draft", label: "草稿" }, { value: "ready", label: "已规划" }, { value: "unbound", label: "尚未放入画布" }]} onChange={(value) => { setStatusFilter(value); setSelection([]); }} /><span className="self-center text-xs text-muted-foreground">显示 {visibleShots.length} / {shots.length} 镜头</span></div>
+                    {selectedShots.length > 0 && <div className="mb-4 flex flex-wrap items-center gap-2 border-y border-border py-3"><span className="mr-auto text-xs font-medium">已选 {selectedShots.length} 个镜头</span><Button size="small" disabled={selectedShots.length > 50} icon={<LayoutGrid className="size-3.5" />} onClick={() => openBatch("place")}>批量放入画布</Button><Button size="small" icon={<Copy className="size-3.5" />} onClick={() => openBatch("copy")}>复制镜头</Button><Button size="small" disabled={episodes.length < 2} onClick={() => openBatch("move")}>移到其他分集</Button><Button type="text" size="small" aria-label="取消镜头多选" icon={<X className="size-3.5" />} onClick={() => setSelection([])} />{selectedShots.length > 50 && <p className="w-full text-xs text-muted-foreground">批量建立每次最多 50 个镜头，请减少选择；复制、跨集移动可处理当前选择。</p>}</div>}
+                    {visibleShots.length ? <div className="overflow-x-auto rounded-xl border border-border"><table className="w-full min-w-[1080px] text-left text-sm">
+                        <thead className="bg-muted/40 text-xs text-muted-foreground"><tr><th className="w-10 pl-4 py-3"><Checkbox aria-label="选择全部筛选镜头" checked={Boolean(visibleShots.length) && selectedShots.length === visibleShots.length} indeterminate={selectedShots.length > 0 && selectedShots.length < visibleShots.length} onChange={(event) => setSelection(event.target.checked ? visibleShots.map((shot) => shot.id) : [])} /></th><th className="w-20 px-4 py-3 font-medium">镜号</th><th className="px-4 py-3 font-medium">镜头与场次</th><th className="px-4 py-3 font-medium">画面／对白</th><th className="px-4 py-3 font-medium">计划</th><th className="px-4 py-3 font-medium">资产</th><th className="px-4 py-3 font-medium">制作状态</th><th className="px-4 py-3 font-medium">操作</th></tr></thead>
+                        <tbody>{visibleShots.map((shot) => {
+                            const index = shots.findIndex((item) => item.id === shot.id);
                             const state = getProductionShotState(shot, plan.canvases);
                             return <tr key={shot.id} className="border-t border-border align-top">
+                                <td className="pl-4 py-4"><Checkbox aria-label={`选择镜头${shot.title}`} checked={selection.includes(shot.id)} onChange={(event) => setSelection((ids) => event.target.checked ? [...ids, shot.id] : ids.filter((id) => id !== shot.id))} /></td>
                                 <td className="px-4 py-4"><span className="font-mono text-base">{String(index + 1).padStart(2, "0")}</span><div className="mt-2 flex"><Button size="small" type="text" disabled={index === 0} aria-label={`上移${shot.title}`} icon={<ArrowUp className="size-3" />} onClick={() => moveShot(shot, -1)} /><Button size="small" type="text" disabled={index === shots.length - 1} aria-label={`下移${shot.title}`} icon={<ArrowDown className="size-3" />} onClick={() => moveShot(shot, 1)} /></div></td>
                                 <td className="max-w-52 px-4 py-4"><button className="text-left font-medium hover:underline" disabled={busy} onClick={() => setShotEditor(shot)}>{shot.title}</button><p className="mt-2 text-xs text-muted-foreground">{doc.scenes.find((scene) => scene.id === shot.sceneId)?.title || "未分场"}</p><span className="mt-2 inline-block rounded bg-muted px-2 py-1 text-xs">{shot.status === "ready" ? "已规划" : "草稿"}</span></td>
                                 <td className="max-w-80 px-4 py-4"><p className="line-clamp-3 whitespace-pre-wrap text-xs leading-6">{shot.description || "待补充镜头画面"}</p>{shot.dialogue && <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">对白：{shot.dialogue}</p>}</td>
                                 <td className="max-w-40 px-4 py-4"><p className="text-xs">{shot.seconds} 秒</p><p className="mt-2 text-xs leading-5 text-muted-foreground">{shot.camera || "运镜待定"}</p></td>
                                 <td className="max-w-44 px-4 py-4"><div className="flex flex-wrap gap-1">{shot.assetIds.map((assetId) => <span key={assetId} className="rounded bg-muted px-2 py-1 text-xs">{doc.assets.find((asset) => asset.id === assetId)?.title || "失效资产"}</span>)}</div></td>
                                 <td className="max-w-48 px-4 py-4"><p className="text-xs font-medium">{state.label}</p><p className="mt-2 text-xs text-muted-foreground">{shot.candidates.length} 个候选</p>{state.hasInvalidSelection ? <p className="mt-2 text-xs leading-5 text-destructive">采用结果已失效，请重新选择</p> : state.invalidCandidateCount > 0 && <p className="mt-2 text-xs leading-5 text-destructive">{state.invalidCandidateCount} 个候选需检查</p>}</td>
-                                <td className="px-4 py-4"><div className="flex flex-col items-start gap-2"><Button size="small" icon={<LayoutGrid className="size-3.5" />} onClick={() => openShot(shot)}>{shot.canvasId ? "定位画布" : "放入画布"}</Button><Button size="small" icon={<Images className="size-3.5" />} onClick={() => setCandidateShotId(shot.id)}>候选与采用</Button>{shot.canvasId && <Dropdown trigger={["click"]} menu={{ items: [{ key: "sync", label: "预览并同步镜头说明", onClick: () => previewShotSync(shot) }, { key: "unlink", label: "解除画布绑定", onClick: () => unlinkShot(shot) }] }}><Button size="small" type="text">同步与关联</Button></Dropdown>}<div className="flex"><Button size="small" type="text" onClick={() => setShotEditor(shot)}>编辑</Button><Button size="small" type="text" danger aria-label={`删除${shot.title}`} icon={<Trash2 className="size-3.5" />} onClick={() => deleteShot(shot)} /></div></div></td>
+                                <td className="px-4 py-4"><div className="flex flex-col items-start gap-2"><Button size="small" icon={<LayoutGrid className="size-3.5" />} onClick={() => openShot(shot)}>{shot.canvasId ? "定位画布" : "放入画布"}</Button><Button size="small" icon={<Images className="size-3.5" />} onClick={() => setCandidateShotId(shot.id)}>候选与采用</Button>{shot.canvasId && <Dropdown trigger={["click"]} menu={{ items: [{ key: "sync", label: "预览并同步镜头说明", onClick: () => previewShotSync(shot) }, { key: "unlink", label: "解除画布绑定", onClick: () => unlinkShot(shot) }] }}><Button size="small" type="text">同步与关联</Button></Dropdown>}<div className="flex"><Button size="small" type="text" onClick={() => setShotEditor(shot)}>编辑</Button><Button size="small" type="text" aria-label={`复制${shot.title}`} icon={<Copy className="size-3.5" />} onClick={() => openBatch("copy", [shot.id])} /><Button size="small" type="text" danger aria-label={`删除${shot.title}`} icon={<Trash2 className="size-3.5" />} onClick={() => deleteShot(shot)} /></div></div></td>
                             </tr>;
                         })}</tbody>
-                    </table></div> : <div className="rounded-2xl border border-dashed border-border p-16 text-center"><LayoutGrid className="mx-auto mb-4 size-8 text-muted-foreground" /><h3 className="font-medium">把一集故事，拆成可制作的镜头</h3><p className="mt-2 text-sm text-muted-foreground">每个镜头记录画面、对白、运镜、时长与引用资产。</p>{episode && <Button className="mt-5" onClick={newShot}>添加第一个镜头</Button>}</div>}
+                    </table></div> : shots.length ? <div className="rounded-xl border border-dashed border-border py-14 text-center"><Search className="mx-auto mb-3 size-6 text-muted-foreground" /><p className="text-sm">没有匹配镜头</p><Button className="mt-4" onClick={() => { setShotQuery(""); setSceneFilter("all"); setStatusFilter("all"); }}>清除筛选</Button></div> : <div className="rounded-2xl border border-dashed border-border p-16 text-center"><LayoutGrid className="mx-auto mb-4 size-8 text-muted-foreground" /><h3 className="font-medium">把一集故事，拆成可制作的镜头</h3><p className="mt-2 text-sm text-muted-foreground">每个镜头记录画面、对白、运镜、时长与引用资产。</p>{episode && <Button className="mt-5" onClick={newShot}>添加第一个镜头</Button>}</div>}
                 </section>}
                 {tab === "tasks" && <ProductionTasks key={episode?.id || "empty"} workspaceId={id} episodeId={episode?.id || ""} shots={shots} dirty={plan.dirty} />}
                 {tab === "delivery" && episode && <ProductionDelivery document={doc} episodeId={episode.id} dirty={plan.dirty} onEdit={plan.edit} />}
             </ConfigProvider>}
             {doc && <footer className="mt-10 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-5"><p className="text-xs text-muted-foreground">计划与画布分别管理，删除计划不会删除创作文件。</p><Button type="text" danger size="small" disabled={busy} onClick={() => modal.confirm({ title: "删除整个制作计划？", content: `将删除“${doc.title}”的分集剧本、场次、资产设定、镜头编排及候选采用记录${plan.dirty ? "，包括本机未保存修改" : ""}。原画布节点、素材文件和生成结果保留。此操作无法撤销，建议先导出完整项目 ZIP 备份。`, okText: "删除制作计划", cancelText: "保留计划", okButtonProps: { danger: true }, onOk: async () => { if (await plan.remove() && plan.isCurrent()) router.push(`/canvas/project/${id}`); } })}>删除制作计划</Button></footer>}
         </div>
-        {assetEditor && doc && <ProductionAssetEditor key={assetEditor.id} asset={assetEditor} document={doc} canvases={plan.canvases} busy={busy} saveError={plan.error} onSave={plan.commitAsset} onClose={() => setAssetEditor(null)} />}
+        {assetEditor && doc && <ProductionAssetEditor key={assetEditor.id} asset={assetEditor} document={doc} canvases={plan.canvases} busy={busy} saveError={plan.error} onSave={plan.commitAsset} onImport={plan.importAssetReference} onClose={() => setAssetEditor(null)} />}
         {shotEditor && doc && <ProductionShotEditor key={shotEditor.id} shot={shotEditor} document={doc} onSave={(shot) => edit((value) => ({ ...value, shots: value.shots.some((item) => item.id === shot.id) ? value.shots.map((item) => item.id === shot.id ? shot : item) : [...value.shots, shot] }))} onClose={() => setShotEditor(null)} />}
         {candidateShot && <ProductionCandidatesDialog key={candidateShot.id} shot={candidateShot} workspaceId={id} busy={busy} error={plan.error} onAdd={(canvasId, nodeId) => plan.addCandidate(candidateShot.id, canvasId, nodeId)} onEdit={(update) => edit((value) => ({ ...value, shots: value.shots.map((item) => item.id === candidateShot.id ? update(item) : item) }))} onClose={() => setCandidateShotId("")} />}
-        {doc && breakdownEpisodeId && <ProductionBreakdownDialog key={`${doc.id}:${breakdownEpisodeId}`} document={doc} episodeId={breakdownEpisodeId} disabled={busy} onApply={async (draft) => { const applied = await plan.applyBreakdown(draft); if (applied) { setEpisodeId(draft.episodeId); setTab("shots"); } return Boolean(applied); }} onClose={() => setBreakdownEpisodeId("")} />}
+        {scriptImport && doc && <ProductionScriptImport document={doc} episodeId={episode?.id || ""} error={plan.error} onClose={() => setScriptImport(false)} onApply={(update) => {
+            let target = "";
+            const applied = edit((value) => { const result = update(value); target = result.episodeId; return result.document; });
+            if (applied) navigate({ tab: "script", episode: target });
+            return applied;
+        }} />}
+        {doc && breakdownEpisodeId && <ProductionBreakdownDialog key={`${doc.id}:${breakdownEpisodeId}`} document={doc} episodeId={breakdownEpisodeId} disabled={busy} onApply={async (draft) => { const applied = await plan.applyBreakdown(draft); if (applied) navigate({ episode: draft.episodeId, tab: "shots" }); return Boolean(applied); }} onClose={() => setBreakdownEpisodeId("")} />}
+        <Modal open={Boolean(batch)} title={batch?.mode === "place" ? "批量建立镜头节点" : batch?.mode === "episode" ? "复制分集设定" : batch?.mode === "move" ? "镜头跨集移动" : "复制镜头设定"} confirmLoading={busy} mask={{ closable: false }} closable={!busy} onCancel={() => !busy && setBatch(null)} okText={batch?.mode === "place" ? "确认建立并保存" : "确认加入草稿"} cancelText="取消" cancelButtonProps={{ disabled: busy }} okButtonProps={{ disabled: batch?.mode === "place" ? !batch.canvasId : batch?.mode !== "episode" && !batch?.targetEpisodeId }} onOk={() => void applyBatch()}>
+            {batch && <div className="space-y-4 py-3">{plan.error && <Alert type="error" showIcon title={plan.error} />}{batch.mode === "place" ? <><p className="text-sm leading-7">为所选 {batch.ids.length} 个镜头建立说明、分镜图、视频节点及参考连线；已有完整绑定将直接复用，节点缺失时会停止并提示单独修复。</p><Select aria-label="批量镜头目标画布" className="w-full" disabled={busy} value={batch.canvasId} options={plan.canvases.map((canvas) => ({ value: canvas.id, label: canvas.title }))} onChange={(canvasId) => setBatch({ ...batch, canvasId })} /><Alert type="info" showIcon title="此操作保存当前制作计划及画布，不发起生成或扣费。" description="按镜头逐项建立并保存，发生异常停止后续；已完成项保留，重新提交会复用它们。" />{plan.notice && <p role="status" className="text-xs leading-6 text-muted-foreground">{plan.notice}</p>}</> : <>
+                <p className="text-sm leading-7">{batch.mode === "episode" ? "复制本集剧本、场次和镜头文字设定，作为紧邻原集的新分集。" : batch.mode === "move" ? `将 ${batch.ids.length} 个镜头移到目标分集末尾，保留画布绑定和候选；原场次关联清空。` : `复制 ${batch.ids.length} 个镜头到目标分集末尾，新副本可单独调整。`}</p>
+                {batch.mode !== "episode" && <label className="block space-y-2 text-xs"><span>目标分集</span><Select aria-label="镜头目标分集" className="w-full" value={batch.targetEpisodeId || undefined} options={episodes.filter((item) => batch.mode !== "move" || item.id !== batch.sourceEpisodeId).map((item) => ({ value: item.id, label: item.title }))} onChange={(targetEpisodeId) => setBatch({ ...batch, targetEpisodeId })} /></label>}
+                {batch.mode !== "move" ? <><Checkbox checked={batch.keepAssets} onChange={(event) => setBatch({ ...batch, keepAssets: event.target.checked })}>保留镜头关联的角色、场景等资产设定</Checkbox><p className="text-xs leading-6 text-muted-foreground">副本使用全新标识，清空画布绑定、候选、采用结果与制作状态；不复制素材文件、生成任务或交付音轨和字幕。项目资产本身仍由各集共用。</p></> : <Alert type="warning" showIcon title="已关联原集音轨或字幕的镜头需先解除交付关联。" description="已有生成历史与成本继续保留在任务发起时的原集，移动不会重分配旧账；保存计划之后的新任务才关联目标分集。" />}
+                <p className="text-xs text-muted-foreground">确认后更新本机草稿，请核对后点击“保存计划”。</p>
+            </>}</div>}
+        </Modal>
         <Modal open={Boolean(place)} title={place?.rebuild ? "重新建立镜头节点" : "把镜头放入画布"} onCancel={() => !busy && setPlace(null)} confirmLoading={busy} okText={place?.rebuild ? "确认重新建立" : "建立节点并进入画布"} cancelText="取消" cancelButtonProps={{ disabled: busy }} okButtonProps={{ disabled: !place?.canvasId }} onOk={() => { if (place) void plan.placeShot(place.shot.id, place.canvasId, place.rebuild).then((result) => { if (result && plan.isCurrent()) { setPlace(null); router.push(`/canvas/${result.canvasId}?focusNodeId=${encodeURIComponent(result.nodeId)}`); } }); }}>
             <div className="space-y-4 py-3">{plan.error && <Alert type="error" title={plan.error} />}{place?.rebuild && <Alert type="warning" title="原绑定节点已缺失" description="将新建一组镜头节点并更新绑定。残留节点和文件会保留，请自行整理。" />}<p className="text-sm leading-7">为“{place?.shot.title}”建立镜头说明、空分镜图和空视频节点，并连接创作顺序。</p><Select className="w-full" aria-label="选择目标画布" disabled={busy} value={place?.canvasId} options={plan.canvases.map((canvas) => ({ value: canvas.id, label: canvas.title }))} onChange={(canvasId) => setPlace((value) => value ? { ...value, canvasId } : value)} /><p className="text-xs leading-6 text-muted-foreground">制作计划与关联画布保存到账号。此操作保存当前计划，不触发生成或扣费。项目资产的参考会自动连线；跨画布仅复制节点引用，不复制文件。参考节点过多需在画布调整后生成。</p></div>
         </Modal>

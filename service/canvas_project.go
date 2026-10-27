@@ -33,6 +33,9 @@ func canvasProjectFromRaw(
 		metadata.UpdatedAt == "" {
 		return model.CanvasProject{}, errors.New("画布项目数据无效")
 	}
+	if err := validateCanvasWorkspaceSettings(raw); err != nil {
+		return model.CanvasProject{}, err
+	}
 
 	return model.CanvasProject{
 		UserID:      strings.TrimSpace(userID),
@@ -91,8 +94,8 @@ func SaveCurrentUserCanvasProject(
 		return nil, err
 	}
 	saved, err := repository.SaveUserCanvasProjectValidated(project, storageIDs, func(previous string, docs []model.ProductionDocument) error {
-        return validateProductionNodeChanges(project.ID, previous, project.ProjectData, docs)
-    })
+		return validateProductionNodeChanges(project.ID, previous, project.ProjectData, docs)
+	})
 	if err != nil {
 		return nil, storageReferenceError(err)
 	}
