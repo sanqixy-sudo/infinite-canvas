@@ -19,6 +19,14 @@ jobs:
       tags: ${{ steps.meta.outputs.tags }}
       labels: ${{ steps.meta.outputs.labels }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify release tag
+        if: github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$(tr -d '[:space:]' < VERSION)"
       - id: meta
         uses: docker/metadata-action@v5
         with:
@@ -26,6 +34,7 @@ jobs:
           tags: |
             type=ref,event=tag
             type=sha,prefix=
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') }}
 
   build:
     needs: meta
@@ -113,3 +122,30 @@ jobs:
           done < <(find "$RUNNER_TEMP/digests" -type f -printf '%f\n' | sort)
 
           docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"
+
+      - name: Verify versioned image on GHCR
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$IMAGE_NAME:$GITHUB_REF_NAME"
+          docker buildx imagetools inspect --raw "$image" | jq -e '
+            [.manifests[].platform | select(.os == "linux") | .architecture]
+            | contains(["amd64", "arm64"])'
+          docker pull --platform linux/amd64 "$image"
+          container="$(docker run --detach --publish 127.0.0.1::3000 "$image")"
+          trap 'docker logs "$container"; docker rm -f "$container" >/dev/null' EXIT
+          address="$(docker port "$container" 3000/tcp)"
+          for ((attempt=1; attempt<=45; attempt++)); do
+            if [[ "$(docker inspect --format '{{.State.Running}}' "$container")" != true ]]; then
+              break
+            fi
+            if curl --fail --silent --max-time 5 "http://$address/api/health" >/dev/null &&
+               curl --fail --silent --location --max-time 5 "http://$address/" >/dev/null; then
+              docker buildx imagetools inspect "$image" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "The versioned image did not become ready."
+          exit 1

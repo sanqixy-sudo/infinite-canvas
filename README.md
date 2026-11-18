@@ -109,12 +109,15 @@
 ## 快速开始
 
 ```bash
-git clone https://github.com/tigerowo/infinite-canvas.git
+git clone https://github.com/sanqixy-sudo/infinite-canvas.git
 cd infinite-canvas
 cp .env.example .env
 # 修改默认账号密码等信息
-docker compose up -d --build
+docker compose pull
+docker compose up -d --no-build
 ```
+
+使用 `INFINITE_CANVAS_IMAGE=ghcr.io/sanqixy-sudo/infinite-canvas:v0.8.2` 可固定部署版本。源码构建执行 `docker compose -f docker-compose.local.yml up -d --build`。
 
 本地非 Docker 开发运行：
 ```bash
