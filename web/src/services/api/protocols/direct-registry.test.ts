@@ -5,7 +5,7 @@ import { collectHTTPURLs, normalizeDirectStatus, readDirectError } from "./share
 
 // Expectations are taken from direct-ai.ts at a27f046, before protocol extraction.
 test("direct protocols preserve polling paths and task ID precedence", () => {
-    assert.deepEqual(Object.keys(directProtocolAdapters).sort(), ["apimart", "ark", "autodl", "kie"]);
+    assert.deepEqual(Object.keys(directProtocolAdapters).sort(), ["apimart", "ark", "autodl", "kie", "tokendance"]);
     assert.equal(directProtocolAdapters.kie.pollPath("task/a b?"), "/jobs/recordInfo?taskId=task%2Fa%20b%3F");
     assert.equal(directProtocolAdapters.apimart.pollPath("task/a b?"), "/tasks/task%2Fa%20b%3F?language=zh");
     assert.equal(directProtocolAdapters.ark.pollPath("task/a b?"), "/contents/generations/tasks/task%2Fa%20b%3F");

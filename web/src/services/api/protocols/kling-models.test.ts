@@ -33,12 +33,14 @@ test("Kling panel matching keeps channel descriptions distinct from protocol sel
     assert.equal(isAPIMartKlingV3Config(remote, "kling-v3-extra"), false);
 });
 
-test("same model on different channels retains the selected channel identity", () => {
+test("same model on different channels honors an explicit selection before falling back to the video channel", () => {
     const model = "kling-v3";
     const config = configFor(model);
     config.localChannels.unshift({ ...config.localChannels[0], id: "other", name: "APIMart" });
     assert.equal(isAPIMartKlingV3Config(config, model), false);
     config.videoChannelId = "other";
+    assert.equal(isAPIMartKlingV3Config(config, model), false);
+    config.activeChannelId = "";
     assert.equal(isAPIMartKlingV3Config(config, model), true);
 });
 
